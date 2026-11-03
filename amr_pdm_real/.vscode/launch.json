@@ -1,0 +1,39 @@
+{
+  // F5(디버그) 또는 Ctrl+F5(디버그 없이). 처음에는 '1. 환경 설치'를 먼저 실행한다.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "1. 환경 설치 (처음 한 번)",
+      "type": "debugpy", "request": "launch",
+      "program": "${workspaceFolder}/실행/1_환경설치.py",
+      "cwd": "${workspaceFolder}", "console": "integratedTerminal"
+    },
+    {
+      "name": "2. 데이터 검사",
+      "type": "debugpy", "request": "launch",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "program": "${workspaceFolder}/run.py", "args": ["check"],
+      "cwd": "${workspaceFolder}", "console": "integratedTerminal", "env": { "PYTHONUTF8": "1" }
+    },
+    {
+      "name": "3. 학습 + 로봇 단위 교차검증",
+      "type": "debugpy", "request": "launch",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "program": "${workspaceFolder}/run.py", "args": ["train"],
+      "cwd": "${workspaceFolder}", "console": "integratedTerminal", "env": { "PYTHONUTF8": "1" }
+    },
+    {
+      "name": "4. 진단",
+      "type": "debugpy", "request": "launch",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "program": "${workspaceFolder}/run.py", "args": ["diagnose"],
+      "cwd": "${workspaceFolder}", "console": "integratedTerminal", "env": { "PYTHONUTF8": "1" }
+    },
+    {
+      "name": "공개 데이터 Paderborn 받기·변환",
+      "type": "debugpy", "request": "launch",
+      "program": "${workspaceFolder}/실행/공개데이터_Paderborn.py",
+      "cwd": "${workspaceFolder}", "console": "integratedTerminal"
+    }
+  ]
+}

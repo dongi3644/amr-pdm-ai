@@ -9,6 +9,9 @@ amr_pdm/data/
 amr_pdm/user_data/
 amr_pdm/reports/user/
 amr_pdm/artifacts/user_model.joblib
+amr_pdm_real/data/
+amr_pdm_real/raw/
+amr_pdm_real/reports/diagnose/
 *.log
 
 # IDE

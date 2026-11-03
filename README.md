@@ -14,6 +14,7 @@
 | 경로 | 내용 |
 |---|---|
 | `amr_pdm/` | 본 프로젝트: 시뮬레이터, AI 파이프라인, 대시보드, 내 데이터 입력 |
+| `amr_pdm_real/` | 실측 데이터 전용 버전: 가상 데이터 없이 학습, 로봇 단위 교차검증, Paderborn 공개 데이터 변환기 |
 | `amr_pdm/실행방법.md` | VS Code·Visual Studio에서 실행하는 법 |
 | `amr_pdm/DATA_FORMAT.md` | 내 데이터(CSV) 형식 |
 | `amr_fault_sim/`, `lstm_rul.py`, `web_simulator.html` | 초기 자료 (수정하지 않음) |
