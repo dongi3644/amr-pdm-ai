@@ -85,16 +85,6 @@ def train(data, units=None, baseline=None, tune=True):
                      "(3점 위도 선형 눈금으로 늘려 씀). 데이터와 라벨을 확인하세요.")
     notes.append("원인 분류 모델 없음 (고장 라벨이 필요)" if b["cause"] is None else
                  f"원인 분류 항목: {', '.join(label_ko(c) for c in b['cause'].classes)}")
-    if not b["bat"].active:
-        notes.append("배터리: battery 열이 없어 배터리 소모 이상은 판단하지 않습니다.")
-    elif b["battery"] is None:
-        notes.append("배터리: 정상 소모 측정이 5번 미만이라 경고 기준을 정하지 못했습니다. 더 긴 정상 기록을 넣으세요.")
-    else:
-        bl = b["battery"]
-        notes.append(f"배터리: 정상 측정 {bl['n']}번 기준, 예상보다 {bl['threshold']:.2f}배 넘게 닳는 측정이 "
-                     f"{C.BATTERY_ALERT_COUNT}번 연속이면 '배터리 소모 이상' (정상 중앙값 {bl['median']:.2f}배)")
-        if bl["n"] < 20:
-            notes.append(f"배터리: 정상 측정이 {bl['n']}번뿐이라 기준이 불안정합니다. 정상 운행 기록을 더 길게(잔량 20% 이상 소모) 넣으세요.")
     if tune and b["scale"] != "normal_only":
         notes.append(tune_kalman(pipe, data, sorted({r["robot"] for r in fault})))
     b["notes"] = notes
@@ -144,16 +134,12 @@ def diagnose(pipe, recs, detector="ae"):
     mon, rows, last, truth = pipe.monitor(detector), [], None, {}
 
     def flush():
-        bat = dict(mon.battery_periods)
         for period, score in mon.period_scores[len(rows):]:
             fc = mon.forecast
-            ratio = bat.get(period)
             rows.append({"경과(분)": round(C.minutes(period + 1), 2), "건강 점수": round(score, 2), "상태": C.STATUS_KO[mon.status],
                          "정지 위험까지(분)": round(C.minutes(fc["periods"]), 1) if fc else None,
                          "빠르면(분)": round(C.minutes(fc["periods_lo"]), 1) if fc else None,
                          "추정 원인": (last or {}).get("cause") or "", "판단 근거": ", ".join(n for n, _ in mon.reason),
-                         "배터리 소모(예상 대비 배)": round(ratio, 2) if ratio is not None else None,
-                         "배터리": "소모 이상" if mon.battery_alert else ("정상" if mon.b["battery"] else "판단 안 함"),
                          "파일 라벨": truth.get(period, "")})
 
     for rec in recs:
@@ -232,7 +218,6 @@ def cross_validate(data, baseline=None, progress=print):
                 continue
             # 창 단위: 이 겹의 모델로 평가 로봇의 z를 구해 모델 5종의 건강 점수를 모두 계산 (AUC 비교용)
             rows = rows_of(recs, name)
-            pipe.add_residuals(rows)
             zrows, Z = pipe.unit_z(rows)
             label, assumed = data.label_of(name), False
             if label is None:                              # 라벨이 없는 로봇: 학습 때처럼 정상으로 간주
@@ -264,8 +249,6 @@ def cross_validate(data, baseline=None, progress=print):
                               cause_pred=label_ko(mon.last_cause_label) if mon.last_cause_label else None,
                               cause_ok=(mon.last_cause_label == label) if (mon.last_cause_label and label and label != NORMAL_LABEL) else None,
                               period_scores=[[int(l), round(s, 3)] for l, s in mon.period_scores],
-                              battery_alert=next((l for l, on in mon.battery_events if on), None),
-                              battery_max_ratio=round(max((r for _, r in mon.battery_periods if r is not None), default=0.0), 2) or None,
                               sev_range=round(max(sev.values()) - min(v for v in sev.values()), 2) if sev else 0.0,
                               forecast_kalman=_forecast_errors(scores, lambda s: kalman_forecast(s, cfg=b["kalman"])),
                               forecast_trend=_forecast_errors(scores, trend_forecast)))
@@ -277,7 +260,6 @@ def summarize(units, win, det_scores, skipped, baseline, n_folds):
     detectors: 모델별 AUC(고장/정상 창 구분력), 3점 이상 비율(고장 창 감지율·정상 창 오경보율)
     units    : 고장 로봇 중 주의 이상이 뜬 수, 정상 로봇 중 오경보 난 수, 정지 위험(고장 정도 0.8) 전 경고 수와 여유 시간[분]
     cause    : 원인 분류 정확도(창·로봇)와 혼동행렬,  forecast: 칼만 vs 추세선 남은 시간 예측 오차[분]
-    battery  : 배터리 소모 이상 경고 — 정상 로봇 오경보 수, battery 라벨 로봇 감지 수, 다른 고장 로봇에서 함께 뜬 수
     health_indicator: 고장 정도가 0.3 이상 변한(진행형) 로봇의 점수 궤적 품질"""
     from pipeline.models import make_detectors
     names = {k: d.name for k, d in make_detectors().items()}
@@ -297,11 +279,7 @@ def summarize(units, win, det_scores, skipped, baseline, n_folds):
     k_in = [i for u in fault_u for _, i in u["forecast_kalman"] if i is not None]
     t_err = [e for u in fault_u for e, _ in u["forecast_trend"]]
     progressive = [[s for _, s in u["period_scores"] if u["onset"] is None or _ >= u["onset"]] for u in fault_u if u["sev_range"] >= 0.3]
-    bat_fault = [u for u in fault_u if u["label"].startswith("battery|")]       # 라벨이 battery인 로봇 = 배터리 이상 소모 사례
     m = lambda v: round(C.minutes(float(v)), 1)            # 주기 → 분
-    battery = dict(normal_alarm=f"{sum(u['battery_alert'] is not None for u in normal_u)}/{len(normal_u)}",
-                   battery_fault_detected=f"{sum(u['battery_alert'] is not None for u in bat_fault)}/{len(bat_fault)}" if bat_fault else None,
-                   other_fault_alarm=f"{sum(u['battery_alert'] is not None for u in fault_u if u not in bat_fault)}/{len(fault_u) - len(bat_fault)}")
     cm_labels = sorted(set(win["labels"]) | set(win["pred"]), key=lambda c: (c == NORMAL_LABEL, c))
     return dict(
         protocol=dict(split="로봇(베어링) 단위", folds=n_folds, baseline=baseline, period_s=C.PERIOD_S,
@@ -321,6 +299,5 @@ def summarize(units, win, det_scores, skipped, baseline, n_folds):
                                   coverage=round(float(np.mean(k_in)), 2) if k_in else None),
                       trend=dict(mae_min=m(np.mean(t_err)) if t_err else None, n=len(t_err))),
         health_indicator=hi_metrics(progressive),
-        battery=battery,
         unit_results=[{k: v for k, v in u.items() if not k.startswith("forecast")} for u in units],
         skipped=skipped)

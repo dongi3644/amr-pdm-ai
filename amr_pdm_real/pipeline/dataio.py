@@ -1,28 +1,26 @@
-"""실측 데이터 읽기: CSV → 파이프라인이 먹는 1초 창
+"""실측 데이터 읽기: CSV → 파이프라인이 먹는 1초 창 (진동만 사용)
 
 [역할] 파이프라인의 맨 앞. 사용자가 넣은 CSV를 읽어 검사하고, 모든 모델이 같은 모양으로 받을 수 있게 '1초 창'으로 자른다.
-       형식이 조금 달라도(열 이름, 인코딩, 날짜 형식, 일부 바퀴 센서 없음) 최대한 맞춰 읽고, 가정한 내용은 warnings에 남긴다.
+       열 이름·인코딩·날짜 형식이 조금 달라도 맞춰 읽는다. 하지만 없는 데이터를 기본값이나 다른 바퀴 값으로
+       채워 넣지는 않는다 — 필요한 값이 없으면 고칠 방법과 함께 오류를 낸다.
 [흐름에서 위치] CSV 파일 → (여기) → features.extract → 모델
 
     data = load("data")          # 파일 또는 폴더. 형식 설명은 README.md
-    data.robots["R1"]            # 로봇(베어링) 1대의 1초 창 목록
+    data.robots["R1"]            # 로봇 1대의 1초 창 목록
     data.summary(), data.warnings
 
 CSV 한 줄 = 진동 샘플 하나. 파일 하나 = 로봇 1대 (robot 열이 있으면 그 값으로 나누거나 이어 붙인다).
 
 [1초 창 하나(rec)의 내용]
-    period, segment, speed, accel, bump     판정 주기 번호(기록 시작부터 PERIOD_S초마다 1씩)·구간·속도·가속도·문턱 여부
-    vib_fs                                  진동 샘플링 [Hz] (time 열에서 계산)
+    period, segment, bump                   판정 주기 번호(기록 시작부터 PERIOD_S초마다 1씩)·구간·문턱 여부
+    vib_fs                                  진동 샘플링 [Hz] (time 열에서 계산, 없으면 --fs로 직접 알려 줘야 함)
     <바퀴>_vib  (fl_vib, fr_vib, ...)       바퀴마다 그 1초 동안의 진동 파형 (배열). 바퀴 목록은 config.WHEELS
-    <바퀴>_cur  (fl_cur, fr_cur, ...)       바퀴마다 그 1초의 전류 대표값 (숫자)
-    battery, bat_drain                      배터리 잔량 [%], 최근 BATTERY_DROPS칸이 떨어진 시간으로 구한 소모 속도 [%/분]
     t                                       창 시작 시각 [s]
     labeled, true_kind, true_side, true_sev 파일의 라벨 (평가용, 모델 입력에는 쓰지 않음)
 
 [주요 함수]
     load()            파일들을 읽어 Dataset을 만든다 (같은 로봇의 여러 파일은 시각·주기 번호를 이어 붙임)
     _windows()        로봇 1대의 표를 1초 창으로 자르는 핵심 부분
-    _battery_drain()  창마다 배터리 소모 속도 계산, 충전 중인 창 표시
     choose_baseline() 정상 기준 방식(per_unit / reference) 자동 결정
 """
 from pathlib import Path
@@ -41,13 +39,11 @@ WHEEL_NAMES = {name: w for w in C.WHEELS
 
 
 def wheel_column_aliases():
-    """바퀴별 진동·전류 열의 다른 이름 목록을 만든다. 예) fl_vib ← vib_fl, fl_vibration, frontleft_vib, 앞왼쪽진동
-    진동·전류 열이 하나뿐이면(vib, current) 첫 번째 바퀴로 본다."""
+    """바퀴별 진동 열의 다른 이름 목록을 만든다. 예) fl_vib ← vib_fl, fl_vibration, front_left_vib, 앞왼쪽진동"""
     out = {}
-    for i, w in enumerate(C.WHEELS):
+    for w in C.WHEELS:
         names = [w] + C.WHEEL_ALIASES.get(w, [])
-        out[f"{w}_vib"] = [p for a in names for p in (f"{a}_vib", f"vib_{a}", f"{a}_vibration", f"vibration_{a}", f"{a}진동")] + (["vib", "vibration", "진동"] if i == 0 else [])
-        out[f"{w}_cur"] = [p for a in names for p in (f"{a}_cur", f"cur_{a}", f"{a}_current", f"current_{a}", f"{a}전류")] + (["cur", "current", "전류"] if i == 0 else [])
+        out[f"{w}_vib"] = [p for a in names for p in (f"{a}_vib", f"vib_{a}", f"{a}_vibration", f"vibration_{a}", f"{a}진동")]
     return out
 
 
@@ -123,7 +119,7 @@ def _numeric(df, name, data, fname):
     col = pd.to_numeric(df[name], errors="coerce")
     bad = int((col.isna() & df[name].notna()).sum())
     if bad:
-        data.warn(f"{fname}: {name} 열에 숫자가 아닌 값 {bad}개를 빈칸으로 처리했습니다.")
+        data.warn(f"{fname}: {name} 열에 숫자가 아닌 값 {bad}개를 빈칸으로 처리했습니다 (그 샘플은 쓰지 않음).")
     return col.to_numpy(float) if col.notna().any() else None
 
 
@@ -137,13 +133,6 @@ def _seconds(col, fname):
     raise DataError(f"{fname}: time 열을 시간으로 읽지 못했습니다. 초 단위 숫자나 날짜·시각 형식이어야 합니다.")
 
 
-def _mean(values, prev, ac=False):
-    v = values[~np.isnan(values)]
-    if not len(v):
-        return prev
-    return float(np.sqrt(np.mean(v ** 2))) if ac else float(v.mean())
-
-
 def _labels(col, names):
     return col.fillna("").astype(str).str.strip().str.lower().map(lambda s: names.get(s, s)).to_numpy()
 
@@ -151,23 +140,16 @@ def _labels(col, names):
 def _windows(df, fname, data, fs_arg):
     """로봇 1대의 표 → 1초 창 목록 (판정 주기 번호 = 기록 시작부터 몇 번째 PERIOD_S초인가)
 
-    순서: ① 바퀴별 진동 열 확인(없는 바퀴는 다른 바퀴 값으로 채움) ② time으로 샘플링 주파수 계산
-          ③ 선택 열(전류·배터리·속도·구간·라벨) 준비 ④ time을 1초 단위로 잘라 창마다 진동 파형과 대표값을 담음
-          ⑤ 샘플이 모자란 창은 버림"""
-    # ① 진동: 바퀴끼리 비교(dev_ 특징)가 이 시스템의 핵심이라, 센서가 없는 바퀴는 있는 바퀴 값을 넣어 차이를 0으로 만든다
+    순서: ① 바퀴 4개 진동 열 확인(하나라도 없으면 오류) ② time으로 샘플링 주파수 계산
+          ③ 선택 열(구간·문턱·라벨) 준비 ④ time을 1초 단위로 잘라 창마다 진동 파형을 담음 ⑤ 샘플이 모자란 창은 버림"""
+    # ① 진동: 바퀴끼리 비교(dev_ 특징)가 이 시스템의 핵심이라 네 바퀴가 모두 있어야 한다. 빈 바퀴를 다른 값으로 채우지 않는다
     vib = {w: _numeric(df, f"{w}_vib", data, fname) for w in C.WHEELS}
-    measured = [w for w in C.WHEELS if vib[w] is not None]
-    if not measured:
-        raise DataError(f"{fname}: 진동 열이 없습니다. {', '.join(w + '_vib' for w in C.WHEELS)} 중 하나 이상이 필요합니다 "
-                        f"(바퀴 수·이름은 config.WHEELS). 파일의 열: {list(df.columns)}")
     missing = [w for w in C.WHEELS if vib[w] is None]
     if missing:
-        data.warn(f"{fname}: {', '.join(C.WHEEL_KO.get(w, w) for w in missing)} 바퀴 진동 열이 없어 "
-                  f"{C.WHEEL_KO.get(measured[0], measured[0])} 바퀴 값을 넣었습니다. 이 바퀴들의 고장 위치는 구분할 수 없습니다.")
-        for w in missing:
-            vib[w] = vib[measured[0]]
-    base = vib[measured[0]]
-    # ② 샘플링 주파수 = 1 / (진동 샘플 사이 시간 간격의 중앙값). 단위가 초가 아니면 비정상적인 값이 나와 걸러진다
+        raise DataError(f"{fname}: {', '.join(f'{w}_vib({C.WHEEL_KO.get(w, w)})' for w in missing)} 열이 없습니다. "
+                        f"바퀴 4개의 진동 열이 모두 필요합니다. 파일의 열: {list(df.columns)}")
+    base = vib[C.WHEELS[0]]
+    # ② 샘플링 주파수 = 1 / (진동 샘플 사이 시간 간격의 중앙값). time 열이 없으면 --fs로 알려 줘야 한다 (임의로 가정하지 않음)
     n = len(df)
     if "time" in df.columns:
         t = _seconds(df["time"], fname)
@@ -181,71 +163,43 @@ def _windows(df, fname, data, fs_arg):
         if not len(steps):
             raise DataError(f"{fname}: time 값이 모두 같아 샘플링 주파수를 알 수 없습니다.")
         fs = 1.0 / float(np.median(steps))
-    else:
-        fs = float(fs_arg or C.DEFAULT_FS)
+    elif fs_arg:
+        fs = float(fs_arg)
         t = np.arange(n) / fs
-        data.warn(f"{fname}: time 열이 없어 진동 샘플링을 {fs:g} Hz로 가정했습니다.")
+        data.warn(f"{fname}: time 열이 없어 지정한 샘플링 {fs:g} Hz로 시각을 계산했습니다.")
+    else:
+        raise DataError(f"{fname}: time 열이 없습니다. time 열을 넣거나, 센서의 실제 샘플링 주파수를 --fs 로 알려 주세요.")
     if fs < C.MIN_FS:
         raise DataError(f"{fname}: 진동 샘플링이 {fs:.1f} Hz로 계산됐습니다 ({C.MIN_FS:g} Hz 이상 필요). "
                         "time 열의 단위가 초가 맞는지 확인하세요.")
     if fs < 300:
         data.warn(f"{fname}: 진동 샘플링 {fs:.0f} Hz는 낮아서 고주파(150 Hz 이상) 특징이 거의 비게 됩니다.")
 
-    # ③ 선택 열: 없으면 config의 기본값을 쓰고 경고를 남긴다. 느린 센서(전류·배터리)는 값이 있는 줄만 채워져 있어도 된다
-    cur_keys = [f"{w}_cur" for w in C.WHEELS]
-    opt = {k: _numeric(df, k, data, fname) for k in cur_keys + ["battery", "speed", "fault_severity"]}
-    have_cur = [k for k in cur_keys if opt[k] is not None]
-    if not have_cur:
-        data.warn(f"{fname}: 전류 열이 없어 전류 특징을 0으로 두었습니다. 전류로 알 수 있는 고장은 놓칠 수 있습니다.")
-    elif len(have_cur) < len(cur_keys):               # 모터가 없는 바퀴(캐스터 등)는 있는 바퀴 전류를 넣어 차이를 0으로
-        data.warn(f"{fname}: 전류 열이 {', '.join(have_cur)}뿐이라 나머지 바퀴에는 {have_cur[0]} 값을 넣었습니다.")
-        for k in cur_keys:
-            if opt[k] is None:
-                opt[k] = opt[have_cur[0]]
-    ac = False
-    if have_cur:                                       # 부호가 자주 바뀌면 교류 전류 원신호로 보고 창마다 RMS를 씀
-        v = opt[have_cur[0]][~np.isnan(opt[have_cur[0]])]
-        ac = len(v) > 100 and 0.2 < np.mean(v < 0) < 0.8
-        if ac:
-            data.warn(f"{fname}: 전류가 교류 원신호로 보여 1초 창마다 RMS로 바꿨습니다.")
-    speed = opt["speed"]
-    if speed is None:
-        data.warn(f"{fname}: speed 열이 없어 {C.DEFAULT_SPEED:g} m/s로 가정했습니다. 회전 주파수(1X) 특징과 전류 잔차의 의미가 약해집니다.")
-    seg =df["segment"].fillna(C.DEFAULT_SEGMENT).astype(str).str.strip().to_numpy() if "segment" in df.columns else None
+    # ③ 선택 열: 구간이 없으면 전체를 한 구간으로 본다 (값을 만들어 넣는 게 아니라 구간 구분을 하지 않는 것)
+    seg = df["segment"].fillna(C.DEFAULT_SEGMENT).astype(str).str.strip().to_numpy() if "segment" in df.columns else None
     if seg is None:
-        data.warn(f"{fname}: segment 열이 없어 전체를 한 구간으로 보고 기준을 만듭니다. 노면 차이는 걸러지지 않습니다.")
+        data.warn(f"{fname}: segment 열이 없어 전체를 한 구간으로 보고 기준을 만듭니다. 장소별 노면 차이는 걸러지지 않습니다.")
     bump = df["bump"].astype(str).str.strip().str.lower().isin(["1", "1.0", "true", "t", "y", "yes"]).to_numpy() if "bump" in df.columns else None
     kinds = _labels(df["fault_kind"], KIND_NAMES) if "fault_kind" in df.columns else None
     wheels = _labels(df["fault_wheel"], WHEEL_NAMES) if "fault_wheel" in df.columns else None
-    sevs = opt["fault_severity"]
+    sevs = _numeric(df, "fault_severity", data, fname)
     has_label = kinds is not None or sevs is not None
 
     # ④ 창 나누기: 시작 시각 기준 몇 번째 1초인지(idx)가 바뀌는 지점이 창의 경계
     idx = np.floor((t - t[0]) / C.WINDOW_S + 1e-9).astype(int)
     bounds = np.flatnonzero(np.diff(idx)) + 1
-    need, prev_speed, dropped, recs = C.MIN_WINDOW_FILL * fs * C.WINDOW_S, None, 0, []
-    first = lambda a: float(a[~np.isnan(a)][0])
-    last = {k: (0.0 if opt[k] is None else first(opt[k])) for k in cur_keys + ["battery"]}
-    last_speed = C.DEFAULT_SPEED if speed is None else first(speed)
+    need, dropped, recs = C.MIN_WINDOW_FILL * fs * C.WINDOW_S, 0, []
     for a, b in zip(np.r_[0, bounds], np.r_[bounds, n]):          # a:b = 이번 1초 창에 속한 줄 범위
         waves = {w: vib[w][a:b][~np.isnan(vib[w][a:b])] for w in C.WHEELS}
         if min(len(x) for x in waves.values()) < need:               # ⑤ 기록이 끊겨 샘플이 80% 미만이면 버림
             dropped += 1
             continue
-        for k in last:                                               # 전류·배터리: 창 평균 (값이 없는 창은 직전 값 유지)
-            if opt[k] is not None:
-                last[k] = _mean(opt[k][a:b], last[k], ac=ac and "cur" in k)
-        last_speed = _mean(speed[a:b], last_speed) if speed is not None else last_speed
-        accel = 0.0 if prev_speed is None else (last_speed - prev_speed) / C.WINDOW_S
-        prev_speed = last_speed
-        rec = dict(period=int((t[a] - t[0]) // C.PERIOD_S),                # 판정 주기: 기록 시작부터 몇 번째 PERIOD_S초인가
+        rec = dict(period=int((t[a] - t[0]) // C.PERIOD_S),          # 판정 주기: 기록 시작부터 몇 번째 PERIOD_S초인가
                    segment=seg[a] if seg is not None else C.DEFAULT_SEGMENT,
-                   speed=last_speed, accel=accel, bump=bool(bump[a:b].any()) if bump is not None else False, vib_fs=fs,
-                   battery=last["battery"] if opt["battery"] is not None else None, t=float(t[a]),
+                   bump=bool(bump[a:b].any()) if bump is not None else False, vib_fs=fs, t=float(t[a]),
                    labeled=False, true_kind="normal", true_side="", true_sev=0.0)
-        for w in C.WHEELS:                                           # 바퀴마다 진동 파형과 전류 대표값
+        for w in C.WHEELS:                                           # 바퀴마다 진동 파형
             rec[f"{w}_vib"] = waves[w].astype(np.float32)
-            rec[f"{w}_cur"] = last[f"{w}_cur"]
         if has_label:                                                # 라벨: 창 안의 마지막 고장 종류와 최대 고장 정도
             kind = next((k for k in (kinds[a:b][::-1] if kinds is not None else ()) if k), "")
             sv = sevs[a:b][~np.isnan(sevs[a:b])] if sevs is not None else ()
@@ -254,55 +208,12 @@ def _windows(df, fname, data, fs_arg):
                 kind = "fault"                             # 고장 정도만 있고 종류가 없는 경우
             if kind or sev is not None:
                 sev = 0.0 if kind in ("", "normal") else (1.0 if sev is None else sev)
-                # 고장 바퀴: 센서가 있는 바퀴일 때만 위치를 라벨로 씀 (값을 빌려 넣은 바퀴는 위치를 구분할 수 없음)
-                side = "" if wheels is None else next((w for w in wheels[a:b][::-1] if w in measured), "")
+                side = "" if wheels is None else next((w for w in wheels[a:b][::-1] if w in C.WHEELS), "")
                 rec.update(labeled=True, true_kind=kind if sev > 0 else "normal", true_side=side if sev > 0 else "", true_sev=sev)
         recs.append(rec)
     if dropped:
         data.warn(f"{fname}: 샘플이 부족한 1초 창 {dropped}개를 버렸습니다.")
-    _battery_drain(recs, opt["battery"] is not None, data, fname)
     return recs, fs
-
-
-def _battery_drain(recs, has_battery, data, fname):
-    """창마다 배터리 소모 속도 [%/분] (클수록 빨리 닳음). 모델 특징과 '정상 소모' 학습 목표로 쓴다.
-
-    잔량이 한 칸(BATTERY_STEP) 떨어진 시각들을 모아, 최근 BATTERY_DROPS칸이 떨어지는 데 걸린 시간으로 속도를 잰다.
-        예) 3%가 떨어지는 데 9분 → 0.33 %/분
-    칸이 바뀌는 시각은 정확하므로 1% 계단 때문에 흔들리지 않는다. 처음 몇 칸이 쌓이기 전은 처음 잰 값으로 채운다.
-    잔량이 오르면 충전으로 보고 기록을 다시 시작하며, 그 뒤 다음 칸이 떨어질 때까지의 창은 bump처럼 판정에서 뺀다."""
-    if not recs:
-        return
-    if not has_battery:
-        for r in recs:
-            r["bat_drain"] = 0.0
-        data.warn(f"{fname}: battery 열이 없어 배터리 소모 이상은 판단하지 않습니다.")
-        return
-    drops, level, charging, n_charge = [], None, False, 0
-    drain = np.full(len(recs), np.nan)
-    for i, r in enumerate(recs):
-        lev = int(np.floor(r["battery"] / C.BATTERY_STEP + 1e-9))
-        if level is not None and lev > level:              # 충전: 지난 소모 기록은 버리고 새로 시작
-            drops, charging = [], True
-            n_charge += 1
-        elif level is not None and lev < level:            # 한 칸(이상) 떨어짐: 떨어진 칸 수만큼 시각을 기록
-            drops += [r["t"]] * (level - lev)
-            charging = False
-        level = lev
-        if charging:
-            r["bump"] = True
-        if len(drops) > C.BATTERY_DROPS:
-            span = drops[-1] - drops[-1 - C.BATTERY_DROPS]
-            if span > 0:
-                drain[i] = C.BATTERY_DROPS * C.BATTERY_STEP / span * 60
-    if np.isnan(drain).all():
-        data.warn(f"{fname}: 잔량이 {C.BATTERY_DROPS + 1}칸 이상 떨어지지 않아 배터리 소모 속도를 잴 수 없습니다. 더 긴 기록이 필요합니다.")
-        drain[:] = 0.0
-    drain = pd.Series(drain).bfill().ffill().to_numpy()
-    for r, d in zip(recs, drain):
-        r["bat_drain"] = float(d)
-    if n_charge:
-        data.warn(f"{fname}: 충전(잔량 상승) {n_charge}번을 찾아 충전 직후 구간을 판정에서 뺐습니다.")
 
 
 def load(path=C.DATA_DIR, fs=None):
@@ -323,7 +234,7 @@ def load(path=C.DATA_DIR, fs=None):
             shift = (have[-1]["t"] + C.WINDOW_S - recs[0]["t"]) if (have and recs and recs[0]["t"] <= have[-1]["t"]) else 0.0
             for r in recs:
                 r["period"] = offset + order[r["period"]]
-                r["t"] += shift                            # 시각이 앞 파일보다 뒤로 가지 않게 (배터리 소모 계산이 시각 순서를 씀)
+                r["t"] += shift                            # 시각이 앞 파일보다 뒤로 가지 않게
             have += recs
             data.fs[str(robot)] = rate
     return data

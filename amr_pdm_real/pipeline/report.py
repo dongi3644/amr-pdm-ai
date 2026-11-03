@@ -144,9 +144,6 @@ def summary_md(m, notes, path):
               f"| 칼만 필터 | {f['kalman']['mae_min']} | {f['kalman']['n']} |", f"| 추세선 | {f['trend']['mae_min']} | {f['trend']['n']} |", "",
               f"칼만 필터 90% 범위 적중: {f['kalman']['coverage']}", "",
               f"## 건강 지표 품질 (진행형 고장 로봇): {m['health_indicator']}", "",
-              "## 배터리 소모 이상", "",
-              f"- 정상 로봇 오경보: {m['battery']['normal_alarm']} · 배터리 라벨 로봇 감지: {m['battery']['battery_fault_detected']}"
-              f" · 다른 고장 로봇에서 함께 경고: {m['battery']['other_fault_alarm']}", "",
               "## 최종 모델 학습 메모", ""] + [f"- {n}" for n in notes]
     if m["skipped"]:
         lines += ["", "## 평가에서 빠진 항목", ""] + [f"- {s}" for s in m["skipped"]]

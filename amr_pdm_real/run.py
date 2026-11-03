@@ -1,4 +1,4 @@
-"""[역할] 명령줄 입구. 사용자가 고른 명령(check / train / diagnose / paderborn)을 pipeline의 함수로 연결한다.
+"""[역할] 명령줄 입구. 사용자가 고른 명령(check / train / diagnose)을 pipeline의 함수로 연결한다.
        계산은 하지 않고 '무엇을 어떤 순서로 부를지'와 '결과를 어디에 저장할지'만 정한다.
 
 CSV를 data 폴더에 넣고 아래 순서로 실행한다. 형식은 README.md
@@ -9,7 +9,7 @@ CSV를 data 폴더에 넣고 아래 순서로 실행한다. 형식은 README.md
 
 공통 옵션
     --path 경로          파일 또는 폴더 (기본: data)
-    --fs 1000            time 열이 없을 때 진동 샘플링 [Hz]
+    --fs 1000            time 열이 없을 때 센서의 실제 진동 샘플링 [Hz] (time 열도 --fs도 없으면 오류)
     --period-s 60        판정 주기 [s] (기본: config.PERIOD_S). 학습 때 정한 값은 모델에 저장되어 diagnose가 그대로 씀
     --baseline auto|per_unit|reference    정상 기준 방식 (README.md 참고)
     train --no-eval      교차검증 없이 최종 모델만 학습
@@ -72,7 +72,7 @@ def cmd_train(a):
         if pipe.bundle["cause"] is not None:
             report.fig_importance(pipe.bundle["cause"].importance(), C.REPORT_DIR / "fig_importance.png")
         report.summary_md(metrics, notes, C.REPORT_DIR / "summary.md")
-        brief = {k: metrics[k] for k in ("protocol", "detectors", "units", "forecast", "health_indicator", "battery")}
+        brief = {k: metrics[k] for k in ("protocol", "detectors", "units", "forecast", "health_indicator")}
         brief["cause"] = {k: metrics["cause"][k] for k in ("window_accuracy", "unit_accuracy")}
         print("\n평가 요약:", json.dumps(brief, ensure_ascii=False, indent=1))
         print("보고서:", C.REPORT_DIR)
@@ -99,10 +99,8 @@ def cmd_diagnose(a):
         report.fig_robot(table, name, "학습에 쓰인 로봇" if name in trained else "처음 보는 로봇", out / f"{safe(name)}.png", mon.calibrated)
         events = [f"{at_min(p)} {C.STATUS_KO[s]}" for p, s in mon.events] or ["없음"]
         causes = table.loc[table["추정 원인"] != "", "추정 원인"]
-        bat = [f"{at_min(p)} {'이상' if on else '해제'}" for p, on in mon.battery_events]
         print(f"{name}: 최고 점수 {table['건강 점수'].max():.1f}, 최종 상태 {C.STATUS_KO[mon.status]}, 상태 변경 {', '.join(events)}"
-              + (f", 추정 원인 {causes.iloc[-1]}" if len(causes) else "")
-              + (f", 배터리 소모 {', '.join(bat)}" if bat else "") + (" (학습에 쓰인 로봇)" if name in trained else ""))
+              + (f", 추정 원인 {causes.iloc[-1]}" if len(causes) else "") + (" (학습에 쓰인 로봇)" if name in trained else ""))
     print("저장 위치:", out)
 
 
