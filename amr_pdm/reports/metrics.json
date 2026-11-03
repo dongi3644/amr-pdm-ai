@@ -1,0 +1,295 @@
+{
+  "current_model_r2": {
+    "left": 0.8200569402094036,
+    "right": 0.8201580615575403
+  },
+  "detector_comparison": {
+    "zscore": {
+      "name": "기준선 (z-score)",
+      "auc": 1.0,
+      "auc_early": 0.925,
+      "detected_before_fail": "6/6",
+      "mean_lead_laps": 11.7,
+      "mean_sev_at_caution": 0.19,
+      "caution_equals_warning": "1/6",
+      "false_alarm_robots": "0/6"
+    },
+    "iforest": {
+      "name": "Isolation Forest",
+      "auc": 0.999,
+      "auc_early": 0.938,
+      "detected_before_fail": "5/6",
+      "mean_lead_laps": 8.8,
+      "mean_sev_at_caution": 0.33,
+      "caution_equals_warning": "2/6",
+      "false_alarm_robots": "0/6"
+    },
+    "pca": {
+      "name": "PCA",
+      "auc": 1.0,
+      "auc_early": 0.93,
+      "detected_before_fail": "6/6",
+      "mean_lead_laps": 12.5,
+      "mean_sev_at_caution": 0.16,
+      "caution_equals_warning": "0/6",
+      "false_alarm_robots": "0/6"
+    },
+    "ae": {
+      "name": "오토인코더 (AI)",
+      "auc": 1.0,
+      "auc_early": 0.946,
+      "detected_before_fail": "6/6",
+      "mean_lead_laps": 13.2,
+      "mean_sev_at_caution": 0.14,
+      "caution_equals_warning": "0/6",
+      "false_alarm_robots": "0/6"
+    }
+  },
+  "cause_window_accuracy": 1.0,
+  "cause_kind_accuracy": 1.0,
+  "cause_robot_accuracy": "6/6",
+  "forecast_compare": {
+    "kalman": {
+      "mae": 4.62,
+      "n": 81,
+      "coverage": 0.89
+    },
+    "trend": {
+      "mae": 5.4,
+      "n": 83,
+      "coverage": null
+    }
+  },
+  "robots": [
+    {
+      "robot": "T0",
+      "scenario": "우측 바퀴 불평형 (8회차 시작 → 34회차 최대)",
+      "onset": 9,
+      "caution": 10,
+      "warning": 12,
+      "fail": 29,
+      "sev_at_caution": 0.08,
+      "lead_laps": 17,
+      "danger_lap": 19,
+      "sev_at_danger": 0.42,
+      "cause_pred": "우측 바퀴 불평형",
+      "cause_ok": true,
+      "cause_reason": [
+        [
+          "좌우 차이: 회전주파수(1X) 진동",
+          0.122
+        ],
+        [
+          "우측 회전주파수(1X) 진동",
+          0.109
+        ],
+        [
+          "좌우 차이: 모터 온도",
+          0.104
+        ]
+      ]
+    },
+    {
+      "robot": "T1",
+      "scenario": "좌측 바퀴 불평형 (10회차 시작 → 30회차 최대)",
+      "onset": 11,
+      "caution": 12,
+      "warning": 14,
+      "fail": 26,
+      "sev_at_caution": 0.1,
+      "lead_laps": 12,
+      "danger_lap": 18,
+      "sev_at_danger": 0.4,
+      "cause_pred": "좌측 바퀴 불평형",
+      "cause_ok": true,
+      "cause_reason": [
+        [
+          "좌우 차이: 회전주파수(1X) 진동",
+          0.14
+        ],
+        [
+          "좌측 회전주파수(1X) 진동",
+          0.118
+        ],
+        [
+          "좌우 차이: 진동 크기(RMS)",
+          0.099
+        ]
+      ]
+    },
+    {
+      "robot": "T2",
+      "scenario": "우측 바퀴 체결부 풀림 (12회차 시작 → 38회차 최대)",
+      "onset": 13,
+      "caution": 16,
+      "warning": 19,
+      "fail": 33,
+      "sev_at_caution": 0.15,
+      "lead_laps": 14,
+      "danger_lap": 33,
+      "sev_at_danger": 0.81,
+      "cause_pred": "우측 바퀴 체결부 풀림",
+      "cause_ok": true,
+      "cause_reason": [
+        [
+          "우측 충격성(첨도)",
+          0.216
+        ],
+        [
+          "좌우 차이: 충격성(첨도)",
+          0.118
+        ],
+        [
+          "우측 크레스트",
+          0.08
+        ]
+      ]
+    },
+    {
+      "robot": "T3",
+      "scenario": "좌측 바퀴 체결부 풀림 (9회차 시작 → 28회차 최대)",
+      "onset": 10,
+      "caution": 13,
+      "warning": 15,
+      "fail": 25,
+      "sev_at_caution": 0.21,
+      "lead_laps": 10,
+      "danger_lap": 25,
+      "sev_at_danger": 0.84,
+      "cause_pred": "좌측 바퀴 체결부 풀림",
+      "cause_ok": true,
+      "cause_reason": [
+        [
+          "좌측 충격성(첨도)",
+          0.24
+        ],
+        [
+          "좌우 차이: 충격성(첨도)",
+          0.143
+        ],
+        [
+          "좌우 차이: 진동 크기(RMS)",
+          0.058
+        ]
+      ]
+    },
+    {
+      "robot": "T4",
+      "scenario": "우측 바퀴 베어링 결함 (11회차 시작 → 36회차 최대)",
+      "onset": 12,
+      "caution": 15,
+      "warning": 18,
+      "fail": 31,
+      "sev_at_caution": 0.16,
+      "lead_laps": 13,
+      "danger_lap": 35,
+      "sev_at_danger": 0.96,
+      "cause_pred": "우측 바퀴 베어링 결함",
+      "cause_ok": true,
+      "cause_reason": [
+        [
+          "좌우 차이: 모터 온도",
+          0.121
+        ],
+        [
+          "좌우 차이: 진동 크기(RMS)",
+          0.108
+        ],
+        [
+          "좌우 차이: 회전주파수(1X) 진동",
+          0.094
+        ]
+      ]
+    },
+    {
+      "robot": "T5",
+      "scenario": "좌측 바퀴 베어링 결함 (8회차 시작 → 32회차 최대)",
+      "onset": 9,
+      "caution": 11,
+      "warning": 15,
+      "fail": 28,
+      "sev_at_caution": 0.12,
+      "lead_laps": 13,
+      "danger_lap": 30,
+      "sev_at_danger": 0.92,
+      "cause_pred": "좌측 바퀴 베어링 결함",
+      "cause_ok": true,
+      "cause_reason": [
+        [
+          "좌우 차이: 모터 온도",
+          0.131
+        ],
+        [
+          "좌우 차이: 진동 크기(RMS)",
+          0.128
+        ],
+        [
+          "좌우 차이: 회전주파수(1X) 진동",
+          0.094
+        ]
+      ]
+    },
+    {
+      "robot": "TN0",
+      "scenario": "정상",
+      "onset": null,
+      "caution": null,
+      "warning": null,
+      "fail": null
+    },
+    {
+      "robot": "TN1",
+      "scenario": "정상",
+      "onset": null,
+      "caution": null,
+      "warning": null,
+      "fail": null
+    },
+    {
+      "robot": "TN2",
+      "scenario": "정상",
+      "onset": null,
+      "caution": null,
+      "warning": null,
+      "fail": null
+    },
+    {
+      "robot": "TN3",
+      "scenario": "정상",
+      "onset": null,
+      "caution": null,
+      "warning": null,
+      "fail": null
+    },
+    {
+      "robot": "TN4",
+      "scenario": "정상",
+      "onset": null,
+      "caution": null,
+      "warning": null,
+      "fail": null
+    },
+    {
+      "robot": "TN5",
+      "scenario": "정상",
+      "onset": null,
+      "caution": null,
+      "warning": null,
+      "fail": null
+    }
+  ],
+  "data": {
+    "train_normal": {
+      "robots": 6,
+      "windows": 5460
+    },
+    "train_fault": {
+      "robots": 12,
+      "windows": 24960
+    },
+    "test": {
+      "robots": 12,
+      "windows": 31200
+    }
+  }
+}

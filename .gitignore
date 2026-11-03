@@ -1,0 +1,17 @@
+# 파이썬 환경·캐시
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# 다시 만들 수 있거나 개인 데이터인 것
+amr_pdm/data/
+amr_pdm/user_data/
+amr_pdm/reports/user/
+amr_pdm/artifacts/user_model.joblib
+*.log
+
+# IDE
+.vs/
+.idea/
+.claude/

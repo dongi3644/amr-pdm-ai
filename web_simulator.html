@@ -1,0 +1,656 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AMR 고장예지 시뮬레이터</title>
+<style>[hidden]{display:none!important} body{margin:0} img{max-width:100%}</style>
+</head>
+<body>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: 정비 관제 콘솔 — 위: 상태 요약 / 왼쪽: 주행 지도 + 고장 주입 / 오른쪽: 센서 그래프 / 아래: 이벤트 기록 */
+:root{
+  --bg:#EEF2F1; --panel:#FFFFFF; --ink:#17201E; --muted:#5B6966; --line:#D6DEDC; --soft:#F5F8F7;
+  --accent:#1E8577; --left:#336CA8; --right:#A8458A;
+  --ok:#2C9A58; --warn:#C8930F; --bad:#CC4236;
+  --ok-bg:#E3F4EA; --warn-bg:#FBF1D6; --bad-bg:#FBE4E1;
+  --font-ui:"IBM Plex Sans KR","Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;
+  --font-data:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0F1514; --panel:#162020; --ink:#E2EBE9; --muted:#8C9D99; --line:#283533; --soft:#1B2726;
+  --accent:#3DBBA9; --left:#6EA2DA; --right:#D77BB7;
+  --ok:#4CC27E; --warn:#E5B63A; --bad:#EE6A5D;
+  --ok-bg:#163326; --warn-bg:#352B12; --bad-bg:#3A1C19; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0F1514; --panel:#162020; --ink:#E2EBE9; --muted:#8C9D99; --line:#283533; --soft:#1B2726;
+  --accent:#3DBBA9; --left:#6EA2DA; --right:#D77BB7;
+  --ok:#4CC27E; --warn:#E5B63A; --bad:#EE6A5D;
+  --ok-bg:#163326; --warn-bg:#352B12; --bad-bg:#3A1C19; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-ui);font-size:14px;line-height:1.5}
+.wrap{max-width:1320px;margin:0 auto;padding-inline:16px;padding-block:18px 32px;display:grid;gap:14px}
+h1{font-size:20px;font-weight:700;margin:0;letter-spacing:-.01em}
+h2{font-size:12px;font-weight:600;margin:0;color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
+.sub{color:var(--muted);font-size:13px;margin:2px 0 0}
+.num{font-family:var(--font-data);font-variant-numeric:tabular-nums}
+
+/* top bar */
+.top{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:end;justify-content:space-between}
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+button,select{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:7px 12px;cursor:pointer}
+button:hover,select:hover{border-color:var(--accent)}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;min-width:92px}
+label.inline{display:flex;gap:6px;align-items:center;color:var(--muted);font-size:13px}
+
+/* summary strip */
+.strip{display:grid;grid-template-columns:auto 1fr 1fr 1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.strip>div{background:var(--panel);padding:12px 14px;min-width:0}
+.k{font-size:12px;color:var(--muted)}
+.v{font-size:22px;font-weight:600}
+.v small{font-size:13px;color:var(--muted);font-weight:400}
+.risk{display:flex;align-items:center;gap:12px;min-width:190px}
+.pill{display:inline-flex;align-items:center;gap:8px;font-weight:700;font-size:20px;padding:6px 14px;border-radius:999px}
+.pill::before{content:"";width:10px;height:10px;border-radius:50%;background:currentColor}
+.pill.ok{color:var(--ok);background:var(--ok-bg)} .pill.warn{color:var(--warn);background:var(--warn-bg)}
+.pill.bad{color:var(--bad);background:var(--bad-bg)} .pill.learn{color:var(--muted);background:var(--soft);font-size:16px}
+.cause{font-size:14px;font-weight:600;margin-top:2px}
+
+/* main grid */
+.main{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:14px;align-items:start}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px;min-width:0;display:grid;gap:10px}
+.card-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+canvas{display:block;width:100%}
+#map{aspect-ratio:16/10;max-width:100%}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+
+/* fault table */
+.faults{width:100%;border-collapse:collapse;font-size:13px}
+.faults th{font-weight:500;color:var(--muted);text-align:left;padding:4px 6px}
+.faults td{padding:4px 6px;border-top:1px solid var(--line)}
+.faults input[type=range]{width:100%;accent-color:var(--accent)}
+.fval{width:3.2em;text-align:right;display:inline-block}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.hint{font-size:12px;color:var(--muted);margin:0}
+
+.charts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.charts .wide{grid-column:1/-1}
+.chart canvas{height:150px}
+.chart.tall canvas{height:190px}
+
+.errbar{margin:0;padding:10px 14px;border-radius:8px;background:var(--bad-bg);color:var(--bad);font-weight:600}
+.log{max-height:220px;overflow:auto;font-size:13px;display:grid;gap:4px;margin:0;padding:0;list-style:none}
+.log li{display:grid;grid-template-columns:5.5em 4.5em 1fr;gap:8px;padding:5px 8px;border-radius:6px;background:var(--soft)}
+.log .t{color:var(--muted)}
+.tag{font-weight:600}.tag.ok{color:var(--ok)}.tag.warn{color:var(--warn)}.tag.bad{color:var(--bad)}.tag.info{color:var(--accent)}
+
+@media (max-width:980px){
+  .main{grid-template-columns:1fr}
+  .strip{grid-template-columns:1fr 1fr}
+  .strip .risk{grid-column:1/-1}
+}
+@media (max-width:560px){
+  #map{aspect-ratio:4/3}
+  .charts{grid-template-columns:1fr}
+  .v{font-size:18px}
+  .log li{grid-template-columns:4.5em 1fr}.log li .tag{grid-column:2}.log li span:last-child{grid-column:1/-1}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>AMR 고장예지 시뮬레이터</h1>
+      <p class="sub">배송로봇이 경로를 반복 주행하며 좌·우 바퀴의 진동·전류·온도를 측정합니다. 고장을 주입하면 AI가 정상 기준과 비교해 이상을 감지합니다.</p>
+    </div>
+    <div class="controls">
+      <button id="play" class="primary" type="button">❚❚ 일시정지</button>
+      <label class="inline" for="speed">배속
+        <select id="speed">
+          <option value="1">1×</option><option value="5">5×</option>
+          <option value="20" selected>20×</option><option value="60">60×</option>
+        </select>
+      </label>
+      <label class="inline" for="sensor">진동 센서
+        <select id="sensor">
+          <option value="1000">MPU6050급 (1 kHz)</option>
+          <option value="4000">고속 MEMS (4 kHz)</option>
+        </select>
+      </label>
+      <button id="reset" type="button">처음부터</button>
+    </div>
+  </header>
+
+  <p id="err" class="errbar" hidden></p>
+  <section class="strip" aria-label="현재 상태">
+    <div class="risk">
+      <span id="riskPill" class="pill learn">기준 학습 중</span>
+    </div>
+    <div><div class="k">이상 점수</div><div class="v num" id="score">–</div></div>
+    <div><div class="k">추정 원인</div><div class="cause" id="cause">–</div></div>
+    <div><div class="k">주행</div><div class="v num" id="lap">0<small> 바퀴</small></div></div>
+    <div><div class="k">현재 구간</div><div class="v" id="seg" style="font-size:18px">–</div></div>
+  </section>
+
+  <div class="main">
+    <div style="display:grid;gap:14px;min-width:0">
+      <section class="card">
+        <div class="card-head"><h2>주행 경로</h2><span class="hint" id="baseInfo">처음 2바퀴로 정상 기준 학습</span></div>
+        <canvas id="map" aria-label="로봇이 경로를 도는 지도"></canvas>
+        <div class="legend">
+          <span><i class="sw" style="background:var(--line)"></i>노면 매끈</span>
+          <span><i class="sw" style="background:var(--muted)"></i>노면 거침</span>
+          <span><i class="sw" style="background:var(--warn)"></i>문턱</span>
+          <span><i class="sw" style="background:var(--left)"></i>좌측 바퀴</span>
+          <span><i class="sw" style="background:var(--right)"></i>우측 바퀴</span>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><h2>고장 주입</h2><button id="clearFaults" type="button">모두 정상으로</button></div>
+        <table class="faults">
+          <thead><tr><th>고장</th><th>좌측 바퀴</th><th>우측 바퀴</th></tr></thead>
+          <tbody id="faultRows"></tbody>
+        </table>
+        <div class="row">
+          <select id="rampKind" aria-label="점진 열화 고장 종류">
+            <option value="unbalance">불평형</option><option value="looseness">헐거움</option><option value="bearing">베어링</option>
+          </select>
+          <select id="rampWheel" aria-label="점진 열화 바퀴">
+            <option value="right">우측</option><option value="left">좌측</option>
+          </select>
+          <button id="ramp" type="button">점진 열화 시작</button>
+        </div>
+        <p class="hint">슬라이더로 고장 정도를 바로 바꾸거나, 점진 열화로 8바퀴에 걸쳐 0%에서 100%까지 서서히 키울 수 있습니다.</p>
+      </section>
+    </div>
+
+    <div class="charts">
+      <section class="card chart tall wide">
+        <div class="card-head"><h2>이상 점수</h2><span class="legend"><span><i class="sw" style="background:var(--warn)"></i>주의 3</span><span><i class="sw" style="background:var(--bad)"></i>경고 6</span></span></div>
+        <canvas id="cScore"></canvas>
+      </section>
+      <section class="card chart">
+        <div class="card-head"><h2>진동 파형 (최근 0.25초)</h2></div>
+        <canvas id="cWave"></canvas>
+      </section>
+      <section class="card chart">
+        <div class="card-head"><h2>진동 스펙트럼</h2><span class="hint num" id="nyq"></span></div>
+        <canvas id="cSpec"></canvas>
+      </section>
+      <section class="card chart">
+        <div class="card-head"><h2>진동 저주파 에너지 (1–20 Hz)</h2></div>
+        <canvas id="cLow"></canvas>
+      </section>
+      <section class="card chart">
+        <div class="card-head"><h2>진동 고주파 에너지 (150 Hz 이상)</h2></div>
+        <canvas id="cHigh"></canvas>
+      </section>
+      <section class="card chart">
+        <div class="card-head"><h2>모터 전류 [A]</h2></div>
+        <canvas id="cCur"></canvas>
+      </section>
+      <section class="card chart">
+        <div class="card-head"><h2>모터 온도 [°C]</h2></div>
+        <canvas id="cTemp"></canvas>
+      </section>
+    </div>
+  </div>
+
+  <section class="card">
+    <div class="card-head"><h2>이벤트 기록</h2><span class="hint">위험도가 바뀌거나 고장을 주입하면 기록됩니다</span></div>
+    <ul class="log" id="log"></ul>
+  </section>
+</div>
+
+<script>
+/* ================= 시뮬레이션 핵심 (DOM 없음) ================= */
+const CFG = {
+  mass: 20, wheelR: 0.08, roll: 0.015,
+  kt: 0.35, i0: 0.25, Rw: 2.0, Cth: 60, Rth: 8, amb: 24,
+  PHYS_FS: 8000, PHYS_N: 8192,           // 내부 물리 신호 1.024초
+  vibRange: 4, vibNoise: 0.004, curNoise: 0.03, tempRes: 0.0625,
+  baseLaps: 2,
+};
+const ROUTE = [
+  {name:"로비", len:12, speed:0.8, rough:0.10, bumps:0},
+  {name:"복도 A", len:20, speed:1.0, rough:0.15, bumps:1},
+  {name:"엘리베이터 앞", len:6, speed:0.5, rough:0.30, bumps:2},
+  {name:"복도 B", len:18, speed:1.0, rough:0.20, bumps:0},
+];
+const LAP_LEN = ROUTE.reduce((a,s)=>a+s.len,0);
+const SEG_START = ROUTE.reduce((acc,s,i)=>{acc.push(i?acc[i-1]+ROUTE[i-1].len:0);return acc},[]);
+const BUMPS = ROUTE.flatMap((s,i)=>Array.from({length:s.bumps},(_,k)=>SEG_START[i]+s.len*(k+1)/(s.bumps+1)));
+const WIN = CFG.PHYS_N/CFG.PHYS_FS;      // 창 길이 [s]
+
+let seed = 12345;
+function rand(){ seed = (seed*1664525+1013904223)>>>0; return seed/4294967296; }
+function gauss(){ let u=0,v=0; while(!u)u=rand(); v=rand(); return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v); }
+
+function segmentAt(d){ const x=((d%LAP_LEN)+LAP_LEN)%LAP_LEN; for(let i=ROUTE.length-1;i>=0;i--) if(x>=SEG_START[i]) return i; return 0; }
+
+function friction(f){ return 1 + 0.6*f.bearing + 0.15*f.looseness + 0.1*f.unbalance; }
+
+function roadNoise(n){
+  const w=new Float64Array(n); for(let i=0;i<n;i++) w[i]=gauss();
+  const k=40, out=new Float64Array(n); let s=0;
+  for(let i=0;i<n;i++){ s+=w[i]; if(i>=k) s-=w[i-k]; out[i]=s/k*0.3; }
+  return out;
+}
+
+function vibration(speed, rough, bumpT, f, road){
+  const N=CFG.PHYS_N, fs=CFG.PHYS_FS, x=new Float64Array(N);
+  const w=speed/CFG.wheelR, fr=w/(2*Math.PI), bpfo=3.6*fr;
+  for(let i=0;i<N;i++){
+    const t=i/fs, ph=2*Math.PI*fr*t;
+    let s=0.01*Math.sin(ph)+0.005*Math.sin(2*ph+0.3);
+    s+=rough*(0.6*road[i]+0.015*gauss());
+    for(const tb of bumpT){ const dt=t-tb; if(dt>=0&&dt<0.2) s+=0.8*Math.exp(-dt*40)*Math.sin(2*Math.PI*35*dt); }
+    if(f.unbalance>0) s+=f.unbalance*0.05*(w/10)**2*Math.sin(ph+0.7);
+    if(f.looseness>0){
+      for(let k=1;k<=5;k++) s+=f.looseness*0.02/k*Math.sin(k*ph+k);
+      if(((ph%(2*Math.PI))+2*Math.PI)%(2*Math.PI)<0.15) s+=f.looseness*0.15;
+    }
+    if(f.bearing>0){
+      if((t*bpfo)%1<0.02) s+=f.bearing*0.3*Math.sin(2*Math.PI*1200*t);
+      s+=f.bearing*0.03*Math.sin(2*Math.PI*bpfo*t);
+    }
+    x[i]=s;
+  }
+  return x;
+}
+
+function accelerometer(phys, fs){
+  const step=CFG.PHYS_FS/fs, n=CFG.PHYS_N/step, out=new Float64Array(n);
+  for(let j=0;j<n;j++){
+    let s=0; for(let k=0;k<step;k++) s+=phys[j*step+k];
+    let v=s/step+gauss()*CFG.vibNoise;
+    out[j]=Math.max(-CFG.vibRange,Math.min(CFG.vibRange,v));
+  }
+  return out;
+}
+
+function fftMag(x){
+  const n=x.length, re=Float64Array.from(x), im=new Float64Array(n);
+  for(let i=1,j=0;i<n;i++){ let b=n>>1; for(;j&b;b>>=1) j^=b; j^=b; if(i<j){ [re[i],re[j]]=[re[j],re[i]]; } }
+  for(let len=2;len<=n;len<<=1){
+    const a=-2*Math.PI/len, wr=Math.cos(a), wi=Math.sin(a);
+    for(let i=0;i<n;i+=len){ let cr=1,ci=0;
+      for(let k=0;k<len/2;k++){
+        const ur=re[i+k],ui=im[i+k], vr=re[i+k+len/2]*cr-im[i+k+len/2]*ci, vi=re[i+k+len/2]*ci+im[i+k+len/2]*cr;
+        re[i+k]=ur+vr; im[i+k]=ui+vi; re[i+k+len/2]=ur-vr; im[i+k+len/2]=ui-vi;
+        const nr=cr*wr-ci*wi; ci=cr*wi+ci*wr; cr=nr;
+      }}
+  }
+  const m=new Float64Array(n/2+1); for(let i=0;i<=n/2;i++) m[i]=Math.hypot(re[i],im[i])/n; return m;
+}
+
+function vibFeatures(x, fs){
+  const n=x.length; let mean=0; for(const v of x) mean+=v; mean/=n;
+  const y=new Float64Array(n); let s2=0,s4=0,mx=0;
+  for(let i=0;i<n;i++){ const v=x[i]-mean; y[i]=v; s2+=v*v; s4+=v**4; mx=Math.max(mx,Math.abs(v)); }
+  const rms=Math.sqrt(s2/n), kurt=(s4/n)/((s2/n)**2+1e-12);
+  const spec=fftMag(y), df=fs/n; let low=0,mid=0,high=0;
+  for(let i=0;i<spec.length;i++){ const f=i*df; if(f>=1&&f<20) low+=spec[i]; else if(f>=20&&f<150) mid+=spec[i]; else if(f>=150) high+=spec[i]; }
+  return {rms,kurt,low,mid,high,spec,df};
+}
+
+const FEATS=["left_rms","right_rms","left_low","right_low","left_mid","right_mid","left_high","right_high",
+  "left_kurt","right_kurt","left_cur","right_cur","diff_low","diff_rms","diff_cur","diff_temp"];
+
+function makeSim(){
+  return {
+    t:0, dist:0, prevSpeed:0, vibFs:1000,
+    temp:{left:CFG.amb,right:CFG.amb},
+    fault:{left:{unbalance:0,looseness:0,bearing:0}, right:{unbalance:0,looseness:0,bearing:0}},
+    ramp:null, base:{}, baseStartLap:0, baseReady:false, ema:null,
+    hist:[], last:null,
+  };
+}
+
+function lapOf(sim){ return Math.floor(sim.dist/LAP_LEN); }
+
+/* 창 하나(약 1초) 진행 */
+function step(sim){
+  const i=segmentAt(sim.dist), seg=ROUTE[i], speed=seg.speed;
+  const accel=(speed-sim.prevSpeed)/WIN; sim.prevSpeed=speed;
+  const d0=sim.dist, d1=d0+speed*WIN;
+  // 문턱 통과 여부
+  const bumpT=[];
+  for(let L=Math.floor(d0/LAP_LEN); L<=Math.floor(d1/LAP_LEN); L++)
+    for(const b of BUMPS){ const p=L*LAP_LEN+b; if(p>=d0&&p<d1) bumpT.push((p-d0)/speed); }
+  // 점진 열화
+  if(sim.ramp){ const r=sim.ramp, prog=Math.min(1,(d0-r.startDist)/(8*LAP_LEN)); sim.fault[r.wheel][r.kind]=prog; if(prog>=1) sim.ramp=null; }
+  const road=roadNoise(CFG.PHYS_N);
+  const row={t:sim.t, lap:lapOf(sim), seg:i, segName:seg.name, speed, bump:bumpT.length>0, wave:{}, spec:{}};
+  const w=speed/CFG.wheelR;
+  for(const side of ["left","right"]){
+    const f=sim.fault[side];
+    const vib=accelerometer(vibration(speed,seg.rough,bumpT,f,road), sim.vibFs);
+    const ft=vibFeatures(vib, sim.vibFs);
+    const mpw=CFG.mass/2, fr=CFG.roll*mpw*9.81*friction(f), fa=mpw*accel;
+    const iTrue=CFG.i0*friction(f)+Math.abs((fr+fa)*CFG.wheelR)/CFG.kt;
+    const pJ=iTrue*iTrue*CFG.Rw, pF=0.08*w*(friction(f)-1), pOut=(sim.temp[side]-CFG.amb)/CFG.Rth;
+    sim.temp[side]+=(pJ+pF-pOut)/CFG.Cth*WIN;
+    row[side+"_rms"]=ft.rms; row[side+"_kurt"]=ft.kurt; row[side+"_low"]=ft.low; row[side+"_mid"]=ft.mid; row[side+"_high"]=ft.high;
+    row[side+"_cur"]=iTrue+gauss()*CFG.curNoise/10;
+    row[side+"_temp"]=Math.round(sim.temp[side]/CFG.tempRes)*CFG.tempRes;
+    row.wave[side]=vib.slice(0, Math.round(0.25*sim.vibFs));
+    row.spec[side]=ft.spec; row.df=ft.df;
+    row[side+"_true"]=Math.max(f.unbalance,f.looseness,f.bearing);
+  }
+  row.diff_low=row.right_low-row.left_low; row.diff_rms=row.right_rms-row.left_rms;
+  row.diff_cur=row.right_cur-row.left_cur; row.diff_temp=row.right_temp-row.left_temp;
+  score(sim,row);
+  sim.dist=d1; sim.t+=WIN; sim.last=row; sim.hist.push(row); if(sim.hist.length>2000) sim.hist.shift();
+  return row;
+}
+
+/* 구간별 정상 기준 + z-score 이상 점수 */
+function fitBase(sim){
+  const rows=sim.hist.filter(r=>r.lap>=sim.baseStartLap&&!r.bump);
+  sim.base={};
+  for(let i=0;i<ROUTE.length;i++){
+    const sub=rows.filter(r=>r.seg===i); if(!sub.length) continue;
+    sim.base[i]=FEATS.map(k=>{
+      const v=sub.map(r=>r[k]); const mu=v.reduce((a,b)=>a+b,0)/v.length;
+      const sd=Math.sqrt(v.reduce((a,b)=>a+(b-mu)**2,0)/v.length);
+      const floor=(k.includes("temp")?CFG.tempRes:k.includes("cur")?0.02:1e-3)+0.05*Math.abs(mu);
+      return {mu, sd:Math.max(sd,floor)};
+    });
+  }
+  sim.baseReady=true; sim.ema=null;
+}
+
+function score(sim,row){
+  if(!sim.baseReady){
+    row.score=null; row.risk="learn";
+    if(row.lap>=sim.baseStartLap+CFG.baseLaps) { fitBase(sim); row.justFitted=true; }
+    else return;
+  }
+  const b=sim.base[row.seg];
+  const z={}; FEATS.forEach((k,j)=>{ z[k]=Math.min(20,Math.abs((row[k]-b[j].mu)/b[j].sd)); });
+  row.z=z;
+  if(row.bump){ row.score=null; row.risk=sim.lastRisk||"ok"; return; }
+  const raw=FEATS.reduce((a,k)=>a+z[k],0)/FEATS.length;
+  sim.ema = sim.ema==null ? raw : 0.35*raw+0.65*sim.ema;
+  row.rawScore=raw; row.score=sim.ema;
+  // 위험도: 올라갈 때는 바로, 내려갈 때는 20초 연속 낮아야 내림 (경보 깜빡임 방지)
+  const lvl={ok:0,warn:1,bad:2}, inst=sim.ema<3?"ok":sim.ema<6?"warn":"bad", prev=sim.lastRisk||"ok";
+  if(lvl[inst]>=lvl[prev]){ sim.calm=0; row.risk=inst; }
+  else { sim.calm=(sim.calm||0)+1; row.risk = sim.calm>=20 ? inst : prev; if(sim.calm>=20) sim.calm=0; }
+  sim.lastRisk=row.risk;
+  // 바퀴별 점수와 원인 추정
+  const sideScore=s=>["rms","low","mid","high","kurt","cur"].reduce((a,k)=>a+z[s+"_"+k],0)/6;
+  row.wheelScore={left:sideScore("left"), right:sideScore("right")};
+  const side=row.wheelScore.right>=row.wheelScore.left?"right":"left";
+  // 원인 추정: 부호가 있는 z로 고장별 특징 패턴을 비교 (규칙 기반)
+  const rz={}; FEATS.forEach((k,j)=>{ rz[k]=(row[k]-b[j].mu)/b[j].sd; });
+  const sg=side==="right"?1:-1, fric=(sg*rz.diff_cur+sg*rz.diff_temp)/2;
+  const lowZ=rz[side+"_low"], midZ=rz[side+"_mid"], highZ=rz[side+"_high"], kurtZ=rz[side+"_kurt"];
+  let kind="unbalance";
+  if(highZ>5&&kurtZ>20&&midZ<3) kind="bearing";          // 고주파 충격: 고속 센서에서 보임
+  else if(kurtZ>8&&midZ>3) kind="looseness";              // 충격성 + 고조파
+  else if(fric>3&&fric>0.4*lowZ) kind="bearing";          // 진동보다 전류·온도가 먼저 오름
+  sim.causeHist=(sim.causeHist||[]).concat(side+"|"+kind).slice(-20);
+  const cnt={}; sim.causeHist.forEach(c=>cnt[c]=(cnt[c]||0)+1);
+  const top=Object.keys(cnt).reduce((a,c)=>cnt[c]>cnt[a]?c:a);
+  row.cause={side:top.split("|")[0], kind:top.split("|")[1]};
+}
+
+/* ================= 화면 ================= */
+const $=id=>document.getElementById(id);
+const KIND_KO={unbalance:"불평형",looseness:"헐거움",bearing:"베어링·마찰"};
+const SIDE_KO={left:"좌측",right:"우측"};
+const RISK_KO={ok:"정상",warn:"주의",bad:"경고",learn:"기준 학습 중"};
+let sim=makeSim(), running=true, acc=0, lastTs=0, prevRisk="learn";
+
+/* 고장 슬라이더 표 */
+function buildFaultRows(){
+  const tb=$("faultRows"); tb.innerHTML="";
+  for(const kind of ["unbalance","looseness","bearing"]){
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td>${KIND_KO[kind]}</td>`+["left","right"].map(side=>
+      `<td><div class="row" style="flex-wrap:nowrap"><input type="range" min="0" max="100" value="0" id="f_${side}_${kind}" aria-label="${SIDE_KO[side]} ${KIND_KO[kind]}">
+       <span class="fval num" id="v_${side}_${kind}">0%</span></div></td>`).join("");
+    tb.appendChild(tr);
+  }
+  for(const side of ["left","right"]) for(const kind of ["unbalance","looseness","bearing"]){
+    const el=$(`f_${side}_${kind}`);
+    el.addEventListener("input",()=>{ sim.ramp=null; sim.fault[side][kind]=el.value/100; syncFaultUI(); });
+    el.addEventListener("change",()=>log("info",`${SIDE_KO[side]} 바퀴 ${KIND_KO[kind]} ${el.value}% 설정`));
+  }
+}
+function syncFaultUI(){
+  for(const side of ["left","right"]) for(const kind of ["unbalance","looseness","bearing"]){
+    const v=Math.round(sim.fault[side][kind]*100);
+    const el=$(`f_${side}_${kind}`); if(document.activeElement!==el) el.value=v;
+    $(`v_${side}_${kind}`).textContent=v+"%";
+  }
+}
+
+function log(type,msg){
+  const li=document.createElement("li"); const t=sim.t;
+  const mm=String(Math.floor(t/60)).padStart(2,"0"), ss=String(Math.floor(t%60)).padStart(2,"0");
+  const tag={ok:"정상",warn:"주의",bad:"경고",info:"설정"}[type];
+  li.innerHTML=`<span class="t num">${mm}:${ss}</span><span class="tag ${type}">${tag}</span><span></span>`;
+  li.lastChild.textContent=msg;
+  const ul=$("log"); ul.prepend(li); while(ul.children.length>80) ul.lastChild.remove();
+}
+
+/* ---------- 캔버스 공통 ---------- */
+function tok(){ const cs=getComputedStyle(document.documentElement); const g=k=>cs.getPropertyValue(k).trim();
+  return {ink:g("--ink"),muted:g("--muted"),line:g("--line"),soft:g("--soft"),panel:g("--panel"),accent:g("--accent"),
+    left:g("--left"),right:g("--right"),ok:g("--ok"),warn:g("--warn"),bad:g("--bad"),data:g("--font-data"),ui:g("--font-ui")}; }
+function prep(cv){
+  const r=cv.getBoundingClientRect(), dpr=window.devicePixelRatio||1;
+  const W=Math.max(10,Math.round(r.width)), H=Math.max(10,Math.round(r.height));
+  if(cv.width!==W*dpr||cv.height!==H*dpr){ cv.width=W*dpr; cv.height=H*dpr; }
+  const c=cv.getContext("2d"); c.setTransform(dpr,0,0,dpr,0,0); c.clearRect(0,0,W,H); return {c,W,H};
+}
+
+/* 시계열 그래프 */
+function lineChart(cv, series, opt={}){
+  const T=tok(), {c,W,H}=prep(cv), pl=44, pr=8, pt=8, pb=20, w=W-pl-pr, h=H-pt-pb;
+  const all=series.flatMap(s=>s.data.filter(v=>v!=null&&isFinite(v)));
+  let lo=opt.min??Math.min(...all), hi=opt.max??Math.max(...all);
+  if(!all.length){ lo=0; hi=1; }
+  if(opt.minSpan&&hi-lo<opt.minSpan){ const m=(hi+lo)/2; lo=m-opt.minSpan/2; hi=m+opt.minSpan/2; }
+  if(hi===lo){ hi+=1; lo-=1; } const pad=(hi-lo)*0.08; if(opt.min==null) lo-=pad; if(opt.max==null) hi+=pad;
+  const n=opt.n||240, X=i=>pl+i/(n-1)*w, Y=v=>pt+(1-(v-lo)/(hi-lo))*h;
+  // 배경 구간
+  if(opt.zones) for(const z of opt.zones){ c.fillStyle=z.color; c.globalAlpha=.10; const y1=Y(Math.min(z.to,hi)), y0=Y(Math.max(z.from,lo)); c.fillRect(pl,y1,w,y0-y1); c.globalAlpha=1; }
+  // 격자 + 눈금
+  c.font=`11px ${T.data}`; c.fillStyle=T.muted; c.strokeStyle=T.line; c.lineWidth=1; c.textAlign="right"; c.textBaseline="middle";
+  for(let k=0;k<=3;k++){ const v=lo+(hi-lo)*k/3, y=Y(v); c.beginPath(); c.moveTo(pl,y); c.lineTo(pl+w,y); c.stroke();
+    c.fillText(Math.abs(v)>=100?v.toFixed(0):Math.abs(v)>=10?v.toFixed(1):v.toFixed(opt.dec??2), pl-6, y); }
+  if(opt.hlines) for(const hl of opt.hlines){ if(hl.v<lo||hl.v>hi) continue; c.strokeStyle=hl.color; c.setLineDash([5,4]); c.lineWidth=1.2;
+    c.beginPath(); c.moveTo(pl,Y(hl.v)); c.lineTo(pl+w,Y(hl.v)); c.stroke(); c.setLineDash([]); }
+  c.textAlign="left"; c.textBaseline="alphabetic"; c.fillStyle=T.muted; c.fillText(opt.xlabel||"최근 약 4분",pl,H-5);
+  for(const s of series){
+    c.strokeStyle=s.color; c.lineWidth=s.width||1.6; c.beginPath(); let pen=false; const off=n-s.data.length;
+    s.data.forEach((v,i)=>{ if(v==null||!isFinite(v)){pen=false;return;} const x=X(i+off), y=Y(v); pen?c.lineTo(x,y):c.moveTo(x,y); pen=true; });
+    c.stroke();
+    const lastI=s.data.length-1, lv=s.data[lastI];
+    if(lv!=null&&isFinite(lv)){ c.fillStyle=s.color; c.beginPath(); c.arc(X(lastI+off),Y(lv),3,0,7); c.fill(); }
+  }
+}
+
+function waveChart(cv,row){
+  const T=tok(), {c,W,H}=prep(cv), pl=44, pr=8, pt=8, pb=20, w=W-pl-pr, h=H-pt-pb;
+  if(!row){ return; }
+  const L=row.wave.left, R=row.wave.right; let m=0.05; for(const v of [...L,...R]) m=Math.max(m,Math.abs(v)); m*=1.1;
+  const Y=v=>pt+(1-(v+m)/(2*m))*h, X=i=>pl+i/(L.length-1)*w;
+  c.strokeStyle=T.line; c.font=`11px ${T.data}`; c.fillStyle=T.muted; c.textAlign="right"; c.textBaseline="middle";
+  for(const v of [-m,0,m]){ c.beginPath(); c.moveTo(pl,Y(v)); c.lineTo(pl+w,Y(v)); c.stroke(); c.fillText(v.toFixed(2)+"g",pl-6,Y(v)); }
+  c.textAlign="left"; c.textBaseline="alphabetic"; c.fillText("0 s",pl,H-5); c.textAlign="right"; c.fillText("0.25 s",pl+w,H-5);
+  for(const [d,col] of [[L,T.left],[R,T.right]]){ c.strokeStyle=col; c.lineWidth=1.2; c.beginPath(); d.forEach((v,i)=>i?c.lineTo(X(i),Y(v)):c.moveTo(X(i),Y(v))); c.stroke(); }
+}
+
+function specChart(cv,row){
+  const T=tok(), {c,W,H}=prep(cv), pl=44, pr=8, pt=8, pb=20, w=W-pl-pr, h=H-pt-pb;
+  if(!row) return;
+  const fmax=sim.vibFs/2, fmin=1, X=f=>pl+Math.log10(f/fmin)/Math.log10(fmax/fmin)*w;
+  let m=1e-4; for(const s of [row.spec.left,row.spec.right]) for(let i=1;i<s.length;i++) m=Math.max(m,s[i]);
+  const Y=v=>pt+(1-Math.sqrt(v/m))*h;
+  c.font=`11px ${T.data}`; c.fillStyle=T.muted; c.strokeStyle=T.line; c.textAlign="center"; c.textBaseline="alphabetic";
+  for(const f of [1,10,100,1000]){ if(f>fmax) continue; const x=X(f); c.beginPath(); c.moveTo(x,pt); c.lineTo(x,pt+h); c.stroke(); c.fillText(f>=1000?"1k":f,x,H-5); }
+  c.textAlign="right"; c.fillText("Hz",pl+w,H-5);
+  c.fillStyle=T.accent; c.globalAlpha=.07; c.fillRect(X(1),pt,X(20)-X(1),h); c.fillRect(X(150),pt,X(fmax)-X(150),h); c.globalAlpha=1;
+  for(const [s,col] of [[row.spec.left,T.left],[row.spec.right,T.right]]){
+    c.strokeStyle=col; c.lineWidth=1.1; c.beginPath(); let st=false;
+    for(let i=1;i<s.length;i++){ const f=i*row.df; if(f<fmin) continue; const x=X(f), y=Y(s[i]); st?c.lineTo(x,y):c.moveTo(x,y); st=true; }
+    c.stroke();
+  }
+  $("nyq").textContent=`표시 범위 1 Hz – ${fmax} Hz`;
+}
+
+/* 모서리가 둥근 사각형 (구형 브라우저 호환) */
+function rrect(c,x,y,w,h,r){ c.beginPath(); c.moveTo(x+r,y); c.lineTo(x+w-r,y); c.quadraticCurveTo(x+w,y,x+w,y+r);
+  c.lineTo(x+w,y+h-r); c.quadraticCurveTo(x+w,y+h,x+w-r,y+h); c.lineTo(x+r,y+h); c.quadraticCurveTo(x,y+h,x,y+h-r);
+  c.lineTo(x,y+r); c.quadraticCurveTo(x,y,x+r,y); c.closePath(); }
+/* 지도 */
+function mapPoint(frac,box){
+  const {x,y,w,h}=box, P=2*(w+h); let d=((frac%1)+1)%1*P;
+  if(d<w) return {x:x+d,y,dir:0}; d-=w;
+  if(d<h) return {x:x+w,y:y+d,dir:Math.PI/2}; d-=h;
+  if(d<w) return {x:x+w-d,y:y+h,dir:Math.PI}; d-=w;
+  return {x,y:y+h-d,dir:-Math.PI/2};
+}
+function drawMap(interp){
+  const T=tok(), cv=$("map"), {c,W,H}=prep(cv);
+  const box={x:W*0.08,y:H*0.12,w:W*0.84,h:H*0.70};
+  const small=W<520, off=small?34:58, offY=small?26:40;
+  // 구간
+  ROUTE.forEach((s,i)=>{
+    const a=SEG_START[i]/LAP_LEN, b=(SEG_START[i]+s.len)/LAP_LEN;
+    c.lineCap="butt"; c.lineWidth=14; c.strokeStyle=T.line; c.beginPath();
+    for(let k=0;k<=40;k++){ const p=mapPoint(a+(b-a)*k/40,box); k?c.lineTo(p.x,p.y):c.moveTo(p.x,p.y); } c.stroke();
+    c.lineWidth=14*s.rough/0.3; c.strokeStyle=T.muted; c.globalAlpha=.55; c.stroke(); c.globalAlpha=1;
+    const m=mapPoint((a+b)/2,box); const inX=(box.x+box.w/2-m.x), inY=(box.y+box.h/2-m.y), L=Math.hypot(inX,inY)||1;
+    c.fillStyle=T.ink; c.font=`600 ${small?11:12}px ${T.ui}`; c.textAlign="center"; c.textBaseline="middle";
+    c.fillText(s.name, m.x+inX/L*off, m.y+inY/L*offY);
+    c.fillStyle=T.muted; c.font=`11px ${T.data}`;
+    if(!small) c.fillText(`${s.speed} m/s · 거칠기 ${s.rough}`, m.x+inX/L*off, m.y+inY/L*offY+15);
+  });
+  // 구간 경계
+  c.strokeStyle=T.panel; c.lineWidth=2;
+  SEG_START.forEach(s0=>{ const p=mapPoint(s0/LAP_LEN,box); c.beginPath(); c.arc(p.x,p.y,3,0,7); c.stroke(); });
+  // 문턱
+  for(const b of BUMPS){ const p=mapPoint(b/LAP_LEN,box); c.save(); c.translate(p.x,p.y); c.rotate(p.dir); c.fillStyle=T.warn; c.fillRect(-2,-10,4,20); c.restore(); }
+  // 로봇
+  const p=mapPoint(interp/LAP_LEN,box), row=sim.last;
+  const risk=row?row.risk:"learn", ring={ok:T.ok,warn:T.warn,bad:T.bad,learn:T.muted}[risk];
+  c.save(); c.translate(p.x,p.y); c.rotate(p.dir);
+  c.fillStyle=ring; c.globalAlpha=.18; c.beginPath(); c.arc(0,0,24,0,7); c.fill(); c.globalAlpha=1;
+  c.fillStyle=T.panel; c.strokeStyle=ring; c.lineWidth=2.5; rrect(c,-13,-11,26,22,5); c.fill(); c.stroke();
+  const ws=row&&row.wheelScore?row.wheelScore:{left:0,right:0};
+  const wc=v=>v<3?T.ok:v<6?T.warn:T.bad;
+  c.fillStyle=risk==="learn"?T.left:wc(ws.left); c.fillRect(-9,-16,12,5);
+  c.fillStyle=risk==="learn"?T.right:wc(ws.right); c.fillRect(-9,11,12,5);
+  c.fillStyle=ring; c.beginPath(); c.moveTo(13,0); c.lineTo(7,-4); c.lineTo(7,4); c.fill();
+  c.restore();
+  c.fillStyle=T.muted; c.font=`11px ${T.ui}`; c.textAlign="left"; c.textBaseline="alphabetic";
+  c.fillText(small?`한 바퀴 ${LAP_LEN} m · 시계방향`:`한 바퀴 ${LAP_LEN} m · 진행 방향 시계방향 · 바퀴 표시색 = 바퀴별 상태`, 10, H-8);
+}
+
+/* ---------- 상태 갱신 ---------- */
+function updateUI(){
+  const row=sim.last; syncFaultUI();
+  $("lap").innerHTML=`${lapOf(sim)}<small> 바퀴 · ${Math.floor(sim.t/60)}분 ${Math.floor(sim.t%60)}초</small>`;
+  if(row){ $("seg").textContent=row.segName; }
+  const learning=!sim.baseReady;
+  if(learning){
+    const done=Math.min(1,(sim.dist/LAP_LEN-sim.baseStartLap)/CFG.baseLaps);
+    $("baseInfo").textContent=`정상 기준 학습 중 ${Math.round(done*100)}% (고장을 넣지 않은 상태로 두세요)`;
+  } else $("baseInfo").textContent="정상 기준 학습 완료 · 구간별로 비교 중";
+  const pill=$("riskPill"), risk=row?row.risk:"learn";
+  pill.className="pill "+risk; pill.textContent=RISK_KO[risk];
+  const sc=sim.ema; $("score").textContent=learning||sc==null?"–":sc.toFixed(2);
+  if(row&&row.cause&&risk!=="ok"&&!learning) $("cause").textContent=`${SIDE_KO[row.cause.side]} 바퀴 · ${KIND_KO[row.cause.kind]} 의심`;
+  else $("cause").textContent=learning?"정상 상태 학습 중":"이상 없음";
+
+  const H=sim.hist.slice(-240), g=k=>H.map(r=>r[k]);
+  lineChart($("cScore"),[{data:H.map(r=>r.score),color:tok().ink,width:1.8}],{min:0,minSpan:8,dec:1,
+    zones:[{from:3,to:6,color:tok().warn},{from:6,to:999,color:tok().bad}],
+    hlines:[{v:3,color:tok().warn},{v:6,color:tok().bad}]});
+  const T=tok();
+  lineChart($("cLow"),[{data:g("left_low"),color:T.left},{data:g("right_low"),color:T.right}],{min:0,dec:3});
+  lineChart($("cHigh"),[{data:g("left_high"),color:T.left},{data:g("right_high"),color:T.right}],{min:0,dec:3});
+  lineChart($("cCur"),[{data:g("left_cur"),color:T.left},{data:g("right_cur"),color:T.right}],{minSpan:0.2,dec:2});
+  lineChart($("cTemp"),[{data:g("left_temp"),color:T.left},{data:g("right_temp"),color:T.right}],{minSpan:2,dec:1});
+  waveChart($("cWave"),row); specChart($("cSpec"),row);
+
+  if(row&&row.justFitted) log("info","정상 기준 학습 완료. 이제 고장을 주입해 보세요.");
+  if(row&&!row.bump&&row.risk!==prevRisk&&row.risk!=="learn"){
+    const msg=row.risk==="ok"?"정상 범위로 돌아왔습니다":
+      `${RISK_KO[row.risk]} 단계 진입 · ${SIDE_KO[row.cause.side]} 바퀴 ${KIND_KO[row.cause.kind]} 의심 (점수 ${row.score.toFixed(1)})`;
+    log(row.risk,msg); prevRisk=row.risk;
+  }
+}
+
+/* ---------- 루프 ---------- */
+function frame(ts){
+  requestAnimationFrame(frame);                 // 오류가 나도 루프가 멈추지 않도록 먼저 예약
+  try{
+    const dt=lastTs?Math.min(0.25,(ts-lastTs)/1000):0; lastTs=ts;
+    if(running){
+      acc+=dt*Number($("speed").value);
+      let n=0; while(acc>=WIN&&n<8){ step(sim); acc-=WIN; n++; if(sim.last.justFitted||sim.last.risk!==prevRisk) updateUI(); }
+      if(n>=8) acc=0;
+      if(n) updateUI();
+    }
+    const interp=sim.dist+(running?Math.min(acc,WIN)*(sim.last?sim.last.speed:0.8):0);
+    drawMap(interp);
+  }catch(e){ showError(e); }
+}
+
+function showError(e){
+  const el=$("err"); if(!el) return; el.hidden=false;
+  el.textContent="실행 중 오류가 발생했습니다: "+(e&&e.message?e.message:e)+" — 이 문구를 알려주시면 고칠 수 있습니다.";
+}
+window.addEventListener("error",ev=>{ const m=String(ev.message||""); if(m.includes("ResizeObserver")) return; showError(ev.error||m); });
+
+function reset(keepFaults=false){
+  const fs=Number($("sensor").value); const old=sim.fault;
+  sim=makeSim(); sim.vibFs=fs; seed=12345; prevRisk="learn"; acc=0;
+  if(keepFaults) sim.fault=old;
+  $("log").innerHTML=""; log("info","시뮬레이션 시작. 처음 2바퀴 동안 정상 상태를 학습합니다.");
+  // 첫 화면용 짧은 예열
+  for(let i=0;i<4;i++) step(sim);
+  updateUI();
+}
+
+$("play").addEventListener("click",()=>{ running=!running; $("play").textContent=running?"❚❚ 일시정지":"▶ 시작"; });
+$("reset").addEventListener("click",()=>reset(false));
+$("sensor").addEventListener("change",()=>{
+  sim.vibFs=Number($("sensor").value); sim.baseReady=false; sim.baseStartLap=lapOf(sim)+1; sim.ema=null; prevRisk="learn";
+  log("info",`진동 센서 변경: ${$("sensor").selectedOptions[0].text}. 다음 바퀴부터 기준을 다시 학습합니다.`);
+  updateUI();
+});
+$("clearFaults").addEventListener("click",()=>{ sim.ramp=null; for(const s of ["left","right"]) for(const k of ["unbalance","looseness","bearing"]) sim.fault[s][k]=0; syncFaultUI(); log("info","모든 고장을 제거했습니다"); });
+$("ramp").addEventListener("click",()=>{
+  const kind=$("rampKind").value, wheel=$("rampWheel").value;
+  sim.ramp={kind,wheel,startDist:sim.dist}; sim.fault[wheel][kind]=0;
+  log("info",`${SIDE_KO[wheel]} 바퀴 ${KIND_KO[kind]} 점진 열화 시작 (8바퀴에 걸쳐 0→100%)`);
+  if(!running) $("play").click();
+});
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change",updateUI);
+if(window.ResizeObserver) new ResizeObserver(()=>requestAnimationFrame(()=>{ try{updateUI()}catch(e){} })).observe(document.querySelector(".wrap"));
+else window.addEventListener("resize",()=>{ try{updateUI()}catch(e){} });
+
+try{ buildFaultRows(); reset(); }catch(e){ showError(e); }
+requestAnimationFrame(frame);
+</script>
+
+</body>
+</html>
