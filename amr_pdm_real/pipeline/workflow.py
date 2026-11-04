@@ -14,7 +14,7 @@
 
     pipe, notes = train(data)                 # 모든 로봇으로 최종 모델 학습 (칼만 필터 잡음도 데이터로 맞춤)
     table, mon = diagnose(pipe, recs)         # 로봇 1대 주기별 진단 (표는 '분' 단위)
-    metrics = cross_validate(data)            # 로봇(베어링) 단위 교차검증: 한 로봇의 창이 학습과 평가에 나뉘어 들어가지 않음
+    metrics = cross_validate(data)            # 로봇 단위 교차검증: 한 로봇의 창이 학습과 평가에 나뉘어 들어가지 않음
 
 평가를 로봇 단위로 나누는 이유: 같은 로봇·베어링의 창을 학습과 평가에 섞으면 그 장비만의 특성을 외워
 성능이 크게 부풀려진다 (Vieira et al., arXiv:2509.22267, 2025).
@@ -282,7 +282,7 @@ def summarize(units, win, det_scores, skipped, baseline, n_folds):
     m = lambda v: round(C.minutes(float(v)), 1)            # 주기 → 분
     cm_labels = sorted(set(win["labels"]) | set(win["pred"]), key=lambda c: (c == NORMAL_LABEL, c))
     return dict(
-        protocol=dict(split="로봇(베어링) 단위", folds=n_folds, baseline=baseline, period_s=C.PERIOD_S,
+        protocol=dict(split="로봇 단위", folds=n_folds, baseline=baseline, period_s=C.PERIOD_S,
                       note="각 겹에서 평가 로봇의 데이터는 학습·기준·눈금 보정에 전혀 쓰지 않음"),
         windows=dict(n=int(len(y)), fault=int(y.sum())),
         detectors=det,

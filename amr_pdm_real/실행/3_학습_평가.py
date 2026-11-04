@@ -1,4 +1,4 @@
-"""3. 로봇(베어링) 단위 교차검증 평가 + 최종 모델 학습 → reports/ (평가 수치·그래프), artifacts/ (모델)"""
+"""3. 로봇 단위 교차검증 평가 + 최종 모델 학습 → reports/ (평가 수치·그래프), artifacts/ (모델)"""
 from _common import run
 
 PATH = "data"
