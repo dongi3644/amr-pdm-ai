@@ -28,12 +28,6 @@
       "python": "${workspaceFolder}/.venv/Scripts/python.exe",
       "program": "${workspaceFolder}/run.py", "args": ["diagnose"],
       "cwd": "${workspaceFolder}", "console": "integratedTerminal", "env": { "PYTHONUTF8": "1" }
-    },
-    {
-      "name": "공개 데이터 Paderborn 받기·변환",
-      "type": "debugpy", "request": "launch",
-      "program": "${workspaceFolder}/실행/공개데이터_Paderborn.py",
-      "cwd": "${workspaceFolder}", "console": "integratedTerminal"
     }
   ]
 }

@@ -104,15 +104,6 @@ def cmd_diagnose(a):
     print("저장 위치:", out)
 
 
-def cmd_paderborn(a):
-    """공개 데이터 전용: download는 raw/ 에 내려받아 풀고, convert는 raw/ 의 .mat를 data/ 의 CSV로 바꾼다."""
-    from datasets import paderborn as P
-    if a.action == "download":
-        P.download(a.bearings.split(","))
-    else:
-        P.convert_all(a.bearings.split(",") if a.bearings else None, fs=a.target_fs)
-
-
 def main():
     p = argparse.ArgumentParser(description="AMR 고장예지 (실측 데이터 전용)")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -125,10 +116,6 @@ def main():
         s.add_argument("--baseline", choices=["auto", "per_unit", "reference"], default=None)
         if name == "train":
             s.add_argument("--no-eval", action="store_true")
-    s = sub.add_parser("paderborn", help="Paderborn 대학 공개 베어링 데이터 내려받기·변환")
-    s.add_argument("action", choices=["download", "convert"])
-    s.add_argument("--bearings", default="", help="쉼표로 구분한 베어링 코드 (예: K001,K002,KA04)")
-    s.add_argument("--target-fs", dest="target_fs", type=int, default=8000, help="변환할 진동 샘플링 [Hz]")
     a = p.parse_args()
     if getattr(a, "period_s", None):
         C.PERIOD_S = a.period_s                            # 이번 실행에서만 판정 주기를 바꿈

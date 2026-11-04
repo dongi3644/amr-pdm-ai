@@ -4,9 +4,9 @@
 
     dataio.py    CSV 파일 → 1초 창(dict) 목록          "데이터를 읽어 자르는 곳"
         ↓
-    features.py  1초 창 → 숫자 특징 (4륜 70개)             "신호를 숫자로 요약하는 곳"
+    features.py  1초 창 → 숫자 특징 (바퀴 4개 진동 48개)    "신호를 숫자로 요약하는 곳"
         ↓
-    models.py    AI 모델 부품 9종                      "각 모델의 정의"
+    models.py    AI 모델 부품 8종                      "각 모델의 정의"
         ↓
     system.py    부품을 하나로 묶어 학습·저장           "모델 묶음(AMRPipeline)"
         ↓
@@ -17,9 +17,8 @@
     report.py    평가 결과 → 그래프·요약 문서           "결과를 보여 주는 곳"
 
 [바깥에서 부르는 곳]
-    run.py               명령줄 입구 (check / train / diagnose / paderborn)
+    run.py               명령줄 입구 (check / train / diagnose)
     실행/*.py             VS Code·Visual Studio에서 버튼으로 run.py를 부르는 스크립트
-    datasets/paderborn.py 공개 데이터(.mat)를 dataio가 읽는 CSV 형식으로 바꾸는 변환기
 
 [학습할 때]  dataio → features → system.fit(모델 학습) → artifacts/model_bundle.joblib 저장
 [진단할 때]  dataio → infer.Predictor.update(창마다) → 주기별 상태·원인·남은 시간
