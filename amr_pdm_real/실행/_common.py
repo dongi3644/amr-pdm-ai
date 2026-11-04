@@ -9,9 +9,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-VENV = ROOT / ".venv"
-VENV_PY = VENV / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+ROOT = Path(__file__).resolve().parents[1]               # amr_pdm_real 폴더 (이 파일의 한 단계 위)
+VENV = ROOT / ".venv"                                    # 1_환경설치.py가 만드는 가상환경
+VENV_PY = VENV / ("Scripts/python.exe" if os.name == "nt" else "bin/python")   # 윈도우 / 맥·리눅스의 Python 위치
 
 
 def run(args, last=True):
@@ -19,12 +19,13 @@ def run(args, last=True):
     if not VENV_PY.exists():
         print("가상환경이 없습니다. 먼저 실행/1_환경설치.py 를 실행하세요.")
         sys.exit(1)
-    env = dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
+    env = dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8")   # 윈도우 터미널에서 한글이 깨지지 않게
     try:
+        # .venv의 Python으로 run.py 실행 (-u: 출력을 바로바로 보여 줌)
         code = subprocess.call([str(VENV_PY), "-u", "run.py", *map(str, args)], cwd=ROOT, env=env)
-    except KeyboardInterrupt:
+    except KeyboardInterrupt:                            # Ctrl+C로 멈추면 오류 없이 끝냄
         code = 0
-    if code:
+    if code:                                             # 0이 아니면 실패 (2 = 데이터 문제, 1 = 그 밖의 오류)
         print(f"\n종료 코드 {code}")
     if code or last:
         sys.exit(code)

@@ -30,7 +30,9 @@ import pandas as pd
 
 import config as C
 
-EXTENSIONS = (".csv", ".csv.gz", ".zip")
+EXTENSIONS = (".csv", ".csv.gz", ".zip")   # 이 확장자만 데이터로 읽는다 (data/README.md 같은 안내 파일은 무시됨)
+# fault_kind 라벨에 적힌 이름 → 표준 이름. 'healthy', '정상' → 'normal', '베어링 결함' → 'bearing' 처럼
+# 영어·한국어 어느 쪽으로 적어도 같은 고장으로 알아듣게 한다 (한국어 이름은 config.KIND_KO를 거꾸로 뒤집어 만듦)
 KIND_NAMES = {"healthy": "normal", "ok": "normal", "none": "normal", "정상": "normal",
               **{v: k for k, v in C.KIND_KO.items()}}
 # fault_wheel 라벨에 적힌 이름 → config.WHEELS의 바퀴 이름 (예: '앞 오른쪽', 'front-right', 'fr' → 'fr')
@@ -42,7 +44,8 @@ def wheel_column_aliases():
     """바퀴별 진동 열의 다른 이름 목록을 만든다. 예) fl_vib ← vib_fl, fl_vibration, front_left_vib, 앞왼쪽진동"""
     out = {}
     for w in C.WHEELS:
-        names = [w] + C.WHEEL_ALIASES.get(w, [])
+        names = [w] + C.WHEEL_ALIASES.get(w, [])          # 바퀴를 부르는 이름들 (fl, front_left, 앞왼쪽 ...)
+        # 이름마다 앞뒤에 vib/vibration/진동을 붙인 모든 조합을 '이 바퀴의 진동 열'로 인정한다
         out[f"{w}_vib"] = [p for a in names for p in (f"{a}_vib", f"vib_{a}", f"{a}_vibration", f"vibration_{a}", f"{a}진동")]
     return out
 
@@ -58,18 +61,21 @@ class Dataset:
         self.robots, self.warnings, self.fs = {}, [], {}
 
     def warn(self, text):
+        """경고 문구를 모아 둔다. 같은 문구는 한 번만 (파일이 여러 개여도 같은 경고가 반복되지 않게)"""
         if text not in self.warnings:
             self.warnings.append(text)
 
     def label_of(self, name):
         """로봇의 대표 라벨: 고장 라벨이 하나라도 있으면 그 종류, 라벨이 정상뿐이면 normal, 라벨이 없으면 None"""
         recs = self.robots[name]
+        # 고장 라벨이 붙은 창들의 '종류|바퀴' (예: 'bearing|fr') 목록 → 가장 많이 나온 것이 대표 라벨
         kinds = [f"{r['true_kind']}|{r['true_side']}" for r in recs if r["labeled"] and r["true_sev"] > 0]
         if kinds:
             return max(set(kinds), key=kinds.count)
         return "normal|" if any(r["labeled"] for r in recs) else None
 
     def summary(self):
+        """check 명령에서 보이는 로봇별 표: 기록 길이(분), 1초 창 수, 진동 샘플링, 구간 수, 라벨"""
         rows = []
         for name, recs in self.robots.items():
             lbl = self.label_of(name)
@@ -80,6 +86,7 @@ class Dataset:
 
 
 def list_files(path=C.DATA_DIR):
+    """읽을 CSV 파일 목록. path가 파일이면 그 파일 하나, 폴더면 그 안의 CSV들을 이름순으로 (하위 폴더는 보지 않음)"""
     path = Path(path)
     if path.is_file():
         return [path]
@@ -103,37 +110,40 @@ def read_table(path):
             raise DataError(f"{Path(path).name}: CSV로 읽지 못했습니다 ({e})") from e
     else:
         raise DataError(f"{Path(path).name}: 글자 인코딩을 알 수 없습니다. UTF-8로 저장해 주세요.")
-    df.columns = [str(c).strip().lower() for c in df.columns]
+    df.columns = [str(c).strip().lower() for c in df.columns]    # 열 이름의 앞뒤 공백 제거 + 소문자 (Time, TIME → time)
     rename = {}
     for name, aliases in {**C.COLUMN_ALIASES, **wheel_column_aliases()}.items():
-        if name not in df.columns:
-            found = next((a for a in aliases if a in df.columns), None)
+        if name not in df.columns:                         # 표준 이름이 이미 있으면 그대로 두고
+            found = next((a for a in aliases if a in df.columns), None)   # 없으면 별칭 중 파일에 있는 첫 번째를 찾아
             if found:
-                rename[found] = name
+                rename[found] = name                       # 표준 이름으로 바꾼다 (예: timestamp → time, vib_fl → fl_vib)
     return df.rename(columns=rename)
 
 
 def _numeric(df, name, data, fname):
+    """열 하나를 숫자 배열로. 열이 없거나 숫자가 하나도 없으면 None (값을 지어내지 않고 '없음'으로 돌려줌)"""
     if name not in df.columns:
         return None
-    col = pd.to_numeric(df[name], errors="coerce")
-    bad = int((col.isna() & df[name].notna()).sum())
+    col = pd.to_numeric(df[name], errors="coerce")        # 숫자로 못 바꾸는 칸('abc', '-' 등)은 NaN(빈칸)이 됨
+    bad = int((col.isna() & df[name].notna()).sum())       # 원래는 무언가 적혀 있었는데 숫자가 아니었던 칸 수
     if bad:
         data.warn(f"{fname}: {name} 열에 숫자가 아닌 값 {bad}개를 빈칸으로 처리했습니다 (그 샘플은 쓰지 않음).")
     return col.to_numpy(float) if col.notna().any() else None
 
 
 def _seconds(col, fname):
+    """time 열 → 초 단위 숫자 배열. 숫자(초)로 적혀 있거나 '2026-11-03 10:00:00.001' 같은 날짜·시각이면 읽는다"""
     num = pd.to_numeric(col, errors="coerce")
-    if num.notna().mean() > 0.99:
+    if num.notna().mean() > 0.99:                          # 99% 넘게 숫자면 이미 초 단위로 본다
         return num.to_numpy(float)
     dt = pd.to_datetime(col, errors="coerce")
-    if dt.notna().mean() > 0.99:
+    if dt.notna().mean() > 0.99:                           # 날짜·시각이면 첫 샘플부터 몇 초 지났는지로 바꾼다
         return (dt - dt.iloc[0]).dt.total_seconds().to_numpy(float)
     raise DataError(f"{fname}: time 열을 시간으로 읽지 못했습니다. 초 단위 숫자나 날짜·시각 형식이어야 합니다.")
 
 
 def _labels(col, names):
+    """라벨 열의 글자 → 표준 이름 배열 (빈칸은 '', 공백·대소문자 무시, names에 없는 글자는 그대로 둠)"""
     return col.fillna("").astype(str).str.strip().str.lower().map(lambda s: names.get(s, s)).to_numpy()
 
 
@@ -148,7 +158,7 @@ def _windows(df, fname, data, fs_arg):
     if missing:
         raise DataError(f"{fname}: {', '.join(f'{w}_vib({C.WHEEL_KO.get(w, w)})' for w in missing)} 열이 없습니다. "
                         f"바퀴 4개의 진동 열이 모두 필요합니다. 파일의 열: {list(df.columns)}")
-    base = vib[C.WHEELS[0]]
+    base = vib[C.WHEELS[0]]                                # 샘플 간격은 첫 번째 바퀴(fl) 진동이 있는 줄로 잰다
     # ② 샘플링 주파수 = 1 / (진동 샘플 사이 시간 간격의 중앙값). time 열이 없으면 --fs로 알려 줘야 한다 (임의로 가정하지 않음)
     n = len(df)
     if "time" in df.columns:
@@ -163,9 +173,9 @@ def _windows(df, fname, data, fs_arg):
         if not len(steps):
             raise DataError(f"{fname}: time 값이 모두 같아 샘플링 주파수를 알 수 없습니다.")
         fs = 1.0 / float(np.median(steps))
-    elif fs_arg:
+    elif fs_arg:                                           # time 열이 없으면 사용자가 알려 준 샘플링으로 시각을 계산
         fs = float(fs_arg)
-        t = np.arange(n) / fs
+        t = np.arange(n) / fs                              # 0, 1/fs, 2/fs, ... 초
         data.warn(f"{fname}: time 열이 없어 지정한 샘플링 {fs:g} Hz로 시각을 계산했습니다.")
     else:
         raise DataError(f"{fname}: time 열이 없습니다. time 열을 넣거나, 센서의 실제 샘플링 주파수를 --fs 로 알려 주세요.")
@@ -179,18 +189,19 @@ def _windows(df, fname, data, fs_arg):
     seg = df["segment"].fillna(C.DEFAULT_SEGMENT).astype(str).str.strip().to_numpy() if "segment" in df.columns else None
     if seg is None:
         data.warn(f"{fname}: segment 열이 없어 전체를 한 구간으로 보고 기준을 만듭니다. 장소별 노면 차이는 걸러지지 않습니다.")
+    # 문턱: 1/true/yes 등이면 문턱을 넘는 순간 (판정에서 뺄 창)
     bump = df["bump"].astype(str).str.strip().str.lower().isin(["1", "1.0", "true", "t", "y", "yes"]).to_numpy() if "bump" in df.columns else None
-    kinds = _labels(df["fault_kind"], KIND_NAMES) if "fault_kind" in df.columns else None
-    wheels = _labels(df["fault_wheel"], WHEEL_NAMES) if "fault_wheel" in df.columns else None
-    sevs = _numeric(df, "fault_severity", data, fname)
-    has_label = kinds is not None or sevs is not None
+    kinds = _labels(df["fault_kind"], KIND_NAMES) if "fault_kind" in df.columns else None      # 고장 종류 (예: bearing)
+    wheels = _labels(df["fault_wheel"], WHEEL_NAMES) if "fault_wheel" in df.columns else None  # 고장 바퀴 (예: fr)
+    sevs = _numeric(df, "fault_severity", data, fname)                                        # 고장 정도 0~1
+    has_label = kinds is not None or sevs is not None      # 라벨 열이 하나라도 있으면 '라벨이 있는 파일'
 
     # ④ 창 나누기: 시작 시각 기준 몇 번째 1초인지(idx)가 바뀌는 지점이 창의 경계
-    idx = np.floor((t - t[0]) / C.WINDOW_S + 1e-9).astype(int)
-    bounds = np.flatnonzero(np.diff(idx)) + 1
-    need, dropped, recs = C.MIN_WINDOW_FILL * fs * C.WINDOW_S, 0, []
+    idx = np.floor((t - t[0]) / C.WINDOW_S + 1e-9).astype(int)   # 줄마다 '시작부터 몇 번째 1초인가' (0, 0, ..., 1, 1, ...)
+    bounds = np.flatnonzero(np.diff(idx)) + 1                     # 그 번호가 바뀌는 줄 = 다음 창이 시작하는 줄
+    need, dropped, recs = C.MIN_WINDOW_FILL * fs * C.WINDOW_S, 0, []   # need: 창 하나에 있어야 할 최소 샘플 수 (1000 Hz면 800개)
     for a, b in zip(np.r_[0, bounds], np.r_[bounds, n]):          # a:b = 이번 1초 창에 속한 줄 범위
-        waves = {w: vib[w][a:b][~np.isnan(vib[w][a:b])] for w in C.WHEELS}
+        waves = {w: vib[w][a:b][~np.isnan(vib[w][a:b])] for w in C.WHEELS}   # 바퀴별 이 1초의 진동 (빈칸은 빼고)
         if min(len(x) for x in waves.values()) < need:               # ⑤ 기록이 끊겨 샘플이 80% 미만이면 버림
             dropped += 1
             continue
@@ -201,14 +212,15 @@ def _windows(df, fname, data, fs_arg):
         for w in C.WHEELS:                                           # 바퀴마다 진동 파형
             rec[f"{w}_vib"] = waves[w].astype(np.float32)
         if has_label:                                                # 라벨: 창 안의 마지막 고장 종류와 최대 고장 정도
-            kind = next((k for k in (kinds[a:b][::-1] if kinds is not None else ()) if k), "")
+            kind = next((k for k in (kinds[a:b][::-1] if kinds is not None else ()) if k), "")   # 뒤에서부터 첫 빈칸 아닌 종류
             sv = sevs[a:b][~np.isnan(sevs[a:b])] if sevs is not None else ()
-            sev = float(np.clip(np.max(sv), 0, 1)) if len(sv) else None
+            sev = float(np.clip(np.max(sv), 0, 1)) if len(sv) else None                           # 창 안의 최대 고장 정도 (0~1로 자름)
             if not kind and sev:
                 kind = "fault"                             # 고장 정도만 있고 종류가 없는 경우
             if kind or sev is not None:
+                # 종류가 정상이면 정도 0, 종류만 있고 정도가 없으면 1(완전 고장)로 본다
                 sev = 0.0 if kind in ("", "normal") else (1.0 if sev is None else sev)
-                side = "" if wheels is None else next((w for w in wheels[a:b][::-1] if w in C.WHEELS), "")
+                side = "" if wheels is None else next((w for w in wheels[a:b][::-1] if w in C.WHEELS), "")   # 고장 바퀴
                 rec.update(labeled=True, true_kind=kind if sev > 0 else "normal", true_side=side if sev > 0 else "", true_sev=sev)
         recs.append(rec)
     if dropped:
@@ -224,13 +236,16 @@ def load(path=C.DATA_DIR, fs=None):
     for f in files:
         f = Path(f)
         df = read_table(f)
-        stem = f.name.split(".")[0]
+        stem = f.name.split(".")[0]                        # 확장자를 뗀 파일 이름 (robot 열이 없을 때 로봇 이름으로 씀)
+        # robot 열이 있으면 그 값마다 따로 나눠 처리하고, 없으면 파일 전체가 로봇 1대
         groups = df.groupby(df["robot"].astype(str), sort=False) if "robot" in df.columns else [(stem, df)]
         for robot, part in groups:
             recs, rate = _windows(part, f.name, data, fs)
-            have = data.robots.setdefault(str(robot), [])
+            have = data.robots.setdefault(str(robot), [])  # 이 로봇에 대해 앞 파일에서 이미 읽은 창들
             offset = have[-1]["period"] + 1 if have else 0    # 같은 로봇의 다음 파일은 이어지는 주기 번호로 붙임
+            # 창이 하나도 없는 주기(꺼져 있던 시간)는 건너뛰고 0, 1, 2, ...로 다시 번호를 매긴다
             order = {v: i for i, v in enumerate(dict.fromkeys(r["period"] for r in recs))}
+            # 다음 파일의 시각이 앞 파일보다 앞서면(시각이 0부터 다시 시작한 파일 등) 앞 파일 끝 뒤로 밀어 준다
             shift = (have[-1]["t"] + C.WINDOW_S - recs[0]["t"]) if (have and recs and recs[0]["t"] <= have[-1]["t"]) else 0.0
             for r in recs:
                 r["period"] = offset + order[r["period"]]
@@ -243,9 +258,10 @@ def load(path=C.DATA_DIR, fs=None):
 def choose_baseline(data, mode=None):
     """정상 기준 방식 결정. auto면 처음 BASELINE_PERIODS주기에 고장 라벨이 있거나 기록이 그보다 짧은 로봇이 있을 때 reference"""
     mode = mode or C.BASELINE_MODE
-    if mode != "auto":
+    if mode != "auto":                                     # 사용자가 --baseline으로 정했으면 그대로
         return mode
     for recs in data.robots.values():
+        # 처음 5분으로 기준을 못 만드는 로봇(기록이 짧거나 처음부터 고장)이 하나라도 있으면 공통 기준이 필요
         if not recs or recs[-1]["period"] < C.BASELINE_PERIODS or any(r["true_sev"] > 0 and r["period"] < C.BASELINE_PERIODS for r in recs):
             return "reference"
     return "per_unit"

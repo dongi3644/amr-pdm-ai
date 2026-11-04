@@ -25,6 +25,7 @@ from pipeline.system import AMRPipeline
 
 
 def show_data(data):
+    """읽은 데이터의 로봇별 표와 '확인할 점'(경고)을 화면에 출력"""
     print(data.summary().to_string(index=False))
     if data.warnings:
         print("\n확인할 점:")
@@ -33,6 +34,7 @@ def show_data(data):
 
 
 def safe(name):
+    """로봇 이름에서 파일 이름에 쓸 수 없는 글자(\\ / : * ? " < > |)를 _로 바꿈 (결과 파일 이름용)"""
     return re.sub(r'[\\/:*?"<>|]', "_", name)
 
 
@@ -92,13 +94,13 @@ def cmd_diagnose(a):
     for name, recs in data.robots.items():
         try:
             table, mon = W.diagnose(pipe, recs)
-        except D.DataError as e:
+        except D.DataError as e:                           # 기록이 너무 짧은 로봇 등은 건너뛰고 다음 로봇으로
             print(f"{name}: 건너뜀 ({e})")
             continue
-        table.to_csv(out / f"{safe(name)}.csv", index=False, encoding="utf-8-sig")
+        table.to_csv(out / f"{safe(name)}.csv", index=False, encoding="utf-8-sig")   # utf-8-sig: 엑셀에서 열어도 한글이 안 깨짐
         report.fig_robot(table, name, "학습에 쓰인 로봇" if name in trained else "처음 보는 로봇", out / f"{safe(name)}.png", mon.calibrated)
-        events = [f"{at_min(p)} {C.STATUS_KO[s]}" for p, s in mon.events] or ["없음"]
-        causes = table.loc[table["추정 원인"] != "", "추정 원인"]
+        events = [f"{at_min(p)} {C.STATUS_KO[s]}" for p, s in mon.events] or ["없음"]   # 예: '15분 주의', '20분 경고'
+        causes = table.loc[table["추정 원인"] != "", "추정 원인"]   # 원인이 적힌 주기들 (마지막 것을 요약에 씀)
         print(f"{name}: 최고 점수 {table['건강 점수'].max():.1f}, 최종 상태 {C.STATUS_KO[mon.status]}, 상태 변경 {', '.join(events)}"
               + (f", 추정 원인 {causes.iloc[-1]}" if len(causes) else "") + (" (학습에 쓰인 로봇)" if name in trained else ""))
     print("저장 위치:", out)
@@ -106,12 +108,12 @@ def cmd_diagnose(a):
 
 def main():
     p = argparse.ArgumentParser(description="AMR 고장예지 (실측 데이터 전용)")
-    sub = p.add_subparsers(dest="cmd", required=True)
-    for name in ("check", "train", "diagnose"):
+    sub = p.add_subparsers(dest="cmd", required=True)    # 첫 번째 단어가 명령 (check / train / diagnose)
+    for name in ("check", "train", "diagnose"):           # 세 명령이 공통으로 받는 옵션
         s = sub.add_parser(name)
         s.add_argument("--path", default=str(C.DATA_DIR))
         s.add_argument("--fs", type=float)
-        if name != "diagnose":
+        if name != "diagnose":                             # diagnose는 학습 때 정한 판정 주기를 모델에서 읽으므로 받지 않음
             s.add_argument("--period-s", dest="period_s", type=float)
         s.add_argument("--baseline", choices=["auto", "per_unit", "reference"], default=None)
         if name == "train":

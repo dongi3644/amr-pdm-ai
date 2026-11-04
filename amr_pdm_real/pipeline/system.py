@@ -32,12 +32,12 @@ from pipeline.models import NORMAL_LABEL, CauseClassifier, SegmentBaseline, cali
 def per_unit_z(rows):
     """로봇마다 처음 BASELINE_PERIODS주기로 기준을 만들고, 그 이후 창의 z를 반환"""
     out_rows, Z, units = [], [], {}
-    for r in rows:
+    for r in rows:                                         # 창들을 로봇별로 모음
         units.setdefault(r["robot"], []).append(r)
     for rr in units.values():
-        base_rows = [r for r in rr if r["period"] < C.BASELINE_PERIODS and not r["bump"]]
-        use = [r for r in rr if r["period"] >= C.BASELINE_PERIODS and not r["bump"]]
-        if not base_rows or not use:
+        base_rows = [r for r in rr if r["period"] < C.BASELINE_PERIODS and not r["bump"]]   # 처음 5분 = 기준 만들 창
+        use = [r for r in rr if r["period"] >= C.BASELINE_PERIODS and not r["bump"]]        # 그 뒤 = 점수 매길 창
+        if not base_rows or not use:                       # 기록이 5분보다 짧은 로봇은 건너뜀
             continue
         out_rows += use
         Z.append(SegmentBaseline().fit(base_rows).z(use))
@@ -45,16 +45,17 @@ def per_unit_z(rows):
 
 
 def reference_z(rows, ref):
+    """공통 기준(ref) 하나로 모든 창의 z를 계산 (처음 5분도 버리지 않음)"""
     use = [r for r in rows if not r["bump"]]
     return use, (ref.z(use) if use else np.empty((0, len(FEATS))))
 
 
 def split_units(names, cal_share=1 / 3):
     """정상 로봇을 모델 학습용과 눈금 보정용으로 나눈다 (로봇 단위로 나눠야 눈금이 새 로봇에도 맞음)"""
-    names = sorted(names)
-    if len(names) < 2:
+    names = sorted(names)                                  # 이름순으로 정렬해 매번 같은 로봇이 같은 쪽에 가게 함
+    if len(names) < 2:                                     # 1대뿐이면 나눌 수 없음 (fit에서 그 로봇의 뒤 30%를 보정에 씀)
         return names, []
-    cal = names[-max(1, round(len(names) * cal_share)):]
+    cal = names[-max(1, round(len(names) * cal_share)):]   # 뒤쪽 1/3(최소 1대) = 눈금 보정용
     return [n for n in names if n not in cal], cal
 
 
@@ -75,9 +76,9 @@ class AMRPipeline:
         #    '처음 보는 정상 로봇의 99.5%가 3점 아래'라는 눈금이 실제로 성립한다
         units = sorted({r["robot"] for r in normal})
         fit_units, cal_units = split_units(units)
-        fit_rows = [r for r in normal if r["robot"] in fit_units]
-        cal_rows = [r for r in normal if r["robot"] in cal_units]
-        ref = None
+        fit_rows = [r for r in normal if r["robot"] in fit_units]   # 모델 학습에 쓸 정상 창
+        cal_rows = [r for r in normal if r["robot"] in cal_units]   # 눈금(3점 기준) 보정에 쓸 정상 창
+        ref = None                                         # 공통 기준 (reference 방식일 때만 만듦)
         if baseline == "reference":
             ref = SegmentBaseline().fit(fit_rows)          # 보정용 로봇은 기준에 넣지 않아야 '처음 보는 로봇' 눈금이 됨
             _, Zfit = reference_z(fit_rows, ref)
@@ -92,23 +93,24 @@ class AMRPipeline:
             Zfit, Zcal = Zfit[:cut], Zfit[cut:]
 
         # 2) 이상 감지 5종을 정상 z로 학습하고, 건강 점수 눈금을 맞춘다 (3점 = 정상 99.5%, 9점 = 고장 기준 창의 중앙값)
-        sev = np.array([r["true_sev"] for r in frows], float)
-        Zfail, scale = Zf[(sev >= C.FAIL_CAL_BAND[0]) & (sev <= C.FAIL_CAL_BAND[1])], "band"
+        sev = np.array([r["true_sev"] for r in frows], float)        # 고장 로봇 창마다 라벨의 고장 정도
+        Zfail, scale = Zf[(sev >= C.FAIL_CAL_BAND[0]) & (sev <= C.FAIL_CAL_BAND[1])], "band"   # 고장 정도 0.75~0.85 창
         if not len(Zfail):                                 # 고장 정도가 없거나 그 구간에 창이 없으면 고장 창 전체로 맞춤
             Zfail = Zf[sev >= C.CAUSE_MIN_SEVERITY]
             scale = "all_fault" if len(Zfail) else "normal_only"
         dets = make_detectors()
         for d in dets.values():
-            calibrate(d.fit(Zfit), Zcal, Zfail)
+            calibrate(d.fit(Zfit), Zcal, Zfail)            # 학습은 fit 로봇, 3점 눈금은 cal 로봇, 9점 눈금은 고장 창
 
         # 3) 원인 분류: 고장 창(라벨 = 종류|바퀴) + 보정용 정상 창(라벨 = 정상)으로 랜덤포레스트 학습
         cause = None
         if (sev > 0).any():                                # 고장 초반(CAUSE_MIN_SEVERITY 미만)은 패턴이 모호하므로 제외
-            keep = (sev == 0) | (sev >= C.CAUSE_MIN_SEVERITY)
+            keep = (sev == 0) | (sev >= C.CAUSE_MIN_SEVERITY)   # 고장 전(정상) 창 + 고장이 충분히 진행된 창
+            # 창마다 정답 라벨: 정상이면 'normal|', 고장이면 '종류|바퀴' (예: 'bearing|fr')
             labels = np.array([NORMAL_LABEL if r["true_sev"] == 0 else f"{r['true_kind']}|{r['true_side']}" for r in frows])
-            Zc = np.vstack([Zf[keep], Zcal])
+            Zc = np.vstack([Zf[keep], Zcal])               # 입력: 고장 로봇 창 + 보정용 정상 로봇 창
             yc = np.concatenate([labels[keep], [NORMAL_LABEL] * len(Zcal)])
-            if len(set(yc)) >= 2:
+            if len(set(yc)) >= 2:                          # 라벨이 두 종류 이상이어야 분류를 배울 수 있음
                 cause = CauseClassifier().fit(Zc, yc)
 
         self.bundle = dict(detectors=dets, cause=cause, feats=FEATS, version="real-vib-1.0", baseline=baseline,
@@ -116,12 +118,14 @@ class AMRPipeline:
         return self
 
     def save(self, path=C.BUNDLE_PATH):
+        """bundle 전체(모델 5종 + 원인 모델 + 기준 + 설정)를 파일 하나로 저장"""
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         joblib.dump(self.bundle, path)
         return path
 
     @classmethod
     def load(cls, path=C.BUNDLE_PATH):
+        """저장한 파일을 읽어 파이프라인을 되살림 (diagnose 명령이 씀)"""
         return cls(joblib.load(Path(path)))
 
     def monitor(self, detector="ae", use_cause=True):
