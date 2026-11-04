@@ -3,6 +3,12 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "0. 전체 실행 (설치 → 검사 → 학습 → 진단)",
+      "type": "debugpy", "request": "launch",
+      "program": "${workspaceFolder}/실행/0_전체_실행.py",
+      "cwd": "${workspaceFolder}", "console": "integratedTerminal"
+    },
+    {
       "name": "1. 환경 설치 (처음 한 번)",
       "type": "debugpy", "request": "launch",
       "program": "${workspaceFolder}/실행/1_환경설치.py",
