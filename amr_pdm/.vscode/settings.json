@@ -1,8 +1,0 @@
-{
-  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
-  "python.terminal.activateEnvironment": true,
-  "python.analysis.extraPaths": ["${workspaceFolder}"],
-  "terminal.integrated.env.windows": { "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8" },
-  "files.exclude": { "**/__pycache__": true, ".venv": true },
-  "search.exclude": { ".venv": true, "data": true }
-}

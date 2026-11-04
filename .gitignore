@@ -20,3 +20,10 @@ amr_pdm_real/reports/diagnose/
 .vs/
 .idea/
 .claude/
+
+# 이 컴퓨터에만 두는 이전 자료 (GitHub에서 뺌, 2026-11-04)
+amr_pdm/
+amr_fault_sim/
+lstm_rul.py
+web_simulator.html
+AMR_고장예지AI_Colab.ipynb
