@@ -29,6 +29,7 @@ import config as C
 from pipeline.dataio import DataError, choose_baseline
 from pipeline.features import extract
 from pipeline.models import NORMAL_LABEL, health, kalman_forecast, label_ko, trend_forecast
+from pipeline.power import PowerMonitor
 from pipeline.system import AMRPipeline
 
 
@@ -132,11 +133,13 @@ def tune_kalman(pipe, data, names):
 
 # ---------------------------------------------------------------- 진단
 def diagnose(pipe, recs, detector="ae"):
-    """로봇 1대를 처음부터 끝까지 진단 → (판정 주기별 표, 추론기). 표의 시간·남은 시간은 '분' 단위"""
+    """로봇 1대를 처음부터 끝까지 진단 → (판정 주기별 표, 추론기). 표의 시간·남은 시간은 '분' 단위
+    진동 AI(건강 점수·상태·원인·남은 시간)와 전류·배터리 감시(current·voltage 열이 있을 때)를 같은 표에 나란히 담는다.
+    전력 감시 결과는 mon.power (power.PowerMonitor)에 있다."""
     if not recs or (pipe.bundle["baseline"] == "per_unit" and recs[-1]["period"] < C.BASELINE_PERIODS):
         raise DataError(f"기록이 짧습니다. 로봇마다 기준을 만드는 방식에서는 {C.minutes(C.BASELINE_PERIODS + 1):g}분 이상이 필요합니다.")
-    # mon: 진단기, rows: 표의 줄(주기마다 1줄), last: 마지막으로 판정한 창의 결과, truth: 주기별 파일 라벨
-    mon, rows, last, truth = pipe.monitor(detector), [], None, {}
+    # mon: 진동 진단기, power: 전류·배터리 감시기, rows: 표의 줄(주기마다 1줄), last: 마지막으로 판정한 창의 결과, truth: 주기별 파일 라벨
+    mon, power, rows, last, truth = pipe.monitor(detector), PowerMonitor(), [], None, {}
 
     def flush():
         """새로 끝난 주기가 있으면 표에 한 줄씩 추가"""
@@ -146,9 +149,11 @@ def diagnose(pipe, recs, detector="ae"):
                          "정지 위험까지(분)": round(C.minutes(fc["periods"]), 1) if fc else None,
                          "빠르면(분)": round(C.minutes(fc["periods_lo"]), 1) if fc else None,
                          "추정 원인": (last or {}).get("cause") or "", "판단 근거": ", ".join(n for n, _ in mon.reason),
+                         **power.columns(period),         # 전류·배터리 칸 (열이 없는 데이터면 아무것도 붙지 않음)
                          "파일 라벨": truth.get(period, "")})
 
     for rec in recs:                                      # 1초 창을 시간 순서대로 하나씩 넣는다 (실시간과 같은 방식)
+        power.update(rec)                                 # 전력 감시를 먼저: 주기가 바뀌면 지난 주기 결과가 표에 들어갈 수 있게
         o = mon.update(rec)
         if rec["labeled"]:                                # 비교용으로 파일에 적힌 라벨도 표에 남김 (예: '베어링 결함 0.62')
             kind = C.KIND_KO.get(rec["true_kind"], rec["true_kind"])
@@ -156,8 +161,10 @@ def diagnose(pipe, recs, detector="ae"):
         flush()
         if o["phase"] == "monitor":                       # 기준 학습 중·문턱 창이 아닌, 실제로 판정한 창만 기억
             last = o
-    mon.finish()                                          # 마지막 주기 마무리
+    power.finish()                                        # 마지막 주기 마무리
+    mon.finish()
     flush()
+    mon.power = power
     return pd.DataFrame(rows), mon
 
 

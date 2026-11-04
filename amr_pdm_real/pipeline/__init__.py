@@ -4,13 +4,14 @@
 
     dataio.py    CSV 파일 → 1초 창(dict) 목록          "데이터를 읽어 자르는 곳"
         ↓
-    features.py  1초 창 → 숫자 특징 (바퀴 4개 진동 48개)    "신호를 숫자로 요약하는 곳"
+    features.py  1초 창 → 숫자 특징 (MPU6050 6축 36개)      "신호를 숫자로 요약하는 곳"
         ↓
     models.py    AI 모델 부품 8종                      "각 모델의 정의"
         ↓
     system.py    부품을 하나로 묶어 학습·저장           "모델 묶음(AMRPipeline)"
         ↓
     infer.py     1초 창을 하나씩 넣으며 실시간 판정      "진단기(Predictor)"
+    power.py     전류·배터리 감시 (학습 없이 처음 5분과 비교) "전력 감시기(PowerMonitor)"
         ↓
     workflow.py  학습 / 진단 / 로봇 단위 교차검증 절차   "실행 순서를 짜는 곳"
         ↓
@@ -22,5 +23,6 @@
 
 [학습할 때]  dataio → features → system.fit(모델 학습) → artifacts/model_bundle.joblib 저장
 [진단할 때]  dataio → infer.Predictor.update(창마다) → 주기별 상태·원인·남은 시간
+             dataio → power.PowerMonitor.update(창마다) → 주기별 전류 상태·배터리 전압·사용량
 [평가할 때]  workflow.cross_validate: 로봇 한 대(또는 몇 대)를 빼고 학습 → 뺀 로봇을 진단 → 모든 로봇에 반복
 """

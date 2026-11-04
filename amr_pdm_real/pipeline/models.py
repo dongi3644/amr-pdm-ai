@@ -1,7 +1,7 @@
 """AI 모델 모음 (진동만 사용)
 
 [역할] 파이프라인에 들어가는 모델 부품을 하나씩 정의한다. 학습 순서와 연결은 system.py가, 실시간 사용은 infer.py가 맡는다.
-[흐름에서 위치] 진동 특징 48개 → 1(z-score) → 2~6(이상 점수) → health()(건강 점수 0~) → 7(원인) / 8(남은 시간)
+[흐름에서 위치] 진동 특징 36개 → 1(z-score) → 2~6(이상 점수) → health()(건강 점수 0~) → 7(원인) / 8(남은 시간)
 
 [이상 감지 모델의 공통 약속] fit(Z): 정상 z로 학습, raw(Z): 클수록 이상한 점수. 점수 단위가 모델마다 달라서
 calibrate()가 모델별로 눈금을 맞추고 health()가 0~ 건강 점수로 바꾼다. 그래서 5개 모델을 같은 기준으로 비교할 수 있다.
@@ -11,7 +11,7 @@ calibrate()가 모델별로 눈금을 맞추고 health()가 0~ 건강 점수로 
 3) ECODDetector    : ECOD (Li et al., TKDE 2022) — 경험적 분포 꼬리 확률. PyOD가 기본 추천하는 비교 기준
 4) IForestDetector : Isolation Forest — PyOD가 기본 추천하는 비교 기준
 5) PCADetector     : PCA 복원 오차 — 오토인코더의 선형 비교 대상
-6) AEDetector      : 오토인코더(MLP 48-24-6-24-48) — 정상 패턴 복원 오차 = 이상 점수, 건강 점수의 기본 모델
+6) AEDetector      : 오토인코더(MLP 36-24-6-24-36) — 정상 패턴 복원 오차 = 이상 점수, 건강 점수의 기본 모델
 7) CauseClassifier : 랜덤포레스트 + SHAP — 정상/고장 종류(+바퀴) 분류와 판단 근거
 8) kalman_forecast : 칼만 필터(수준·기울기) — 정지 위험(9점)까지 남은 시간(주기 수)과 90% 범위
    trend_forecast  : 최근 주기 점수 직선 맞춤 — 칼만 필터의 비교 대상
@@ -71,7 +71,7 @@ class ZScoreDetector:
         return self                                        # 배울 것이 없음 (z 자체가 이미 '평소 대비' 값)
 
     def raw(self, Z):
-        return np.abs(Z).mean(1)                           # 창마다 48개 |z|의 평균
+        return np.abs(Z).mean(1)                           # 창마다 36개 |z|의 평균
 
 
 class ECODDetector:
@@ -131,12 +131,12 @@ class PCADetector:
 
     def raw(self, Z):
         X = self.sc.transform(Z)
-        # transform: 6개 방향으로 압축 → inverse_transform: 다시 48개로 펼침 → 원래 값과의 차이(RMSE)
+        # transform: 6개 방향으로 압축 → inverse_transform: 다시 36개로 펼침 → 원래 값과의 차이(RMSE)
         return np.sqrt(np.mean((self.m.inverse_transform(self.m.transform(X)) - X) ** 2, axis=1))
 
 
 class AEDetector:
-    """주 모델. 신경망이 진동 특징 48개를 6개로 압축했다가 다시 원래 개수로 복원하도록 '정상 데이터로만' 학습한다.
+    """주 모델. 신경망이 진동 특징 36개를 6개로 압축했다가 다시 원래 개수로 복원하도록 '정상 데이터로만' 학습한다.
     정상 패턴만 배웠으므로 고장 창은 잘 복원하지 못하고, 복원 오차(RMSE)가 곧 이상 점수가 된다.
     PCA와 달리 특징 사이의 곡선 관계(tanh)도 배울 수 있다. 라벨 없는 정상 데이터만 있어도 학습된다는 것이 장점."""
     name = "오토인코더 (AI)"

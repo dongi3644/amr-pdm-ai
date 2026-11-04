@@ -6,7 +6,7 @@
                              reports/fig_confusion.png 원인 분류 혼동행렬
                              reports/fig_importance.png 원인 분류에 크게 쓰인 특징
                              reports/summary.md       위 수치를 표로 정리
-              (run.py diagnose) reports/diagnose/<로봇>.png  로봇 1대 시간에 따른 점수
+              (run.py diagnose) reports/diagnose/<로봇>.png  로봇 1대 시간에 따른 건강 점수 (+ 전류, 배터리 전압)
 """
 import glob
 import logging
@@ -37,15 +37,31 @@ BLUE, ORANGE, GRAY, INK = "#2a78d6", "#eb6834", "#b5b4ad", "#0b0b0b"   # 그래�
 
 
 def fig_robot(table, title, note, path, calibrated=True):
-    """로봇 1대 진단: 판정 주기별 건강 점수와 상태 기준선 (고장 데이터 없이 학습하면 9점 선은 그리지 않음)"""
-    fig, ax = plt.subplots(figsize=(10, 3.8))
+    """로봇 1대 진단: 판정 주기별 건강 점수와 상태 기준선 (고장 데이터 없이 학습하면 9점 선은 그리지 않음)
+    표에 전류·배터리 전압 칸이 있으면 그 아래에 같은 시간축으로 작은 그림을 하나씩 더 그린다 (축 하나에 하나씩)"""
+    extra = [c for c in ("전류(A)", "배터리 전압(V)") if c in table and table[c].notna().any()]
+    fig, axes = plt.subplots(1 + len(extra), 1, figsize=(10, 3.8 + 2.0 * len(extra)), sharex=True, squeeze=False,
+                             gridspec_kw={"height_ratios": [2] + [1] * len(extra)})
+    ax = axes[0, 0]
     lines = [("주의", C.THRESH["caution"]), ("경고", C.THRESH["warning"])] + ([("정지 위험", C.THRESH["danger"])] if calibrated else [])
     for name, v in lines:                                  # 기준선(점선)과 이름표
         ax.axhline(v, color=GRAY, lw=1, ls="--")
         ax.text(table["경과(분)"].min(), v + 0.12, f"{name} {v:.0f}", color="#52514e", fontsize=9)
     ax.plot(table["경과(분)"], table["건강 점수"], color=BLUE, lw=2, marker="o", ms=3)   # 주기별 건강 점수
-    ax.set(xlabel="경과 시간 (분)", ylabel="건강 점수", ylim=(0, max(C.THRESH["danger"] + 1.5, table["건강 점수"].max() * 1.05)))
+    ax.set(ylabel="진동 건강 점수", ylim=(0, max(C.THRESH["danger"] + 1.5, table["건강 점수"].max() * 1.05)))
     ax.set_title(f"{title} · {note}", loc="left", color=INK)
+    for a, col in zip(axes[1:, 0], extra):                 # 전류 / 배터리 전압
+        a.plot(table["경과(분)"], table[col], color=INK, lw=1.4, marker="o", ms=2)
+        if col == "전류(A)" and "전류 상태" in table:      # '전류 높음'인 주기는 주황 점으로 표시
+            hi = table["전류 상태"] == "높음"
+            a.plot(table.loc[hi, "경과(분)"], table.loc[hi, col], "o", color=ORANGE, ms=5, label="평소보다 높음")
+            if hi.any():
+                a.legend(loc="upper left", fontsize=8, frameon=False)
+        if col == "배터리 전압(V)":                        # 배터리 낮음 기준선
+            a.axhline(C.BATTERY_LOW_V, color=GRAY, lw=1, ls="--")
+            a.text(table["경과(분)"].min(), C.BATTERY_LOW_V, f" 배터리 낮음 {C.BATTERY_LOW_V:g} V", color="#52514e", fontsize=8, va="bottom")
+        a.set_ylabel(col)
+    axes[-1, 0].set_xlabel("경과 시간 (분)")
     fig.tight_layout()
     fig.savefig(path, dpi=130)
     plt.close(fig)

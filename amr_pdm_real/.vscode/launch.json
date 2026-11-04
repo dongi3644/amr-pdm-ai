@@ -9,6 +9,13 @@
       "cwd": "${workspaceFolder}", "console": "integratedTerminal"
     },
     {
+      "name": "0. 아두이노 기록 (USB 연결 후)",
+      "type": "debugpy", "request": "launch",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "program": "${workspaceFolder}/실행/0_아두이노_기록.py",
+      "cwd": "${workspaceFolder}", "console": "integratedTerminal", "env": { "PYTHONUTF8": "1" }
+    },
+    {
       "name": "2. 데이터 검사",
       "type": "debugpy", "request": "launch",
       "python": "${workspaceFolder}/.venv/Scripts/python.exe",

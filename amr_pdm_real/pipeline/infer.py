@@ -27,12 +27,9 @@ FEAT_KO = {"rms": "진동 크기(RMS)", "kurt": "충격성(첨도)", "crest": "�
 
 def feat_ko(f):
     """특징 이름 → 화면에 보일 한국어 이름 (SHAP 판단 근거, 그래프 축에 씀)
-    fl_rms → '앞 왼쪽 진동 크기(RMS)', dev_fr_kurt → '앞 오른쪽 vs 다른 바퀴: 충격성(첨도)'"""
-    parts = f.split("_")
-    wheel = lambda w: C.WHEEL_KO.get(w, w)
-    if parts[0] == "dev":
-        return f"{wheel(parts[1])} vs 다른 바퀴: {FEAT_KO.get(parts[2], parts[2])}"
-    return f"{wheel(parts[0])} {FEAT_KO.get(parts[1], parts[1])}"
+    ax_rms → 'X축 가속도 진동 크기(RMS)', gz_high → 'Z축 각속도 고주파 진동'"""
+    ch, key = f.split("_")
+    return f"{C.CHANNEL_KO.get(ch, ch)} {FEAT_KO.get(key, key)}"
 
 
 def level(score):

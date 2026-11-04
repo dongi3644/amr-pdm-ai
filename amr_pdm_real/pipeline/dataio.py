@@ -1,20 +1,21 @@
-"""실측 데이터 읽기: CSV → 파이프라인이 먹는 1초 창 (진동만 사용)
+"""실측 데이터 읽기: CSV → 파이프라인이 먹는 1초 창
 
 [역할] 파이프라인의 맨 앞. 사용자가 넣은 CSV를 읽어 검사하고, 모든 모델이 같은 모양으로 받을 수 있게 '1초 창'으로 자른다.
-       열 이름·인코딩·날짜 형식이 조금 달라도 맞춰 읽는다. 하지만 없는 데이터를 기본값이나 다른 바퀴 값으로
+       열 이름·인코딩·날짜 형식이 조금 달라도 맞춰 읽는다. 하지만 없는 데이터를 기본값이나 다른 값으로
        채워 넣지는 않는다 — 필요한 값이 없으면 고칠 방법과 함께 오류를 낸다.
-[흐름에서 위치] CSV 파일 → (여기) → features.extract → 모델
+[흐름에서 위치] CSV 파일 → (여기) → features.extract → 진동 모델,  current·voltage → power.py (전력 감시)
 
     data = load("data")          # 파일 또는 폴더. 형식 설명은 README.md
     data.robots["R1"]            # 로봇 1대의 1초 창 목록
     data.summary(), data.warnings
 
-CSV 한 줄 = 진동 샘플 하나. 파일 하나 = 로봇 1대 (robot 열이 있으면 그 값으로 나누거나 이어 붙인다).
+CSV 한 줄 = 샘플 하나 (아두이노가 한 번 읽은 값). 파일 하나 = 로봇 1대 (robot 열이 있으면 그 값으로 나누거나 이어 붙인다).
 
 [1초 창 하나(rec)의 내용]
     period, segment, bump                   판정 주기 번호(기록 시작부터 PERIOD_S초마다 1씩)·구간·문턱 여부
     vib_fs                                  진동 샘플링 [Hz] (time 열에서 계산, 없으면 --fs로 직접 알려 줘야 함)
-    <바퀴>_vib  (fl_vib, fr_vib, ...)       바퀴마다 그 1초 동안의 진동 파형 (배열). 바퀴 목록은 config.WHEELS
+    ax, ay, az, gx, gy, gz                  MPU6050 축마다 그 1초 동안의 파형 (배열). 목록은 config.VIB_CHANNELS
+    current, voltage                        그 1초 동안 INA219 값의 평균 [A], [V]. 열이 없거나 그 1초에 값이 없으면 nan
     t                                       창 시작 시각 [s]
     labeled, true_kind, true_side, true_sev 파일의 라벨 (평가용, 모델 입력에는 쓰지 않음)
 
@@ -40,14 +41,7 @@ WHEEL_NAMES = {name: w for w in C.WHEELS
                for name in [w, C.WHEEL_KO.get(w, w), C.WHEEL_KO.get(w, w).replace(" ", "")] + C.WHEEL_ALIASES.get(w, [])}
 
 
-def wheel_column_aliases():
-    """바퀴별 진동 열의 다른 이름 목록을 만든다. 예) fl_vib ← vib_fl, fl_vibration, front_left_vib, 앞왼쪽진동"""
-    out = {}
-    for w in C.WHEELS:
-        names = [w] + C.WHEEL_ALIASES.get(w, [])          # 바퀴를 부르는 이름들 (fl, front_left, 앞왼쪽 ...)
-        # 이름마다 앞뒤에 vib/vibration/진동을 붙인 모든 조합을 '이 바퀴의 진동 열'로 인정한다
-        out[f"{w}_vib"] = [p for a in names for p in (f"{a}_vib", f"vib_{a}", f"{a}_vibration", f"vibration_{a}", f"{a}진동")]
-    return out
+POWER_COLUMNS = ("current", "voltage")      # INA219 열 (선택). 진동보다 드물게 기록돼 빈칸이 많아도 됨
 
 
 class DataError(ValueError):
@@ -80,8 +74,10 @@ class Dataset:
         for name, recs in self.robots.items():
             lbl = self.label_of(name)
             kind = "없음" if lbl is None else C.KIND_KO.get(lbl.split("|")[0], lbl.split("|")[0])
+            has = lambda k: "있음" if any(not np.isnan(r[k]) for r in recs) else "없음"   # 전류·전압 값이 하나라도 있나
             rows.append({"로봇": name, "기록(분)": round(C.minutes(recs[-1]["period"] + 1), 1) if recs else 0, "1초 창": len(recs),
-                         "진동 샘플링(Hz)": round(self.fs.get(name, 0), 1), "구간": len({r["segment"] for r in recs}), "라벨": kind})
+                         "진동 샘플링(Hz)": round(self.fs.get(name, 0), 1), "구간": len({r["segment"] for r in recs}),
+                         "전류": has("current"), "전압": has("voltage"), "라벨": kind})
         return pd.DataFrame(rows)
 
 
@@ -112,7 +108,7 @@ def read_table(path):
         raise DataError(f"{Path(path).name}: 글자 인코딩을 알 수 없습니다. UTF-8로 저장해 주세요.")
     df.columns = [str(c).strip().lower() for c in df.columns]    # 열 이름의 앞뒤 공백 제거 + 소문자 (Time, TIME → time)
     rename = {}
-    for name, aliases in {**C.COLUMN_ALIASES, **wheel_column_aliases()}.items():
+    for name, aliases in {**C.COLUMN_ALIASES, **C.CHANNEL_ALIASES}.items():
         if name not in df.columns:                         # 표준 이름이 이미 있으면 그대로 두고
             found = next((a for a in aliases if a in df.columns), None)   # 없으면 별칭 중 파일에 있는 첫 번째를 찾아
             if found:
@@ -150,15 +146,16 @@ def _labels(col, names):
 def _windows(df, fname, data, fs_arg):
     """로봇 1대의 표 → 1초 창 목록 (판정 주기 번호 = 기록 시작부터 몇 번째 PERIOD_S초인가)
 
-    순서: ① 바퀴 4개 진동 열 확인(하나라도 없으면 오류) ② time으로 샘플링 주파수 계산
-          ③ 선택 열(구간·문턱·라벨) 준비 ④ time을 1초 단위로 잘라 창마다 진동 파형을 담음 ⑤ 샘플이 모자란 창은 버림"""
-    # ① 진동: 바퀴끼리 비교(dev_ 특징)가 이 시스템의 핵심이라 네 바퀴가 모두 있어야 한다. 빈 바퀴를 다른 값으로 채우지 않는다
-    vib = {w: _numeric(df, f"{w}_vib", data, fname) for w in C.WHEELS}
-    missing = [w for w in C.WHEELS if vib[w] is None]
+    순서: ① MPU6050 6축 열 확인(하나라도 없으면 오류) ② time으로 샘플링 주파수 계산
+          ③ 선택 열(전류·전압·구간·문턱·라벨) 준비 ④ time을 1초 단위로 잘라 창마다 진동 파형과 전류·전압 평균을 담음
+          ⑤ 진동 샘플이 모자란 창은 버림"""
+    # ① 진동: MPU6050의 6축(가속도 3 + 각속도 3)이 모두 있어야 한다. 빈 축을 다른 값으로 채우지 않는다
+    vib = {ch: _numeric(df, ch, data, fname) for ch in C.VIB_CHANNELS}
+    missing = [ch for ch in C.VIB_CHANNELS if vib[ch] is None]
     if missing:
-        raise DataError(f"{fname}: {', '.join(f'{w}_vib({C.WHEEL_KO.get(w, w)})' for w in missing)} 열이 없습니다. "
-                        f"바퀴 4개의 진동 열이 모두 필요합니다. 파일의 열: {list(df.columns)}")
-    base = vib[C.WHEELS[0]]                                # 샘플 간격은 첫 번째 바퀴(fl) 진동이 있는 줄로 잰다
+        raise DataError(f"{fname}: {', '.join(f'{ch}({C.CHANNEL_KO.get(ch, ch)})' for ch in missing)} 열이 없습니다. "
+                        f"MPU6050의 {', '.join(C.VIB_CHANNELS)} 열이 모두 필요합니다. 파일의 열: {list(df.columns)}")
+    base = vib[C.VIB_CHANNELS[0]]                          # 샘플 간격은 첫 번째 축(ax) 값이 있는 줄로 잰다
     # ② 샘플링 주파수 = 1 / (진동 샘플 사이 시간 간격의 중앙값). time 열이 없으면 --fs로 알려 줘야 한다 (임의로 가정하지 않음)
     n = len(df)
     if "time" in df.columns:
@@ -185,8 +182,12 @@ def _windows(df, fname, data, fs_arg):
     if fs < 300:
         data.warn(f"{fname}: 진동 샘플링 {fs:.0f} Hz는 낮아서 고주파(150 Hz 이상) 특징이 거의 비게 됩니다.")
 
-    # ③ 선택 열: 구간이 없으면 전체를 한 구간으로 본다 (값을 만들어 넣는 게 아니라 구간 구분을 하지 않는 것)
-    seg = df["segment"].fillna(C.DEFAULT_SEGMENT).astype(str).str.strip().to_numpy() if "segment" in df.columns else None
+    # ③ 선택 열. INA219 전류·전압: 없으면 None (전력 감시를 하지 않음). 몇 샘플에 한 번만 값이 있어도 된다
+    power = {k: _numeric(df, k, data, fname) for k in POWER_COLUMNS}
+    if all(v is None for v in power.values()):
+        data.warn(f"{fname}: current·voltage 열이 없어 전류·배터리 감시는 하지 않습니다 (진동만으로 진단).")
+    # 구간이 없으면 전체를 한 구간으로 본다 (값을 만들어 넣는 게 아니라 구간 구분을 하지 않는 것)
+    seg =df["segment"].fillna(C.DEFAULT_SEGMENT).astype(str).str.strip().to_numpy() if "segment" in df.columns else None
     if seg is None:
         data.warn(f"{fname}: segment 열이 없어 전체를 한 구간으로 보고 기준을 만듭니다. 장소별 노면 차이는 걸러지지 않습니다.")
     # 문턱: 1/true/yes 등이면 문턱을 넘는 순간 (판정에서 뺄 창)
@@ -201,7 +202,7 @@ def _windows(df, fname, data, fs_arg):
     bounds = np.flatnonzero(np.diff(idx)) + 1                     # 그 번호가 바뀌는 줄 = 다음 창이 시작하는 줄
     need, dropped, recs = C.MIN_WINDOW_FILL * fs * C.WINDOW_S, 0, []   # need: 창 하나에 있어야 할 최소 샘플 수 (1000 Hz면 800개)
     for a, b in zip(np.r_[0, bounds], np.r_[bounds, n]):          # a:b = 이번 1초 창에 속한 줄 범위
-        waves = {w: vib[w][a:b][~np.isnan(vib[w][a:b])] for w in C.WHEELS}   # 바퀴별 이 1초의 진동 (빈칸은 빼고)
+        waves = {ch: vib[ch][a:b][~np.isnan(vib[ch][a:b])] for ch in C.VIB_CHANNELS}   # 축별 이 1초의 파형 (빈칸은 빼고)
         if min(len(x) for x in waves.values()) < need:               # ⑤ 기록이 끊겨 샘플이 80% 미만이면 버림
             dropped += 1
             continue
@@ -209,8 +210,11 @@ def _windows(df, fname, data, fs_arg):
                    segment=seg[a] if seg is not None else C.DEFAULT_SEGMENT,
                    bump=bool(bump[a:b].any()) if bump is not None else False, vib_fs=fs, t=float(t[a]),
                    labeled=False, true_kind="normal", true_side="", true_sev=0.0)
-        for w in C.WHEELS:                                           # 바퀴마다 진동 파형
-            rec[f"{w}_vib"] = waves[w].astype(np.float32)
+        for ch in C.VIB_CHANNELS:                                    # 축마다 진동 파형
+            rec[ch] = waves[ch].astype(np.float32)
+        for k, col in power.items():                                 # 전류·전압: 이 1초에 기록된 값들의 평균 (없으면 nan)
+            v = col[a:b][~np.isnan(col[a:b])] if col is not None else ()
+            rec[k] = float(np.mean(v)) if len(v) else float("nan")
         if has_label:                                                # 라벨: 창 안의 마지막 고장 종류와 최대 고장 정도
             kind = next((k for k in (kinds[a:b][::-1] if kinds is not None else ()) if k), "")   # 뒤에서부터 첫 빈칸 아닌 종류
             sv = sevs[a:b][~np.isnan(sevs[a:b])] if sevs is not None else ()

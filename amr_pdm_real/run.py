@@ -103,6 +103,13 @@ def cmd_diagnose(a):
         causes = table.loc[table["추정 원인"] != "", "추정 원인"]   # 원인이 적힌 주기들 (마지막 것을 요약에 씀)
         print(f"{name}: 최고 점수 {table['건강 점수'].max():.1f}, 최종 상태 {C.STATUS_KO[mon.status]}, 상태 변경 {', '.join(events)}"
               + (f", 추정 원인 {causes.iloc[-1]}" if len(causes) else "") + (" (학습에 쓰인 로봇)" if name in trained else ""))
+        pw = mon.power                                     # 전류·배터리 감시 요약 (current·voltage 열이 있을 때만)
+        if pw.has_data:
+            vs = [p["voltage"] for p in pw.periods.values() if p["voltage"] is not None]
+            print("    전류·배터리: " + ", ".join(
+                (["상태 변경 " + (", ".join(f"{at_min(p)} {e}" for p, e in pw.events) or "없음")])
+                + ([f"사용량 {pw.used_mah:.0f} mAh (용량의 {pw.used_mah / C.BATTERY_CAPACITY_MAH * 100:.0f}%)"] if pw.has_current else [])
+                + ([f"배터리 전압 {vs[0]:.2f} → {vs[-1]:.2f} V"] if vs else [])))
     print("저장 위치:", out)
 
 

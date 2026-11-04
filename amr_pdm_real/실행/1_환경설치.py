@@ -13,5 +13,5 @@ print("패키지 설치 중 (requirements.txt)...")
 subprocess.check_call([str(VENV_PY), "-m", "pip", "install", "--upgrade", "pip", "-q"])            # 설치 도구(pip) 최신으로
 subprocess.check_call([str(VENV_PY), "-m", "pip", "install", "-r", str(ROOT / "requirements.txt")])  # 필요한 패키지 설치
 # 설치한 패키지를 실제로 불러와 보며 확인 (실패하면 여기서 오류가 남)
-subprocess.check_call([str(VENV_PY), "-c", "import numpy, pandas, scipy, sklearn, shap; print('설치 확인 완료')"])
-print("\n다음 단계: data 폴더에 CSV를 넣고 실행/2_데이터_검사.py")
+subprocess.check_call([str(VENV_PY), "-c", "import numpy, pandas, scipy, sklearn, shap, serial; print('설치 확인 완료')"])
+print("\n다음 단계: 실행/0_아두이노_기록.py 로 기록하거나, data 폴더에 CSV를 넣고 실행/2_데이터_검사.py")
