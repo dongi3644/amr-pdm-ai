@@ -12,6 +12,7 @@ amr_pdm/artifacts/user_model.joblib
 amr_pdm_real/data/*
 !amr_pdm_real/data/README.md
 amr_pdm_real/raw/
+amr_pdm_real/artifacts/
 amr_pdm_real/reports/diagnose/
 *.log
 
