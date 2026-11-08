@@ -65,7 +65,8 @@ def train(data, units=None, baseline=None, tune=True):
     # 실제로 학습에 들어갈 정상 창 수 (문턱 창과, per_unit이면 기준용 처음 5분은 빠짐)
     n_use = sum(1 for r in normal if not r["bump"] and (baseline == "reference" or r["period"] >= C.BASELINE_PERIODS))
     if n_use < C.MIN_TRAIN_WINDOWS:
-        raise DataError(f"학습에 쓸 정상 창이 {n_use}개뿐입니다. 정상 구간이 {C.MIN_TRAIN_WINDOWS}초 이상 필요합니다.")
+        raise DataError(f"학습에 쓸 정상 창이 {n_use}개뿐입니다. 정상 구간이 {C.MIN_TRAIN_WINDOWS}초 이상 필요합니다"
+                        + (f" (로봇마다 처음 {C.minutes(C.BASELINE_PERIODS):g}분은 기준용이라 빼고 셈)." if baseline == "per_unit" else "."))
 
     n_normal_units = len({r["robot"] for r in normal})
     if baseline == "reference" and n_normal_units < 3:   # 공통 기준은 장비마다 다른 정상 상태를 담아야 함
@@ -138,8 +139,8 @@ def diagnose(pipe, recs, detector="ae"):
     전력 감시 결과는 mon.power (power.PowerMonitor)에 있다."""
     if not recs or (pipe.bundle["baseline"] == "per_unit" and recs[-1]["period"] < C.BASELINE_PERIODS):
         raise DataError(f"기록이 짧습니다. 로봇마다 기준을 만드는 방식에서는 {C.minutes(C.BASELINE_PERIODS + 1):g}분 이상이 필요합니다.")
-    # mon: 진동 진단기, power: 전류·배터리 감시기, rows: 표의 줄(주기마다 1줄), last: 마지막으로 판정한 창의 결과, truth: 주기별 파일 라벨
-    mon, power, rows, last, truth = pipe.monitor(detector), PowerMonitor(), [], None, {}
+    # mon: 진동 진단기, power: 전류·배터리 감시기, rows: 표의 줄(주기마다 1줄), truth: 주기별 파일 라벨
+    mon, power, rows, truth = pipe.monitor(detector), PowerMonitor(), [], {}
 
     def flush():
         """새로 끝난 주기가 있으면 표에 한 줄씩 추가"""
@@ -148,19 +149,17 @@ def diagnose(pipe, recs, detector="ae"):
             rows.append({"경과(분)": round(C.minutes(period + 1), 2), "건강 점수": round(score, 2), "상태": C.STATUS_KO[mon.status],
                          "정지 위험까지(분)": round(C.minutes(fc["periods"]), 1) if fc else None,
                          "빠르면(분)": round(C.minutes(fc["periods_lo"]), 1) if fc else None,
-                         "추정 원인": (last or {}).get("cause") or "", "판단 근거": ", ".join(n for n, _ in mon.reason),
+                         "추정 원인": mon.current_cause(), "판단 근거": ", ".join(n for n, _ in mon.reason),
                          **power.columns(period),         # 전류·배터리 칸 (열이 없는 데이터면 아무것도 붙지 않음)
                          "파일 라벨": truth.get(period, "")})
 
     for rec in recs:                                      # 1초 창을 시간 순서대로 하나씩 넣는다 (실시간과 같은 방식)
         power.update(rec)                                 # 전력 감시를 먼저: 주기가 바뀌면 지난 주기 결과가 표에 들어갈 수 있게
-        o = mon.update(rec)
+        mon.update(rec)
         if rec["labeled"]:                                # 비교용으로 파일에 적힌 라벨도 표에 남김 (예: '베어링 결함 0.62')
             kind = C.KIND_KO.get(rec["true_kind"], rec["true_kind"])
             truth[rec["period"]] = f"{kind} {rec['true_sev']:.2f}" if rec["true_sev"] > 0 else kind
         flush()
-        if o["phase"] == "monitor":                       # 기준 학습 중·문턱 창이 아닌, 실제로 판정한 창만 기억
-            last = o
     power.finish()                                        # 마지막 주기 마무리
     mon.finish()
     flush()
@@ -216,7 +215,7 @@ def cross_validate(data, baseline=None, progress=print):
     baseline = choose_baseline(data, baseline)
     folds = make_folds(data, names)
     # units: 로봇 단위 결과, win: 창 단위 정답(y: 고장인가)·원인 정답(labels)·원인 예측(pred), skipped: 평가 못 한 이유
-    units, win, skipped = [], {k: [] for k in ("y", "labels", "pred")}, []
+    units, win, skipped = [], {k: [] for k in ("y", "labels", "pred", "seen")}, []
     det_scores = {}                                       # 모델 이름 → 평가 창들의 건강 점수 (AUC 계산용)
     for i, test in enumerate(folds, 1):
         try:
@@ -247,8 +246,10 @@ def cross_validate(data, baseline=None, progress=print):
                     det_scores.setdefault(k, []).append(health(d, Z[lab]))
                 if b["cause"] is not None:                # 원인 분류: 고장 초반(정도 0.25 미만) 창은 학습 때처럼 뺌
                     keep = np.array([r["true_sev"] == 0 or r["true_sev"] >= C.CAUSE_MIN_SEVERITY for r in zrows]) & lab
-                    win["labels"] += [NORMAL_LABEL if r["true_sev"] == 0 else f"{r['true_kind']}|{r['true_side']}"
-                                      for r, k in zip(zrows, keep) if k]
+                    labs = [NORMAL_LABEL if r["true_sev"] == 0 else f"{r['true_kind']}|{r['true_side']}"
+                            for r, k in zip(zrows, keep) if k]
+                    win["labels"] += labs
+                    win["seen"] += [l in b["cause"].classes for l in labs]   # 이 겹의 모델이 배운 원인인가
                     win["pred"] += list(np.array(b["cause"].classes)[np.argmax(b["cause"].proba(Z[keep]), 1)]) if keep.any() else []
             # 로봇 단위: 주기별 실제 고장 정도와 진단 이벤트를 맞대어 '언제 알아챘나'를 기록
             sev = {}                                      # 주기 번호 → 그 주기의 최대 고장 정도 (라벨)
@@ -258,13 +259,17 @@ def cross_validate(data, baseline=None, progress=print):
             onset = next((l for l in sorted(sev) if sev[l] > 0), None)                     # 라벨상 고장이 시작된 주기
             fail = next((l for l in sorted(sev) if sev[l] >= C.FAILURE_SEVERITY), None)    # 라벨상 정지 위험(0.8)이 된 주기
             scores = [s for _, s in mon.period_scores]
+            # 이 겹의 원인 모델이 배운 적 없는 고장(그 종류·바퀴의 로봇이 이 로봇 1대뿐)은 맞힐 수가 없으므로 정확도에서 따로 센다
+            unseen = b["cause"] is None or label not in b["cause"].classes
             units.append(dict(robot=name, label=label, label_assumed=assumed,
                               label_ko=label_ko(label) + (" (라벨 없음, 정상으로 간주)" if assumed else ""),
                               onset=onset, caution=first(1), warning=first(2), fail=fail,
+                              # 경고 주기가 끝날 때 판정하므로, 고장 정도 0.8이 시작된 주기보다 앞에서 경고해야 '미리 경고'(1 이상)
                               lead_periods=(fail - first(2)) if fail is not None and first(2) is not None else None,
                               max_score=round(max(scores), 2) if scores else None,
                               cause_pred=label_ko(mon.last_cause_label) if mon.last_cause_label else None,
-                              cause_ok=(mon.last_cause_label == label) if (mon.last_cause_label and label and label != NORMAL_LABEL) else None,
+                              cause_unseen=bool(unseen and label != NORMAL_LABEL),
+                              cause_ok=(mon.last_cause_label == label) if (mon.last_cause_label and label != NORMAL_LABEL and not unseen) else None,
                               period_scores=[[int(l), round(s, 3)] for l, s in mon.period_scores],
                               sev_range=round(max(sev.values()) - min(v for v in sev.values()), 2) if sev else 0.0,
                               forecast_kalman=_forecast_errors(scores, lambda s: kalman_forecast(s, cfg=b["kalman"])),
@@ -290,8 +295,11 @@ def summarize(units, win, det_scores, skipped, baseline, n_folds):
                       false_positive=round(float(np.mean(s[~y] >= C.THRESH["caution"])), 3) if (~y).any() else None)
     fault_u = [u for u in units if u["label"] and u["label"] != NORMAL_LABEL]   # 고장 라벨 로봇
     normal_u = [u for u in units if u["label"] == NORMAL_LABEL]                 # 정상 로봇 (라벨 없어 정상으로 간주한 로봇 포함)
-    leads = [u["lead_periods"] for u in fault_u if u["lead_periods"] is not None]   # 경고 → 정지 위험까지 여유 주기
-    cause_u = [u for u in fault_u if u["cause_ok"] is not None]                 # 원인을 추정한 고장 로봇
+    # 경고 → 정지 위험까지 여유 주기. 정지 위험 뒤에 뜬 경고(0 이하)는 '미리 경고'가 아니므로 세지 않음
+    leads = [u["lead_periods"] for u in fault_u if u["lead_periods"] is not None and u["lead_periods"] > 0]
+    cause_u = [u for u in fault_u if u["cause_ok"] is not None]                 # 원인을 추정한 고장 로봇 (배운 적 있는 원인만)
+    seen = np.array(win["seen"], bool)                                          # 창마다: 그 겹의 모델이 배운 원인인가
+    lab_a, pred_a = np.array(win["labels"]), np.array(win["pred"])
     k_err = [e for u in fault_u for e, _ in u["forecast_kalman"]]               # 칼만 필터 예측 오차들
     k_in = [i for u in fault_u for _, i in u["forecast_kalman"] if i is not None]   # 90% 범위 안에 들었나
     t_err = [e for u in fault_u for e, _ in u["forecast_trend"]]                # 추세선 예측 오차들
@@ -309,8 +317,10 @@ def summarize(units, win, det_scores, skipped, baseline, n_folds):
                    false_alarm=f"{sum(u['caution'] is not None for u in normal_u)}/{len(normal_u)}",
                    warned_before_fail=f"{len(leads)}/{sum(u['fail'] is not None for u in fault_u)}",
                    mean_lead_min=m(np.mean(leads)) if leads else None),
-        cause=dict(window_accuracy=round(float(np.mean(np.array(win["labels"]) == np.array(win["pred"]))), 3) if win["labels"] else None,
+        # 정확도는 그 겹에서 배운 적 있는 원인의 창·로봇만으로 낸다. 배운 적 없는 원인은 따로 센다 (혼동행렬에는 모두 들어감)
+        cause=dict(window_accuracy=round(float(np.mean(lab_a[seen] == pred_a[seen])), 3) if seen.any() else None,
                    unit_accuracy=f"{sum(u['cause_ok'] for u in cause_u)}/{len(cause_u)}" if cause_u else None,
+                   unseen_windows=int((~seen).sum()), unseen_units=sum(u["cause_unseen"] for u in fault_u),
                    labels=cm_labels,
                    confusion=confusion_matrix(win["labels"], win["pred"], labels=cm_labels).tolist() if win["labels"] else None),
         forecast=dict(kalman=dict(mae_min=m(np.mean(k_err)) if k_err else None, n=len(k_err),

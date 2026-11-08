@@ -162,7 +162,9 @@ def summary_md(m, notes, path):
               f"- 고장 로봇 감지: {u['fault_detected']} · 정상 로봇 오경보: {u['false_alarm']}"
               + (f" (그중 라벨 없이 정상으로 간주한 로봇 {u['normal_assumed']}대)" if u["normal_assumed"] else ""),
               f"- 정지 위험 전 경고: {u['warned_before_fail']} · 평균 여유: {u['mean_lead_min']}분", "",
-              "## 원인 분류", "", f"- 창 단위 정확도 {c['window_accuracy']} · 로봇 단위 {c['unit_accuracy']}", "",
+              "## 원인 분류", "", f"- 창 단위 정확도 {c['window_accuracy']} · 로봇 단위 {c['unit_accuracy']}"
+              + (f" (학습 겹에 같은 원인이 없어 맞힐 수 없던 고장 로봇 {c['unseen_units']}대는 정확도에서 뺌. 혼동행렬에는 포함)"
+                 if c.get("unseen_units") else ""), "",
               "## 정지 위험 시점 예측", "", "| 방법 | 평균 오차(분) | 예측 횟수 |", "|---|---|---|",
               f"| 칼만 필터 | {f['kalman']['mae_min']} | {f['kalman']['n']} |", f"| 추세선 | {f['trend']['mae_min']} | {f['trend']['n']} |", "",
               f"칼만 필터 90% 범위 적중: {f['kalman']['coverage']}", "",

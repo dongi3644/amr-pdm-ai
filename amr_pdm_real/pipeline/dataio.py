@@ -188,8 +188,8 @@ def _windows(df, fname, data, fs_arg):
         data.warn(f"{fname}: current·voltage 열이 없어 전류·배터리 감시는 하지 않습니다 (진동만으로 진단).")
     # 구간이 없으면 전체를 한 구간으로 본다 (값을 만들어 넣는 게 아니라 구간 구분을 하지 않는 것)
     seg =df["segment"].fillna(C.DEFAULT_SEGMENT).astype(str).str.strip().to_numpy() if "segment" in df.columns else None
-    if seg is None:
-        data.warn(f"{fname}: segment 열이 없어 전체를 한 구간으로 보고 기준을 만듭니다. 장소별 노면 차이는 걸러지지 않습니다.")
+    if seg is None:                                        # 기록기는 SEGMENT를 비우면 이 열을 만들지 않으므로 흔한 경우 → 파일 이름 없이 한 번만 알림
+        data.warn("segment 열이 없는 파일은 전체를 한 구간으로 보고 기준을 만듭니다. 장소별 노면 차이는 걸러지지 않습니다.")
     # 문턱: 1/true/yes 등이면 문턱을 넘는 순간 (판정에서 뺄 창)
     bump = df["bump"].astype(str).str.strip().str.lower().isin(["1", "1.0", "true", "t", "y", "yes"]).to_numpy() if "bump" in df.columns else None
     kinds = _labels(df["fault_kind"], KIND_NAMES) if "fault_kind" in df.columns else None      # 고장 종류 (예: bearing)
@@ -259,13 +259,21 @@ def load(path=C.DATA_DIR, fs=None):
     return data
 
 
+def reference_reasons(data):
+    """처음 BASELINE_PERIODS주기(5분)로 자기 기준을 만들 수 없는 로봇과 그 이유 → ['짧은기록 (기록이 짧음)', ...]"""
+    out = []
+    for name, recs in data.robots.items():
+        if not recs or recs[-1]["period"] < C.BASELINE_PERIODS:
+            out.append(f"{name} (기록이 {C.minutes(C.BASELINE_PERIODS + 1):g}분보다 짧음)")
+        elif any(r["true_sev"] > 0 and r["period"] < C.BASELINE_PERIODS for r in recs):
+            out.append(f"{name} (처음 {C.minutes(C.BASELINE_PERIODS):g}분에 고장 라벨)")
+    return out
+
+
 def choose_baseline(data, mode=None):
     """정상 기준 방식 결정. auto면 처음 BASELINE_PERIODS주기에 고장 라벨이 있거나 기록이 그보다 짧은 로봇이 있을 때 reference"""
     mode = mode or C.BASELINE_MODE
     if mode != "auto":                                     # 사용자가 --baseline으로 정했으면 그대로
         return mode
-    for recs in data.robots.values():
-        # 처음 5분으로 기준을 못 만드는 로봇(기록이 짧거나 처음부터 고장)이 하나라도 있으면 공통 기준이 필요
-        if not recs or recs[-1]["period"] < C.BASELINE_PERIODS or any(r["true_sev"] > 0 and r["period"] < C.BASELINE_PERIODS for r in recs):
-            return "reference"
-    return "per_unit"
+    # 처음 5분으로 기준을 못 만드는 로봇(기록이 짧거나 처음부터 고장)이 하나라도 있으면 공통 기준이 필요
+    return "reference" if reference_reasons(data) else "per_unit"

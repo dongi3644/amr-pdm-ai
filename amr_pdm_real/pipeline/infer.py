@@ -95,6 +95,14 @@ class Predictor:
         cls = self.b["cause"].classes
         return cls[int(np.argmax(p))], p
 
+    def current_cause(self):
+        """지금 상태로 본 추정 원인 문구 (주의 이상이고 원인 확률이 쌓였을 때만, 아니면 '')
+        주기 표는 주기가 끝난 직후(상태가 막 바뀐 직후)에 쓰므로, 마지막 창의 결과가 아니라 이 값을 써야 원인 칸이 한 주기 늦지 않다."""
+        if not (self.use_cause and self.status >= 1 and self.cause_buf):
+            return ""
+        top = self._top_cause()[0]
+        return "원인 미확정" if top == NORMAL_LABEL else label_ko(top)
+
     def update(self, rec):
         """1초 창(dataio의 rec) 하나 처리: 특징을 뽑아 update_row로 넘김"""
         return self.update_row(extract(rec), rec)

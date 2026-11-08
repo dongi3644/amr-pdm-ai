@@ -33,6 +33,16 @@ def show_data(data):
             print(" -", w)
 
 
+def show_baseline(data, mode):
+    """정상 기준 방식과, auto가 공통 기준(reference)을 고른 경우 그 원인이 된 로봇을 출력"""
+    chosen = D.choose_baseline(data, mode)
+    print(f"\n정상 기준 방식: {chosen} · 판정 주기 {C.PERIOD_S:g}초")
+    if chosen == "reference" and (mode or C.BASELINE_MODE) == "auto":
+        print(f"  공통 기준을 고른 이유 (자기 처음 {C.minutes(C.BASELINE_PERIODS):g}분으로 기준을 만들 수 없는 로봇): "
+              + ", ".join(D.reference_reasons(data)))
+        print("  실수로 짧게 끊긴 파일이면 빼고 다시 실행하세요. 그러면 로봇마다 자기 기준(per_unit)을 씁니다.")
+
+
 def safe(name):
     """로봇 이름에서 파일 이름에 쓸 수 없는 글자(\\ / : * ? " < > |)를 _로 바꿈 (결과 파일 이름용)"""
     return re.sub(r'[\\/:*?"<>|]', "_", name)
@@ -47,7 +57,7 @@ def cmd_check(a):
     """파일을 읽기만 한다. 로봇별 기록 길이·창 수·샘플링·라벨 표와, 빠진 열·가정한 값 같은 경고를 보여 준다."""
     data = D.load(a.path, a.fs)
     show_data(data)
-    print(f"\n정상 기준 방식: {D.choose_baseline(data, a.baseline)} · 판정 주기 {C.PERIOD_S:g}초")
+    show_baseline(data, a.baseline)
 
 
 def cmd_train(a):
@@ -56,6 +66,7 @@ def cmd_train(a):
     1)의 수치가 발표용 성능이고, 2)의 모델이 diagnose와 대시보드에서 쓰인다."""
     data = D.load(a.path, a.fs)
     show_data(data)
+    show_baseline(data, a.baseline)
     C.REPORT_DIR.mkdir(exist_ok=True)
     metrics = None
     if not a.no_eval and len(data.robots) >= 2:           # 로봇이 1대면 빼고 평가할 수 없으므로 건너뜀
@@ -75,8 +86,12 @@ def cmd_train(a):
             report.fig_importance(pipe.bundle["cause"].importance(), C.REPORT_DIR / "fig_importance.png")
         report.summary_md(metrics, notes, C.REPORT_DIR / "summary.md")
         brief = {k: metrics[k] for k in ("protocol", "detectors", "units", "forecast", "health_indicator")}
-        brief["cause"] = {k: metrics["cause"][k] for k in ("window_accuracy", "unit_accuracy")}
+        brief["cause"] = {k: metrics["cause"][k] for k in ("window_accuracy", "unit_accuracy", "unseen_units")}
         print("\n평가 요약:", json.dumps(brief, ensure_ascii=False, indent=1))
+        if metrics["skipped"]:                             # 평가하지 못한 로봇과 이유 (빠진 로봇은 위 수치에 들어가지 않음)
+            print("평가에서 빠진 항목:")
+            for s in metrics["skipped"]:
+                print(" -", s)
         print("보고서:", C.REPORT_DIR)
 
 

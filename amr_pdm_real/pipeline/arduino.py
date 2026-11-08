@@ -87,7 +87,11 @@ def record(port, robot, minutes=0, baud=500000, segment="", fault_kind="", fault
         ser.reset_input_buffer()
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / f"{robot}_{datetime.now():%Y%m%d_%H%M%S}.csv"
+    stamp = f"{robot}_{datetime.now():%Y%m%d_%H%M%S}"
+    path, k = out_dir / f"{stamp}.csv", 1
+    while path.exists():                                   # 같은 초에 기록한 파일이 이미 있으면 덮어쓰지 않고 _2, _3 ...을 붙임
+        k += 1
+        path = out_dir / f"{stamp}_{k}.csv"
     labels = {k: v for k, v in dict(segment=segment, fault_kind=fault_kind, fault_wheel=fault_wheel,
                                      fault_severity=fault_severity).items() if v != ""}   # 적은 라벨만 열로 넣음
     fields = ["time", "ax", "ay", "az", "gx", "gy", "gz", "current", "voltage", "robot"] + list(labels)
