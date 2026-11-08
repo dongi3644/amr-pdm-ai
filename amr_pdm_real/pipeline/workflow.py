@@ -264,8 +264,9 @@ def cross_validate(data, baseline=None, progress=print):
             units.append(dict(robot=name, label=label, label_assumed=assumed,
                               label_ko=label_ko(label) + (" (라벨 없음, 정상으로 간주)" if assumed else ""),
                               onset=onset, caution=first(1), warning=first(2), fail=fail,
-                              # 경고 주기가 끝날 때 판정하므로, 고장 정도 0.8이 시작된 주기보다 앞에서 경고해야 '미리 경고'(1 이상)
-                              lead_periods=(fail - first(2)) if fail is not None and first(2) is not None else None,
+                              # 경고는 그 주기가 '끝날 때'(주기 번호 + 1) 뜨고, 고장 정도 0.8은 fail 주기가 '시작할 때' 된다.
+                              # 여유 = fail - (경고 주기 + 1). 0 이상이면 정지 위험 전에(늦어도 그 순간에) 경고한 것
+                              lead_periods=(fail - first(2) - 1) if fail is not None and first(2) is not None else None,
                               max_score=round(max(scores), 2) if scores else None,
                               cause_pred=label_ko(mon.last_cause_label) if mon.last_cause_label else None,
                               cause_unseen=bool(unseen and label != NORMAL_LABEL),
@@ -295,8 +296,8 @@ def summarize(units, win, det_scores, skipped, baseline, n_folds):
                       false_positive=round(float(np.mean(s[~y] >= C.THRESH["caution"])), 3) if (~y).any() else None)
     fault_u = [u for u in units if u["label"] and u["label"] != NORMAL_LABEL]   # 고장 라벨 로봇
     normal_u = [u for u in units if u["label"] == NORMAL_LABEL]                 # 정상 로봇 (라벨 없어 정상으로 간주한 로봇 포함)
-    # 경고 → 정지 위험까지 여유 주기. 정지 위험 뒤에 뜬 경고(0 이하)는 '미리 경고'가 아니므로 세지 않음
-    leads = [u["lead_periods"] for u in fault_u if u["lead_periods"] is not None and u["lead_periods"] > 0]
+    # 경고 → 정지 위험까지 여유 주기. 정지 위험 뒤에 뜬 경고(음수)는 '미리 경고'가 아니므로 세지 않음
+    leads = [u["lead_periods"] for u in fault_u if u["lead_periods"] is not None and u["lead_periods"] >= 0]
     cause_u = [u for u in fault_u if u["cause_ok"] is not None]                 # 원인을 추정한 고장 로봇 (배운 적 있는 원인만)
     seen = np.array(win["seen"], bool)                                          # 창마다: 그 겹의 모델이 배운 원인인가
     lab_a, pred_a = np.array(win["labels"]), np.array(win["pred"])
