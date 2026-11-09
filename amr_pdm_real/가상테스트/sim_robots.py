@@ -5,13 +5,19 @@
 
 만드는 신호 (모두 사람이 정한 식이라 실제 로봇과 다름)
     주행: 전진 7.7초 · 정지 2.3초 · 회전 3.4초 · 후진 4.1초 · 정지 1.9초 반복, 출발·정지 0.25초 가감속
+          (복잡한 로봇은 속도 speed·시간 배율 dscale을 로봇마다 다르게)
     정상 진동: 모터 회전(바퀴의 48배) 성분 + 바퀴 2배 성분 + 잡음. 로봇마다 진동 크기·잡음·속도·배터리가 조금씩 다름
     고장 3종류 (움직일 때만, 움직임 크기에 비례)
         불평형     바퀴 1회전 주기의 흔들림
         체결부 풀림 바퀴가 돌 때마다 '딱' 하는 충격
-        베어링 결함 200 Hz 부근 고주파 잡음 + 전류 증가
+        베어링 결함 200 Hz 부근 고주파 잡음 + 전류 증가 (bearing_hz로 다른 주파수도 만들 수 있음)
     고장 바퀴 위치: 센서(MPU6050)가 차체 앞 왼쪽에 조금 치우쳐 있다고 가정해, 바퀴마다 축별 세기를 다르게 줌.
         이 가정은 단순화한 것이라 '어느 바퀴인가' 결과는 실제와 크게 다를 수 있다.
+
+복잡한 경우 (complex_spec)
+    고장: 급성(갑자기 큰 고장) · 간헐(가끔만 나타남) · 복합(두 고장이 함께) · 약한 고장 · 속도가 다른 주행 ·
+          베어링 주파수 변형(학습에 없던 고장) · 고장 + 배터리 저전압
+    정상인데 헷갈리기 쉬운 경우: 중간에 바닥이 거칠어짐 · 중간에 짐을 실음 · 배터리 저전압
 """
 import numpy as np
 import pandas as pd
@@ -26,16 +32,17 @@ WHEELS = ["fl", "fr", "rl", "rr"]
 WHEEL_GAIN = {"fl": (1.25, 1.3, 1.3), "fr": (1.0, 0.7, 1.3), "rl": (0.95, 1.3, 0.7), "rr": (0.75, 0.7, 0.7)}
 
 
-def drive(tt):
-    """샘플마다 (pwm × 가감속, 회전 중인가, 출발 직후인가)"""
-    x = tt % CYCLE
+def drive(tt, speed=1.0, dscale=1.0):
+    """샘플마다 (pwm × 가감속, 회전 중인가, 출발 직후인가). speed: pwm 배율, dscale: 상태 시간 배율"""
+    x = tt % (CYCLE * dscale)
     pwm, turn, start = np.zeros_like(x), np.zeros_like(x, bool), np.zeros_like(x, bool)
     edge = 0.0
     for dur, st, p in PATTERN:
+        dur = dur * dscale
         m = (x >= edge) & (x < edge + dur)
         if st != "stop":
             pos = x[m] - edge
-            pwm[m] = p * np.clip(np.minimum(pos, dur - pos) / RAMP, 0, 1)
+            pwm[m] = min(p * speed, 1.0) * np.clip(np.minimum(pos, dur - pos) / RAMP, 0, 1)
             turn[m] = st == "turn"
             start[m] = pos < 0.1
         edge += dur
@@ -64,13 +71,92 @@ def random_spec(rng, name, fault, kind=None, wheel=None):
     return spec
 
 
+# 복잡한 경우의 이름 (결과 표에 그대로 나옴)
+FAULT_CATS = ["점진 고장", "급성 고장", "간헐 고장", "복합 고장", "약한 고장", "속도 다름", "베어링 변형", "고장+저전압"]
+NORMAL_CATS = ["정상", "바닥 바뀜", "짐 실음", "저전압 정상"]
+
+
+def complex_spec(rng, name, cat, kind=None, wheel=None, extreme=False):
+    """복잡한 경우의 로봇 1대 설정. cat: FAULT_CATS 또는 NORMAL_CATS 중 하나.
+    extreme=True면 학습 때보다 더 극단적인 값 (시험용: 학습에 없던 조건)"""
+    fault = cat in FAULT_CATS
+    spec = random_spec(rng, name, fault, kind, wheel)
+    spec.update(cat=cat, speed=rng.uniform(0.85, 1.1), dscale=rng.uniform(0.8, 1.25))
+    if cat == "속도 다름":
+        spec["speed"] = (rng.choice([rng.uniform(0.55, 0.65), rng.uniform(1.2, 1.25)]) if extreme
+                         else rng.uniform(0.7, 1.2))
+    if cat in ("고장+저전압", "저전압 정상"):
+        spec["v0"] = rng.uniform(7.05, 7.25)               # 기록 중에 7.0 V 아래로 내려감 → 바퀴가 느려짐
+    if cat == "바닥 바뀜":
+        spec.update(floor_at=rng.uniform(7, 10), floor_level=rng.uniform(1.0, 2.5), minutes=rng.uniform(12, 18))
+    if cat == "짐 실음":
+        spec.update(load_at=rng.uniform(7, 10), load_level=rng.uniform(0.5, 1.0), minutes=rng.uniform(12, 18))
+    if not fault:
+        return spec
+    if cat == "급성 고장":                                  # 볼트가 갑자기 빠지는 것처럼 한 번에 큰 고장
+        spec.update(mode="sudden", final=rng.uniform(0.6, 1.0), minutes=spec["onset"] + rng.uniform(4, 8))
+    elif cat == "간헐 고장":                                # 고장은 진행되지만 진동에는 가끔만 나타남
+        spec.update(intermittent=True, kind=kind or str(rng.choice(["looseness", "bearing", "unbalance"], p=[0.6, 0.2, 0.2])))
+    elif cat == "복합 고장":                                # 두 번째 고장이 다른 바퀴에 함께 진행
+        k2 = str(rng.choice([k for k in KINDS if k != spec["kind"]]))
+        spec["second"] = dict(kind=k2, wheel=str(rng.choice(WHEELS)), ratio=rng.uniform(0.5, 1.0),
+                              strength=rng.uniform(0.7, 1.3))
+    elif cat == "약한 고장":                                # 끝까지 가볍게만 진행 (정지 위험까지 안 감)
+        spec.update(final=rng.uniform(0.3, 0.5), strength=rng.uniform(0.6, 1.0))
+    elif cat == "베어링 변형":                              # 학습에 없던 결함 주파수의 베어링 고장
+        spec.update(kind="bearing", bearing_hz=float(rng.choice([120.0, 320.0])) if extreme else 200.0)
+    return spec
+
+
 def severity(spec, t_min):
-    """시각[분]마다 고장 정도 0~1 (고장 시작 전 0, 시작할 때 0.1에서 최종 정도까지)"""
+    """시각[분]마다 고장 정도 0~1 (고장 시작 전 0, 시작할 때 0.1에서 최종 정도까지. 급성이면 바로 최종 정도)"""
     if not spec["fault"]:
         return np.zeros_like(t_min)
+    if spec.get("mode") == "sudden":
+        return np.where(t_min >= spec["onset"], spec["final"], 0.0)
     x = np.clip((t_min - spec["onset"]) / spec["ramp"], 0, 1)
     sev = 0.1 + (spec["final"] - 0.1) * x ** spec["shape"]
     return np.where(t_min >= spec["onset"], sev, 0.0)
+
+
+def _gate(rng, n):
+    """간헐 고장용 켜짐/꺼짐 (켜짐 5~30초, 꺼짐 10~60초 반복) → 샘플마다 0 또는 1"""
+    g, i, on = np.zeros(n), int(rng.uniform(0, 30) * FS), False
+    while i < n:
+        d = int((rng.uniform(5, 30) if on else rng.uniform(10, 60)) * FS)
+        g[i:i + d] = 1.0 if on else 0.0
+        i, on = i + d, not on
+    return g
+
+
+def _add_fault(sig, kind, wheel, sev, strength, k, mv, pw, fw, rng, R, n, bearing_hz=200.0):
+    """고장 신호 하나를 sig(ax~gz, cur)에 더한다. sev: 샘플마다 신호에 드러나는 고장 정도"""
+    d, roll, pitch = WHEEL_GAIN[wheel]
+    s_ = sev * k * strength * d                            # 고장 신호 세기 (움직일 때만)
+    if kind == "unbalance":
+        sig["ay"] += 0.08 * s_ * roll * np.sin(pw)
+        sig["az"] += 0.06 * s_ * np.sin(pw + 0.5)
+        sig["gx"] += 1.5 * s_ * roll * np.sin(pw)
+        sig["gy"] += 1.5 * s_ * pitch * np.sin(pw + 1)
+        sig["gz"] += 3.0 * s_ * np.sin(pw)
+        sig["cur"] += 0.15 * sev * mv
+    elif kind == "looseness":
+        ring = np.exp(-np.arange(40) / 8) * np.sin(2 * np.pi * 60 * np.arange(40) / FS)
+        hits = rng.random(n) < (fw / FS) * 2 * sev         # 바퀴 1회전에 두 번꼴로 '딱' (고장 정도에 비례)
+        imp = np.zeros(n)
+        imp[hits] = 0.3 * (sev * strength * d)[hits] * (0.5 + rng.random(hits.sum()))
+        imp = np.convolve(imp, ring)[:n]
+        sig["ax"] += pitch * imp
+        sig["az"] += 0.7 * imp + 0.02 * s_ * np.sin(2 * pw)
+        sig["gx"] += 4 * roll * imp
+        sig["gy"] += 8 * pitch * imp
+        sig["cur"] += 0.05 * sev * mv
+    elif kind == "bearing":
+        hf = np.convolve(R(), np.sin(2 * np.pi * bearing_hz * np.arange(20) / FS) * np.hanning(20), "same")
+        sig["ax"] += 0.04 * s_ * pitch * hf
+        sig["ay"] += 0.03 * s_ * roll * hf
+        sig["az"] += 0.03 * s_ * hf
+        sig["cur"] += 0.3 * sev * mv
 
 
 def make_table(spec):
@@ -78,7 +164,7 @@ def make_table(spec):
     rng = np.random.default_rng(spec["seed"])
     n = int(spec["minutes"] * 60 * FS)
     tt = np.arange(n) / FS
-    pwm, turn, start = drive(tt + spec["phase"])
+    pwm, turn, start = drive(tt + spec["phase"], spec.get("speed", 1.0), spec.get("dscale", 1.0))
     mv, k = pwm > 0, pwm / 0.8
     v_batt = spec["v0"] - 0.02 * tt / 60                   # 배터리는 1분에 0.02 V씩 떨어짐
     fw = spec["fw"] * pwm * v_batt / 8.4                   # 바퀴 회전 [Hz] (샘플마다)
@@ -86,43 +172,42 @@ def make_table(spec):
     pm = 48 * pw                                           # 모터 회전 위상 (기어비 48)
     g, sn = spec["gain"], 0.004 * spec["noise"]
     R = lambda: rng.standard_normal(n)
-    ax = sn * R() + g * k * (0.03 * np.sin(pm) + 0.01 * np.sin(2 * pw) + 0.015 * spec["noise"] * R())
-    ay = sn * R() + g * k * (0.02 * np.sin(pm + 1) + 0.012 * spec["noise"] * R())
-    az = 1.0 + sn * R() + g * k * (0.025 * np.sin(pm + 2) + 0.02 * spec["noise"] * R())
-    gx = 0.06 * R() + g * k * (0.4 * R() + 1.0 * np.sin(pw))
-    gy = 0.06 * R() + g * k * 0.4 * R()
-    gz = 0.06 * R() + g * k * 0.4 * R() + 60.0 * k * turn
-    cur = 0.05 + 0.01 * R() + mv * (0.55 * pwm + 0.25 * turn * k + 0.03 * R()) + 1.5 * start
+    sig = dict(
+        ax=sn * R() + g * k * (0.03 * np.sin(pm) + 0.01 * np.sin(2 * pw) + 0.015 * spec["noise"] * R()),
+        ay=sn * R() + g * k * (0.02 * np.sin(pm + 1) + 0.012 * spec["noise"] * R()),
+        az=1.0 + sn * R() + g * k * (0.025 * np.sin(pm + 2) + 0.02 * spec["noise"] * R()),
+        gx=0.06 * R() + g * k * (0.4 * R() + 1.0 * np.sin(pw)),
+        gy=0.06 * R() + g * k * 0.4 * R(),
+        gz=0.06 * R() + g * k * 0.4 * R() + 60.0 * k * turn)
+    sig["cur"] = 0.05 + 0.01 * R() + mv * (0.55 * pwm + 0.25 * turn * k + 0.03 * R()) + 1.5 * start
 
-    sev = severity(spec, tt / 60)
+    t_min = tt / 60
+    sev = severity(spec, t_min)                            # 라벨에 적히는 고장 정도
     if spec["fault"]:
-        d, roll, pitch = WHEEL_GAIN[spec["wheel"]]
-        s_ = sev * k * spec["strength"] * d               # 고장 신호 세기 (움직일 때만)
-        if spec["kind"] == "unbalance":
-            ay += 0.08 * s_ * roll * np.sin(pw)
-            az += 0.06 * s_ * np.sin(pw + 0.5)
-            gx += 1.5 * s_ * roll * np.sin(pw)
-            gy += 1.5 * s_ * pitch * np.sin(pw + 1)
-            gz += 3.0 * s_ * np.sin(pw)
-            cur += 0.15 * sev * mv
-        elif spec["kind"] == "looseness":
-            ring = np.exp(-np.arange(40) / 8) * np.sin(2 * np.pi * 60 * np.arange(40) / FS)
-            hits = rng.random(n) < (fw / FS) * 2 * sev     # 바퀴 1회전에 두 번꼴로 '딱' (고장 정도에 비례)
-            imp = np.zeros(n)
-            imp[hits] = 0.3 * (sev * spec["strength"] * d)[hits] * (0.5 + rng.random(hits.sum()))
-            imp = np.convolve(imp, ring)[:n]
-            ax += pitch * imp
-            az += 0.7 * imp + 0.02 * s_ * np.sin(2 * pw)
-            gx += 4 * roll * imp
-            gy += 8 * pitch * imp
-            cur += 0.05 * sev * mv
-        elif spec["kind"] == "bearing":
-            hf = np.convolve(R(), np.sin(2 * np.pi * 200 * np.arange(20) / FS) * np.hanning(20), "same")
-            ax += 0.04 * s_ * pitch * hf
-            ay += 0.03 * s_ * roll * hf
-            az += 0.03 * s_ * hf
-            cur += 0.3 * sev * mv
-    volt = v_batt - 0.15 * cur
+        shown = sev * _gate(rng, n) if spec.get("intermittent") else sev   # 진동에 드러나는 고장 정도
+        _add_fault(sig, spec["kind"], spec["wheel"], shown, spec["strength"], k, mv, pw, fw, rng, R, n,
+                   spec.get("bearing_hz", 200.0))
+        if spec.get("second"):                             # 복합 고장: 두 번째 고장 (라벨은 첫 번째 고장만)
+            s2 = spec["second"]
+            _add_fault(sig, s2["kind"], s2["wheel"], sev * s2["ratio"], s2["strength"], k, mv, pw, fw, rng, R, n)
+    if spec.get("floor_at") is not None:                   # 거친 바닥: 바퀴와 상관없는 불규칙 충격 + 잔진동 증가
+        after = (t_min >= spec["floor_at"]) & mv
+        lvl = spec["floor_level"]
+        ring = np.exp(-np.arange(30) / 6) * np.sin(2 * np.pi * 35 * np.arange(30) / FS)
+        bumps = np.zeros(n)
+        hit = after & (rng.random(n) < 2.0 / FS)           # 1초에 2번꼴
+        bumps[hit] = 0.08 * lvl * (0.3 + rng.random(hit.sum()))
+        bumps = np.convolve(bumps, ring)[:n] * k
+        sig["az"] += bumps + after * 0.01 * lvl * k * R()
+        sig["ax"] += 0.5 * bumps
+        sig["gy"] += 3 * bumps
+    if spec.get("load_at") is not None:                    # 짐을 실음: 전류 증가, 차체가 조금 더 출렁임
+        after = (t_min >= spec["load_at"]) & mv
+        lvl = spec["load_level"]
+        sig["cur"] += after * 0.25 * lvl * pwm
+        sig["az"] += after * 0.006 * lvl * k * np.sin(pw)
+        sig["gy"] += after * 0.3 * lvl * k * R()
+    volt = v_batt - 0.15 * sig["cur"]
 
     # 센서 해상도로 반올림 (MPU6050 ±4g·±500°/s, INA219 전류 1 mA·전압 4 mV)
     q = lambda v, step: np.round(v / step) * step
@@ -130,9 +215,9 @@ def make_table(spec):
     faulty = sev > 0
     return pd.DataFrame({
         "time": tt + rng.normal(0, 15e-6, n),              # 시각 흔들림 ±15 µs
-        "ax": q(ax, 1 / 8192), "ay": q(ay, 1 / 8192), "az": q(az, 1 / 8192),
-        "gx": q(gx, 1 / 65.5), "gy": q(gy, 1 / 65.5), "gz": q(gz, 1 / 65.5),
-        "current": np.where(every10, q(cur, 0.001), np.nan), "voltage": np.where(every10, q(volt, 0.004), np.nan),
+        "ax": q(sig["ax"], 1 / 8192), "ay": q(sig["ay"], 1 / 8192), "az": q(sig["az"], 1 / 8192),
+        "gx": q(sig["gx"], 1 / 65.5), "gy": q(sig["gy"], 1 / 65.5), "gz": q(sig["gz"], 1 / 65.5),
+        "current": np.where(every10, q(sig["cur"], 0.001), np.nan), "voltage": np.where(every10, q(volt, 0.004), np.nan),
         "robot": spec["name"],
         "fault_kind": np.where(faulty, spec["kind"], "normal"),
         "fault_wheel": np.where(faulty, spec["wheel"], ""),
