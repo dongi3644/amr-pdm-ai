@@ -1,0 +1,139 @@
+"""[역할] 코드 점검 전용 가상 로봇 생성기 (발표·성능 자료로 쓰지 않음)
+
+로봇 1대의 기록을 아두이노 기록기가 저장하는 CSV와 같은 열(time, ax~gz, current, voltage, 라벨)의 표로 만든다.
+100대를 CSV로 쓰면 수 GB가 되므로 파일로 저장하지 않고 메모리의 표를 그대로 dataio에 넣는다.
+
+만드는 신호 (모두 사람이 정한 식이라 실제 로봇과 다름)
+    주행: 전진 7.7초 · 정지 2.3초 · 회전 3.4초 · 후진 4.1초 · 정지 1.9초 반복, 출발·정지 0.25초 가감속
+    정상 진동: 모터 회전(바퀴의 48배) 성분 + 바퀴 2배 성분 + 잡음. 로봇마다 진동 크기·잡음·속도·배터리가 조금씩 다름
+    고장 3종류 (움직일 때만, 움직임 크기에 비례)
+        불평형     바퀴 1회전 주기의 흔들림
+        체결부 풀림 바퀴가 돌 때마다 '딱' 하는 충격
+        베어링 결함 200 Hz 부근 고주파 잡음 + 전류 증가
+    고장 바퀴 위치: 센서(MPU6050)가 차체 앞 왼쪽에 조금 치우쳐 있다고 가정해, 바퀴마다 축별 세기를 다르게 줌.
+        이 가정은 단순화한 것이라 '어느 바퀴인가' 결과는 실제와 크게 다를 수 있다.
+"""
+import numpy as np
+import pandas as pd
+
+FS = 500                                                   # 진동 샘플링 [Hz] (아두이노 스케치와 같음)
+PATTERN = [(7.7, "fwd", 0.8), (2.3, "stop", 0), (3.4, "turn", 0.7), (4.1, "back", 0.8), (1.9, "stop", 0)]
+CYCLE = sum(p[0] for p in PATTERN)
+RAMP = 0.25
+KINDS = ["unbalance", "looseness", "bearing"]
+WHEELS = ["fl", "fr", "rl", "rr"]
+# 바퀴별 (센서까지 거리에 따른 세기, 좌우 흔들림 축 비중, 앞뒤 흔들림 축 비중)
+WHEEL_GAIN = {"fl": (1.25, 1.3, 1.3), "fr": (1.0, 0.7, 1.3), "rl": (0.95, 1.3, 0.7), "rr": (0.75, 0.7, 0.7)}
+
+
+def drive(tt):
+    """샘플마다 (pwm × 가감속, 회전 중인가, 출발 직후인가)"""
+    x = tt % CYCLE
+    pwm, turn, start = np.zeros_like(x), np.zeros_like(x, bool), np.zeros_like(x, bool)
+    edge = 0.0
+    for dur, st, p in PATTERN:
+        m = (x >= edge) & (x < edge + dur)
+        if st != "stop":
+            pos = x[m] - edge
+            pwm[m] = p * np.clip(np.minimum(pos, dur - pos) / RAMP, 0, 1)
+            turn[m] = st == "turn"
+            start[m] = pos < 0.1
+        edge += dur
+    return pwm, turn, start
+
+
+def random_spec(rng, name, fault, kind=None, wheel=None):
+    """로봇 1대의 무작위 설정. fault=True면 고장 종류·바퀴·진행 속도·최종 고장 정도도 무작위로 정함"""
+    spec = dict(name=name, fault=bool(fault), seed=int(rng.integers(1 << 31)),
+                v0=rng.uniform(7.5, 8.4),                 # 시작 배터리 전압 [V]
+                gain=rng.uniform(0.85, 1.15),             # 정상 진동 크기
+                noise=rng.uniform(0.8, 1.3),              # 센서 잡음 크기
+                fw=rng.uniform(2.7, 3.3),                 # 바퀴 회전 속도 [Hz] (pwm 0.8, 8.4 V 기준)
+                phase=rng.uniform(0, CYCLE))              # 주행 패턴의 어느 지점에서 기록을 시작했나
+    if not fault:
+        spec.update(kind="normal", wheel="", minutes=rng.uniform(10, 16))
+        return spec
+    onset = rng.uniform(6, 8)                              # 고장 시작 [분] (처음 5분은 정상 기준용이라 그 뒤)
+    ramp = rng.uniform(6, 12)                              # 고장이 최종 정도까지 커지는 데 걸리는 시간 [분]
+    spec.update(kind=kind or str(rng.choice(KINDS)), wheel=wheel or str(rng.choice(WHEELS)),
+                onset=onset, ramp=ramp,
+                final=rng.uniform(0.5, 1.0),               # 최종 고장 정도 (0.8 미만이면 '정지 위험'까지 안 감)
+                shape=rng.uniform(1.0, 2.0),               # 1이면 일정하게, 2면 갈수록 빠르게 나빠짐
+                strength=rng.uniform(0.7, 1.3),            # 같은 고장 정도라도 로봇마다 진동에 드러나는 세기가 다름
+                minutes=onset + ramp + rng.uniform(1, 2))  # 최종 정도에 이른 뒤 1~2분 더 기록
+    return spec
+
+
+def severity(spec, t_min):
+    """시각[분]마다 고장 정도 0~1 (고장 시작 전 0, 시작할 때 0.1에서 최종 정도까지)"""
+    if not spec["fault"]:
+        return np.zeros_like(t_min)
+    x = np.clip((t_min - spec["onset"]) / spec["ramp"], 0, 1)
+    sev = 0.1 + (spec["final"] - 0.1) * x ** spec["shape"]
+    return np.where(t_min >= spec["onset"], sev, 0.0)
+
+
+def make_table(spec):
+    """설정 → 기록기 CSV와 같은 열의 표 (전류·전압은 10샘플에 한 번만 값, 나머지 빈칸)"""
+    rng = np.random.default_rng(spec["seed"])
+    n = int(spec["minutes"] * 60 * FS)
+    tt = np.arange(n) / FS
+    pwm, turn, start = drive(tt + spec["phase"])
+    mv, k = pwm > 0, pwm / 0.8
+    v_batt = spec["v0"] - 0.02 * tt / 60                   # 배터리는 1분에 0.02 V씩 떨어짐
+    fw = spec["fw"] * pwm * v_batt / 8.4                   # 바퀴 회전 [Hz] (샘플마다)
+    pw = np.cumsum(2 * np.pi * fw / FS)                    # 바퀴 회전 위상
+    pm = 48 * pw                                           # 모터 회전 위상 (기어비 48)
+    g, sn = spec["gain"], 0.004 * spec["noise"]
+    R = lambda: rng.standard_normal(n)
+    ax = sn * R() + g * k * (0.03 * np.sin(pm) + 0.01 * np.sin(2 * pw) + 0.015 * spec["noise"] * R())
+    ay = sn * R() + g * k * (0.02 * np.sin(pm + 1) + 0.012 * spec["noise"] * R())
+    az = 1.0 + sn * R() + g * k * (0.025 * np.sin(pm + 2) + 0.02 * spec["noise"] * R())
+    gx = 0.06 * R() + g * k * (0.4 * R() + 1.0 * np.sin(pw))
+    gy = 0.06 * R() + g * k * 0.4 * R()
+    gz = 0.06 * R() + g * k * 0.4 * R() + 60.0 * k * turn
+    cur = 0.05 + 0.01 * R() + mv * (0.55 * pwm + 0.25 * turn * k + 0.03 * R()) + 1.5 * start
+
+    sev = severity(spec, tt / 60)
+    if spec["fault"]:
+        d, roll, pitch = WHEEL_GAIN[spec["wheel"]]
+        s_ = sev * k * spec["strength"] * d               # 고장 신호 세기 (움직일 때만)
+        if spec["kind"] == "unbalance":
+            ay += 0.08 * s_ * roll * np.sin(pw)
+            az += 0.06 * s_ * np.sin(pw + 0.5)
+            gx += 1.5 * s_ * roll * np.sin(pw)
+            gy += 1.5 * s_ * pitch * np.sin(pw + 1)
+            gz += 3.0 * s_ * np.sin(pw)
+            cur += 0.15 * sev * mv
+        elif spec["kind"] == "looseness":
+            ring = np.exp(-np.arange(40) / 8) * np.sin(2 * np.pi * 60 * np.arange(40) / FS)
+            hits = rng.random(n) < (fw / FS) * 2 * sev     # 바퀴 1회전에 두 번꼴로 '딱' (고장 정도에 비례)
+            imp = np.zeros(n)
+            imp[hits] = 0.3 * (sev * spec["strength"] * d)[hits] * (0.5 + rng.random(hits.sum()))
+            imp = np.convolve(imp, ring)[:n]
+            ax += pitch * imp
+            az += 0.7 * imp + 0.02 * s_ * np.sin(2 * pw)
+            gx += 4 * roll * imp
+            gy += 8 * pitch * imp
+            cur += 0.05 * sev * mv
+        elif spec["kind"] == "bearing":
+            hf = np.convolve(R(), np.sin(2 * np.pi * 200 * np.arange(20) / FS) * np.hanning(20), "same")
+            ax += 0.04 * s_ * pitch * hf
+            ay += 0.03 * s_ * roll * hf
+            az += 0.03 * s_ * hf
+            cur += 0.3 * sev * mv
+    volt = v_batt - 0.15 * cur
+
+    # 센서 해상도로 반올림 (MPU6050 ±4g·±500°/s, INA219 전류 1 mA·전압 4 mV)
+    q = lambda v, step: np.round(v / step) * step
+    every10 = np.arange(n) % 10 == 0                       # 전류·전압은 10샘플에 한 번 (아두이노 스케치와 같음)
+    faulty = sev > 0
+    return pd.DataFrame({
+        "time": tt + rng.normal(0, 15e-6, n),              # 시각 흔들림 ±15 µs
+        "ax": q(ax, 1 / 8192), "ay": q(ay, 1 / 8192), "az": q(az, 1 / 8192),
+        "gx": q(gx, 1 / 65.5), "gy": q(gy, 1 / 65.5), "gz": q(gz, 1 / 65.5),
+        "current": np.where(every10, q(cur, 0.001), np.nan), "voltage": np.where(every10, q(volt, 0.004), np.nan),
+        "robot": spec["name"],
+        "fault_kind": np.where(faulty, spec["kind"], "normal"),
+        "fault_wheel": np.where(faulty, spec["wheel"], ""),
+        "fault_severity": np.round(sev, 3)})
