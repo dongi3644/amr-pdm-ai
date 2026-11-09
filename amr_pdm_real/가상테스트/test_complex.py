@@ -61,12 +61,19 @@ def main():
     a = p.parse_args()
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
-    rng = np.random.default_rng(a.seed)
-    nn = lambda v: max(1, int(round(v * a.scale)))
     t0 = time.time()
     log = lambda s: print(f"[{(time.time() - t0) / 60:5.1f}분] {s}", flush=True)
 
     # 1) 로봇 설정 (학습 / 시험)
+    train_specs, test_specs = make_specs(a.seed, a.scale)
+    log(f"학습 로봇 {len(train_specs)}대 · 시험 로봇 {len(test_specs)}대")
+    run(a, out, train_specs, test_specs, t0, log)
+
+
+def make_specs(seed, scale=1.0):
+    """학습·시험 로봇 설정 목록 (같은 seed·scale이면 항상 같은 로봇들). compare_period.py도 이 함수로 같은 시험 로봇을 다시 만든다"""
+    rng = np.random.default_rng(seed)
+    nn = lambda v: max(1, int(round(v * scale)))
     train_specs = []
     for k in S.KINDS:
         for w in S.WHEELS:
@@ -88,8 +95,11 @@ def main():
             s = S.complex_spec(rng, f"어려운정상_{cat.replace(' ', '')}_{j + 1:02d}", cat, extreme=True)
             s["group"] = "어려운 정상"
             test_specs.append(s)
-    log(f"학습 로봇 {len(train_specs)}대 · 시험 로봇 {len(test_specs)}대")
+    return train_specs, test_specs
 
+
+def run(a, out, train_specs, test_specs, t0, log):
+    """가상 기록 만들기 → 학습 → 시험 → 결과 저장"""
     # 2) 가상 기록 만들기 (메모리에서만)
     data = D.Dataset()
     allspecs = train_specs + test_specs
