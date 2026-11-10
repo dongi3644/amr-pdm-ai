@@ -35,7 +35,7 @@
       "type": "debugpy", "request": "launch",
       "python": "${workspaceFolder}/.venv/Scripts/python.exe",
       "program": "${workspaceFolder}/가상테스트/test_complex.py",
-      "args": ["--train-scale", "0.45", "--test-scale", "0.5", "--encoders"],
+      "args": ["--train-scale", "0.8", "--test-scale", "0.75", "--encoders"],
       "cwd": "${workspaceFolder}", "console": "integratedTerminal", "env": { "PYTHONUTF8": "1" }
     },
     {

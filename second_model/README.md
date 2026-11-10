@@ -225,5 +225,5 @@ CSV (시간, 가속도·각속도 6축, 엔코더 4개, 모터 명령, 전류, �
 - 배터리 A/B를 정상·고장 기록에 골고루. 같은 로봇 이름으로 배터리를 바꿔 이어 기록하면 mAh가 이어서 더해짐
 - 가상 시험(코드 점검, 성능 아님, 결과는 `가상테스트_결과/README.md`):
   - 빠른 확인 약 4분: `python 가상테스트/test_complex.py --scale 0.1 --encoders`
-  - 학습 약 10분 + 시험 약 10분: `python 가상테스트/test_complex.py --train-scale 0.45 --test-scale 0.5 --encoders` (가상 기록 만들기 몇 분 별도. VS Code 목록에도 있음)
+  - 학습 약 10분 + 시험 약 10분: `python 가상테스트/test_complex.py --train-scale 0.8 --test-scale 0.75 --encoders` (가상 기록 만들기 약 7분 별도. VS Code 목록에도 있음. 이 컴퓨터 실측: 0.45·0.5일 때 학습 5.6분·시험 6.5분)
   - `--train-scale`·`--test-scale`로 학습·시험 로봇 수를 따로 정함 (시험 로봇은 학습과 다른 seed로 만들어 겹치지 않음)
