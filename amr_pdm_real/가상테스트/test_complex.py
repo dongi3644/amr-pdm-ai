@@ -58,6 +58,7 @@ def main():
     p.add_argument("--scale", type=float, default=1.0, help="로봇 대수 배율 (0.3이면 30%%로 줄여 빠르게)")
     p.add_argument("--out", default=str(PROJ / "가상데이터_결과값" / "복잡한고장_학습시험"))
     p.add_argument("--model-out", default=None, help="학습한 모델을 저장할 곳 (기본: 저장 안 함. artifacts/에는 쓰지 않음)")
+    p.add_argument("--encoders", action="store_true", help="모든 가상 로봇에 엔코더 4개·모터 명령을 넣음 (바퀴 특징까지 학습)")
     a = p.parse_args()
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -66,6 +67,8 @@ def main():
 
     # 1) 로봇 설정 (학습 / 시험)
     train_specs, test_specs = make_specs(a.seed, a.scale)
+    for s in train_specs + test_specs:                    # 같은 로봇들에 엔코더만 더함 (진동 신호는 그대로)
+        s["encoders"] = a.encoders
     log(f"학습 로봇 {len(train_specs)}대 · 시험 로봇 {len(test_specs)}대")
     run(a, out, train_specs, test_specs, t0, log)
 
@@ -209,14 +212,15 @@ def write_md(r, df, path, a, train_specs):
         "# 복잡한 고장 가상 로봇 학습·시험 결과 (코드 점검용 · 성능 아님)", "",
         "> **이 %는 발표·성능 자료로 쓰지 않습니다.** 진동과 고장을 사람이 식으로 만든 가상 로봇이라 실제 로봇 성능이 아닙니다.",
         "> 이 시험이 보여 주는 것: 어떤 종류의 어려운 경우에서 이 AI 구조가 약한지 (실측 기록을 계획할 때 참고).", "",
-        f"- 실행: `가상테스트/test_complex.py --seed {a.seed}" + (f" --scale {a.scale:g}" if a.scale != 1 else "") + "` (같은 명령이면 같은 결과)",
+        f"- 실행: `가상테스트/test_complex.py --seed {a.seed}" + (f" --scale {a.scale:g}" if a.scale != 1 else "") + (" --encoders" if a.encoders else "") + "` (같은 명령이면 같은 결과)",
         f"- 학습: 가상 로봇 {tr['robots']}대, 기록 {tr['hours']}시간 분량, 학습에 걸린 시간 {tr['minutes']}분 (칼만 필터 조정 포함)",
         "  - " + " · ".join(f"{c} {n}" for c, n in cnt.items()),
         f"- 시험: 학습에 쓰지 않은 가상 로봇 {r['all']['robots']}대, 걸린 시간 {r['test_minutes']}분",
         "  - 일반: 지난 `로봇100대` 시험과 같은 방식 (정상/고장 반반, 점진 고장)",
         "  - 복잡한 고장: 급성 · 간헐 · 복합(두 고장) · 약한 고장 · 속도 극단(학습에 없던 속도) · 베어링 변형(학습에 없던 주파수 120/320 Hz) · 고장+저전압",
         "  - 어려운 정상: 기록 중간에 바닥이 거칠어짐 · 중간에 짐을 실음 · 배터리 저전압 (고장이 아니므로 경보가 뜨면 오경보)",
-        f"- 설정: 기본값 그대로 (판정 주기 {C.PERIOD_S:g}초 · 정상 기준 per_unit · 주의 3점 / 경고 6점 / 위험 9점)", "",
+        f"- 설정: 기본값 그대로 (판정 주기 {C.PERIOD_S:g}초 · 정상 기준 per_unit · 주의 3점 / 경고 6점 / 위험 9점)",
+        f"- 엔코더: {'4개 + 모터 명령 (바퀴 특징 11개 추가)' if a.encoders else '없음 (진동 36개만)'}", "",
         "## 묶음별 결과", "",
         "| 묶음 | 로봇 | 판정 정답률 | 고장 감지율 | 오경보율 | 정지 위험 전 경고 | 고장 시작 → 주의 | 고장 종류 정확도 |",
         "|---|---|---|---|---|---|---|---|"]

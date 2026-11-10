@@ -183,6 +183,7 @@ def make_table(spec):
 
     t_min = tt / 60
     sev = severity(spec, t_min)                            # 라벨에 적히는 고장 정도
+    shown = sev                                            # 진동에 드러나는 고장 정도 (간헐 고장이면 아래에서 바뀜)
     if spec["fault"]:
         shown = sev * _gate(rng, n) if spec.get("intermittent") else sev   # 진동에 드러나는 고장 정도
         _add_fault(sig, spec["kind"], spec["wheel"], shown, spec["strength"], k, mv, pw, fw, rng, R, n,
@@ -213,7 +214,7 @@ def make_table(spec):
     q = lambda v, step: np.round(v / step) * step
     every10 = np.arange(n) % 10 == 0                       # 전류·전압은 10샘플에 한 번 (아두이노 스케치와 같음)
     faulty = sev > 0
-    return pd.DataFrame({
+    df = pd.DataFrame({
         "time": tt + rng.normal(0, 15e-6, n),              # 시각 흔들림 ±15 µs
         "ax": q(sig["ax"], 1 / 8192), "ay": q(sig["ay"], 1 / 8192), "az": q(sig["az"], 1 / 8192),
         "gx": q(sig["gx"], 1 / 65.5), "gy": q(sig["gy"], 1 / 65.5), "gz": q(sig["gz"], 1 / 65.5),
@@ -222,3 +223,68 @@ def make_table(spec):
         "fault_kind": np.where(faulty, spec["kind"], "normal"),
         "fault_wheel": np.where(faulty, spec["wheel"], ""),
         "fault_severity": np.round(sev, 3)})
+    if spec.get("encoders"):                               # 엔코더 4개 + 모터 명령 (다른 난수를 써서, 끄면 예전과 똑같은 기록)
+        enc = _encoders(spec, tt, pwm, fw, pw, sev, shown)
+        for w in WHEELS:
+            df[f"enc_{w}"] = enc[w]
+        df["motor_cmd"] = np.round(pwm * 255)
+    return df
+
+
+PPR = 330                                                  # 바퀴 1회전당 엔코더 펄스 (홀 센서 11 × 기어비 30 가정)
+
+
+def sides(tt, dscale=1.0):
+    """샘플마다 왼쪽·오른쪽 바퀴의 회전 방향 (+1 앞으로, -1 뒤로, 0 정지). 제자리 회전은 왼쪽 +, 오른쪽 -"""
+    x = tt % (CYCLE * dscale)
+    left, right = np.zeros_like(x), np.zeros_like(x)
+    edge = 0.0
+    for dur, st, _ in PATTERN:
+        dur = dur * dscale
+        m = (x >= edge) & (x < edge + dur)
+        left[m], right[m] = {"fwd": (1, 1), "turn": (1, -1), "back": (-1, -1), "stop": (0, 0)}[st]
+        edge += dur
+    return left, right
+
+
+def _encoders(spec, tt, pwm, fw, pw, sev, shown):
+    """가상 엔코더 누적 펄스 (16비트 int처럼 넘침). 고장이 난 바퀴만 속도가 바뀐다고 가정 (사람이 정한 식)
+        베어링 결함: 마찰로 그 바퀴가 느려짐 (고장 정도 1에서 15%) + 속도가 조금 흔들림
+        체결부 풀림: 바퀴가 덜컹이며 속도가 크게 흔들림
+        불평형    : 바퀴 1회전마다 속도가 주기적으로 오르내림
+        거친 바닥 : 네 바퀴 모두 속도가 흔들림 / 짐 실음: 네 바퀴 모두 조금 느려짐"""
+    erng = np.random.default_rng(spec["seed"] + 1)
+    n = len(tt)
+    left, right = sides(tt + spec["phase"], spec.get("dscale", 1.0))
+    t_min = tt / 60
+    mult = {w: np.ones(n) for w in WHEELS}                 # 속도 배율
+    jit = {w: np.full(n, 0.02) for w in WHEELS}            # 속도 흔들림 크기 (평소 2%)
+    if spec.get("floor_at") is not None:
+        for w in WHEELS:
+            jit[w] = jit[w] + (t_min >= spec["floor_at"]) * 0.04 * spec["floor_level"]
+    if spec.get("load_at") is not None:
+        for w in WHEELS:
+            mult[w] = mult[w] * (1 - (t_min >= spec["load_at"]) * 0.06 * spec["load_level"])
+    faults = []
+    if spec["fault"]:
+        faults.append((spec["kind"], spec["wheel"], shown * spec["strength"]))
+        if spec.get("second"):
+            s2 = spec["second"]
+            faults.append((s2["kind"], s2["wheel"], sev * s2["ratio"] * s2["strength"]))
+    for kind, w, s in faults:
+        if kind == "bearing":
+            mult[w] = mult[w] * (1 - 0.15 * s)
+            jit[w] = jit[w] + 0.03 * s
+        elif kind == "looseness":
+            jit[w] = jit[w] + 0.25 * s
+        elif kind == "unbalance":
+            mult[w] = mult[w] * (1 + 0.12 * s * np.sin(pw))
+    coarse = np.arange(0, tt[-1] + 0.05, 0.05)             # 흔들림은 20 Hz로 바뀌는 잡음 (샘플마다 바뀌면 0.1초 평균에서 사라짐)
+    out = {}
+    for w in WHEELS:
+        noise = np.interp(tt, coarse, erng.standard_normal(len(coarse)))
+        side = left if w in ("fl", "rl") else right
+        speed = fw * PPR * mult[w] * (1 + jit[w] * noise) * side      # 펄스/초 (fw는 이미 pwm·배터리 전압에 비례)
+        cnt = np.floor(np.cumsum(speed / FS)).astype(np.int64)
+        out[w] = ((cnt + 32768) % 65536) - 32768                       # 아두이노 int(16비트)처럼 넘침
+    return out

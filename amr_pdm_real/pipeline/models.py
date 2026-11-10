@@ -35,8 +35,9 @@ class SegmentBaseline:
     z로 바꾸면 센서 감도·단위가 달라도 '평소보다 몇 배 벗어났나'로 통일되어 뒤의 모델이 다루기 쉽다.
     segment 열이 없으면 전체가 한 구간이다."""
 
-    def fit(self, rows):
-        floor = np.full(len(FEATS), 1e-3)                  # 표준편차 하한: 거의 안 변한 특징이 조금만 움직여도 z가 폭발하지 않도록
+    def fit(self, rows, feats=None):
+        self.feats = list(feats or FEATS)                  # 이 기준이 쓰는 특징 목록 (엔코더가 있으면 진동 36 + 바퀴 11)
+        floor = np.full(len(self.feats), 1e-3)                  # 표준편차 하한: 거의 안 변한 특징이 조금만 움직여도 z가 폭발하지 않도록
         use = [r for r in rows if not r["bump"]]           # 문턱을 넘는 순간의 창은 기준에서 뺀다
         if not use:
             raise ValueError("정상 기준을 만들 창이 없습니다.")
@@ -47,18 +48,19 @@ class SegmentBaseline:
             return mu, np.maximum(sd, floor + 0.05 * np.abs(mu))
 
         # 전체 기준(모든 구간을 합친 것) + 구간별 기준
-        self.overall, self.stats = stat(np.array([[r[f] for f in FEATS] for r in use])), {}
+        self.overall, self.stats = stat(np.array([[r[f] for f in self.feats] for r in use])), {}
         for s in dict.fromkeys(r["segment"] for r in use):  # 나온 순서대로 구간 이름 (중복 없이)
-            A = np.array([[r[f] for f in FEATS] for r in use if r["segment"] == s])
+            A = np.array([[r[f] for f in self.feats] for r in use if r["segment"] == s])
             if len(A) >= 5:                                # 창이 너무 적은 구간은 전체 기준을 씀
                 self.stats[s] = stat(A)
         return self
 
     def z(self, rows):
-        out = np.empty((len(rows), len(FEATS)))
+        feats = getattr(self, "feats", FEATS)             # 예전 모델 파일에는 목록이 없음 → 진동 36개
+        out = np.empty((len(rows), len(feats)))
         for i, r in enumerate(rows):
             mu, sd = self.stats.get(r["segment"], self.overall)   # 이 창의 구간 기준 (학습 때 없던 구간이면 전체 기준)
-            out[i] = (np.array([r[f] for f in FEATS]) - mu) / sd
+            out[i] = (np.array([r[f] for f in feats]) - mu) / sd
         return np.clip(out, -Z_CLIP, Z_CLIP)                # 극단값 하나가 점수를 독차지하지 않도록 ±20에서 자름
 
 
@@ -194,7 +196,8 @@ class CauseClassifier:
     결정 나무 150그루의 투표 확률을 쓰고, SHAP으로 그 판정에 가장 크게 기여한 특징을 사람이 읽는 이름으로 보여 준다.
     고장 라벨이 있는 데이터가 있어야 학습되며, 없으면 system.py에서 None이 되고 원인 칸이 비게 된다."""
 
-    def fit(self, Z, labels):
+    def fit(self, Z, labels, feats=None):
+        self.feats = list(feats or FEATS)                  # Z의 열 순서 = 이 특징 목록
         self.m = RandomForestClassifier(n_estimators=150, min_samples_leaf=3, class_weight="balanced",
                                         random_state=C.SEED, n_jobs=-1).fit(Z, labels)
         self.m.n_jobs = 1                                  # 실시간 1건 추론은 단일 스레드가 더 빠름
@@ -207,7 +210,7 @@ class CauseClassifier:
 
     def importance(self):
         """전체적으로 판정에 많이 쓰인 특징 순위 (그래프 fig_importance용)"""
-        return sorted(zip(FEATS, self.m.feature_importances_), key=lambda x: -x[1])
+        return sorted(zip(getattr(self, "feats", FEATS), self.m.feature_importances_), key=lambda x: -x[1])
 
     def explain(self, z, label, top=3):
         """SHAP: 이 판정(label)을 가장 크게 밀어 올린 특징 top개 → [(특징, 기여도)]"""
@@ -217,7 +220,8 @@ class CauseClassifier:
         v = self._explainer.shap_values(np.atleast_2d(z), check_additivity=False)   # 특징마다 라벨별 기여도
         i = self.classes.index(label)
         v = v[i][0] if isinstance(v, list) else v[0, :, i]   # shap 버전에 따라 모양이 달라서 둘 다 처리 → 이 라벨의 기여도만
-        return [(FEATS[j], float(v[j])) for j in np.argsort(-v)[:top]]   # 기여도가 큰 순서로 top개
+        feats = getattr(self, "feats", FEATS)
+        return [(feats[j], float(v[j])) for j in np.argsort(-v)[:top]]   # 기여도가 큰 순서로 top개
 
     def __getstate__(self):
         """모델 파일로 저장할 때 SHAP 계산기는 빼고 저장 (필요하면 다시 만들 수 있고 파일이 커지기 때문)"""

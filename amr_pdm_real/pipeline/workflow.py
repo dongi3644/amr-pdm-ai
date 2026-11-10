@@ -27,7 +27,7 @@ from sklearn.metrics import confusion_matrix, roc_auc_score
 
 import config as C
 from pipeline.dataio import DataError, choose_baseline
-from pipeline.features import extract
+from pipeline.features import ENC_FEATS, choose_feats, extract
 from pipeline.models import NORMAL_LABEL, health, kalman_forecast, label_ko, trend_forecast
 from pipeline.power import PowerMonitor
 from pipeline.system import AMRPipeline
@@ -72,7 +72,12 @@ def train(data, units=None, baseline=None, tune=True):
     if baseline == "reference" and n_normal_units < 3:   # 공통 기준은 장비마다 다른 정상 상태를 담아야 함
         notes.append(f"공통 정상 기준을 정상 로봇 {n_normal_units}대로만 만들었습니다. 처음 보는 정상 로봇도 이상으로 보일 수 있으니 "
                      "정상 로봇을 3대 이상(가능하면 5대 이상) 넣으세요.")
-    pipe = AMRPipeline().fit(normal, fault, baseline)     # 실제 학습 (system.py)
+    try:                                                  # 모델에 넣을 특징: 진동 36개 (+ 모든 학습 기록에 엔코더가 있으면 바퀴 11개)
+        feats, feat_note = choose_feats(normal + fault)
+    except ValueError as e:
+        raise DataError(str(e)) from e
+    notes.append(feat_note)
+    pipe = AMRPipeline().fit(normal, fault, baseline, feats)   # 실제 학습 (system.py)
     b = pipe.bundle
     b["trained_units"] = sorted({r["robot"] for r in normal + fault})   # diagnose에서 '학습에 쓰인 로봇' 표시용
     b["period_s"] = C.PERIOD_S                             # 진단할 때 같은 판정 주기를 쓰도록 모델에 저장
@@ -141,6 +146,9 @@ def diagnose(pipe, recs, detector="ae"):
     전력 감시 결과는 mon.power (power.PowerMonitor)에 있다."""
     if not recs or (pipe.bundle["baseline"] == "per_unit" and recs[-1]["period"] < C.BASELINE_PERIODS):
         raise DataError(f"기록이 짧습니다. 로봇마다 기준을 만드는 방식에서는 {C.minutes(C.BASELINE_PERIODS + 1):g}분 이상이 필요합니다.")
+    if any(f in ENC_FEATS for f in pipe.bundle.get("feats", [])) and not any("enc_cnt" in r for r in recs):
+        raise DataError("이 모델은 엔코더 특징까지 학습했는데, 이 기록에는 엔코더 4개 열이 없습니다. "
+                        "엔코더를 함께 기록하거나, config.ENCODER_FEATURES = False로 다시 학습하세요.")
     # mon: 진동 진단기, power: 전류·배터리 감시기, rows: 표의 줄(주기마다 1줄), truth: 주기별 파일 라벨
     mon, power, rows, truth = pipe.monitor(detector), PowerMonitor(), [], {}
     aux = {}                                              # 주기 번호 → {엔코더·모터 명령 열: 그 주기 창 값들} (표에 보여 주기만 함)

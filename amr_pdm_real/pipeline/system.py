@@ -29,10 +29,15 @@ from pipeline.infer import Predictor
 from pipeline.models import NORMAL_LABEL, CauseClassifier, SegmentBaseline, calibrate, make_detectors
 
 
-def per_unit_z(rows):
+def usable(rows, feats):
+    """특징 값이 하나라도 비어 있는(nan) 창은 뺌 (예: 엔코더 값이 끊긴 1초). 빈 값을 다른 값으로 채우지 않는다"""
+    return [r for r in rows if all(np.isfinite(r[f]) for f in feats)]
+
+
+def per_unit_z(rows, feats=FEATS):
     """로봇마다 처음 BASELINE_PERIODS주기로 기준을 만들고, 그 이후 창의 z를 반환"""
     out_rows, Z, units = [], [], {}
-    for r in rows:                                         # 창들을 로봇별로 모음
+    for r in usable(rows, feats):                                         # 창들을 로봇별로 모음
         units.setdefault(r["robot"], []).append(r)
     for rr in units.values():
         base_rows = [r for r in rr if r["period"] < C.BASELINE_PERIODS and not r["bump"]]   # 처음 5분 = 기준 만들 창
@@ -40,14 +45,15 @@ def per_unit_z(rows):
         if not base_rows or not use:                       # 기록이 5분보다 짧은 로봇은 건너뜀
             continue
         out_rows += use
-        Z.append(SegmentBaseline().fit(base_rows).z(use))
-    return out_rows, (np.vstack(Z) if Z else np.empty((0, len(FEATS))))
+        Z.append(SegmentBaseline().fit(base_rows, feats).z(use))
+    return out_rows, (np.vstack(Z) if Z else np.empty((0, len(feats))))
 
 
 def reference_z(rows, ref):
     """공통 기준(ref) 하나로 모든 창의 z를 계산 (처음 5분도 버리지 않음)"""
-    use = [r for r in rows if not r["bump"]]
-    return use, (ref.z(use) if use else np.empty((0, len(FEATS))))
+    feats = getattr(ref, "feats", FEATS)
+    use = [r for r in usable(rows, feats) if not r["bump"]]
+    return use, (ref.z(use) if use else np.empty((0, len(feats))))
 
 
 def split_units(names, cal_share=1 / 3):
@@ -67,9 +73,9 @@ class AMRPipeline:
         """학습된 기준 방식으로 창 z를 계산"""
         if self.bundle["baseline"] == "reference":
             return reference_z(rows, self.bundle["reference"])
-        return per_unit_z(rows)
+        return per_unit_z(rows, self.bundle.get("feats", FEATS))
 
-    def fit(self, normal, fault, baseline="per_unit"):
+    def fit(self, normal, fault, baseline="per_unit", feats=FEATS):
         """normal: 정상 로봇들의 창(특징 dict), fault: 고장 라벨이 있는 로봇들의 창
         1) 정상 기준 2) 이상 감지 + 건강 점수 눈금 3) 원인 분류 순서로 학습"""
         # 1) 정상 로봇을 나눔: 모델 학습용(fit) / 눈금 보정용(cal). 보정을 학습에 안 쓴 로봇으로 해야
@@ -80,14 +86,14 @@ class AMRPipeline:
         cal_rows = [r for r in normal if r["robot"] in cal_units]   # 눈금(3점 기준) 보정에 쓸 정상 창
         ref = None                                         # 공통 기준 (reference 방식일 때만 만듦)
         if baseline == "reference":
-            ref = SegmentBaseline().fit(fit_rows)          # 보정용 로봇은 기준에 넣지 않아야 '처음 보는 로봇' 눈금이 됨
+            ref = SegmentBaseline().fit(usable(fit_rows, feats), feats)          # 보정용 로봇은 기준에 넣지 않아야 '처음 보는 로봇' 눈금이 됨
             _, Zfit = reference_z(fit_rows, ref)
             _, Zcal = reference_z(cal_rows, ref)
             frows, Zf = reference_z(fault, ref)
         else:
-            _, Zfit = per_unit_z(fit_rows)
-            _, Zcal = per_unit_z(cal_rows)
-            frows, Zf = per_unit_z(fault)
+            _, Zfit = per_unit_z(fit_rows, feats)
+            _, Zcal = per_unit_z(cal_rows, feats)
+            frows, Zf = per_unit_z(fault, feats)
         if not len(Zcal):                                  # 정상 로봇이 1대뿐이면 그 로봇의 뒤쪽 30%를 보정에 씀
             cut = int(len(Zfit) * 0.7)
             Zfit, Zcal = Zfit[:cut], Zfit[cut:]
@@ -111,9 +117,9 @@ class AMRPipeline:
             Zc = np.vstack([Zf[keep], Zcal])               # 입력: 고장 로봇 창 + 보정용 정상 로봇 창
             yc = np.concatenate([labels[keep], [NORMAL_LABEL] * len(Zcal)])
             if len(set(yc)) >= 2:                          # 라벨이 두 종류 이상이어야 분류를 배울 수 있음
-                cause = CauseClassifier().fit(Zc, yc)
+                cause = CauseClassifier().fit(Zc, yc, feats)
 
-        self.bundle = dict(detectors=dets, cause=cause, feats=FEATS, version="real-vib-1.0", baseline=baseline,
+        self.bundle = dict(detectors=dets, cause=cause, feats=list(feats), version="real-vib-1.0", baseline=baseline,
                            reference=ref, scale=scale, kalman=dict(C.KALMAN), fit_units=fit_units, cal_units=cal_units)
         return self
 

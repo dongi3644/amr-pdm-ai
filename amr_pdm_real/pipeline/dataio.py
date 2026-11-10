@@ -285,12 +285,19 @@ def _windows(df, fname, data, fs_arg):
 
     # ③ 선택 열. INA219 전류·전압: 없으면 None (전력 감시를 하지 않음). 몇 샘플에 한 번만 값이 있어도 된다
     power = {k: _numeric(df, k, data, fname) for k in POWER_COLUMNS}
-    # 엔코더(누적 펄스면 16비트 넘침을 이어 붙임)·모터 명령. 모델 입력이 아니라 표에 보여 주기만 함
+    # 엔코더(누적 펄스면 16비트 넘침을 이어 붙임)·모터 명령. 진단 표에 보여 주고, 4개가 다 있으면 바퀴 특징에도 씀
     aux = {k: _numeric(df, k, data, fname) for k in AUX_COLUMNS}
     for k in C.ENCODER_CHANNELS:
         if aux[k] is not None and C.ENCODER_IS_COUNTER:
             ok = ~np.isnan(aux[k])
             aux[k][ok] = _unwrap_counter(aux[k][ok], bits=16) if np.nanmax(np.abs(aux[k])) <= 32768 else aux[k][ok]
+    # 엔코더 4개가 모두 있으면 바퀴 특징(features.enc_features)을 낼 수 있게 누적 펄스 표(샘플 × 바퀴 4)를 만든다
+    enc = None
+    if all(aux[k] is not None for k in C.ENCODER_CHANNELS):
+        enc = np.column_stack([aux[k] for k in C.ENCODER_CHANNELS])
+        if not C.ENCODER_IS_COUNTER:                      # 속도로 적은 경우: 시간에 따라 더해 누적 펄스로 바꿈
+            dt = np.r_[0, np.diff(t)]
+            enc = np.cumsum(np.nan_to_num(enc) * dt[:, None], axis=0)
     if all(v is None for v in power.values()):
         data.warn(f"{fname}: current·voltage 열이 없어 전류·배터리 감시는 하지 않습니다 (진동만으로 진단).")
     # 구간이 없으면 전체를 한 구간으로 본다 (값을 만들어 넣는 게 아니라 구간 구분을 하지 않는 것)
@@ -332,6 +339,11 @@ def _windows(df, fname, data, fs_arg):
                 rec[k] = float((vv[-1] - vv[0]) / (tt[-1] - tt[0])) if tt[-1] > tt[0] else float("nan")
             elif ok.any():
                 rec[k] = float(np.mean(col[a:b][ok]))
+        if enc is not None:                                          # 바퀴 특징용: 이 1초의 (창 시작부터 시각, 누적 펄스)
+            ok = ~np.isnan(enc[a:b]).any(axis=1)
+            if ok.sum() >= 3:
+                rec["enc_t"] = (t[a:b][ok] - t[a]).astype(np.float32)
+                rec["enc_cnt"] = (enc[a:b][ok] - enc[a:b][ok][0]).astype(np.float32)
         if has_label:                                                # 라벨: 창 안의 마지막 고장 종류와 최대 고장 정도
             kind = next((k for k in (kinds[a:b][::-1] if kinds is not None else ()) if k), "")   # 뒤에서부터 첫 빈칸 아닌 종류
             sv = sevs[a:b][~np.isnan(sevs[a:b])] if sevs is not None else ()

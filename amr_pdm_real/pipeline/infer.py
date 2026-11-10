@@ -26,9 +26,16 @@ FEAT_KO = {"rms": "진동 크기(RMS)", "kurt": "충격성(첨도)", "crest": "�
            "mid": "중주파 진동", "high": "고주파 진동"}
 
 
+ENC_KO = {**{f"{w}_spd": f"{C.WHEEL_KO[w]} 바퀴 속도" for w in C.WHEEL_KO},
+          **{f"{w}_rip": f"{C.WHEEL_KO[w]} 바퀴 속도 흔들림" for w in C.WHEEL_KO},
+          "left_diff": "왼쪽 앞뒤 바퀴 속도 차이", "right_diff": "오른쪽 앞뒤 바퀴 속도 차이", "cmd_eff": "모터 명령 대비 속도"}
+
+
 def feat_ko(f):
     """특징 이름 → 화면에 보일 한국어 이름 (SHAP 판단 근거, 그래프 축에 씀)
     ax_rms → 'X축 가속도 진동 크기(RMS)', gz_high → 'Z축 각속도 고주파 진동'"""
+    if f in ENC_KO:                                       # 엔코더 특징 (예: fl_rip → 앞 왼쪽 바퀴 속도 흔들림)
+        return ENC_KO[f]
     ch, key = f.split("_")
     return f"{C.CHANNEL_KO.get(ch, ch)} {FEAT_KO.get(key, key)}"
 
@@ -46,6 +53,8 @@ class Predictor:
         # 주기 점수의 지점·상태 변경 연속 횟수: 학습 때 모델에 저장한 값 (이 값이 없는 예전 모델은 예전 방식 0.5·2번)
         self.quantile = float(bundle.get("period_quantile", 0.5))
         self.confirm = int(bundle.get("confirm_periods", 2))
+        self.feats = list(bundle.get("feats", FEATS))     # 모델이 학습한 특징 목록 (엔코더 특징 포함 여부)
+        self.skipped = 0                                 # 특징 값이 비어 판정하지 못한 창 수 (예: 엔코더 값이 끊긴 1초)
         self.reset()
 
     def reset(self):
@@ -126,13 +135,17 @@ class Predictor:
 
         if self.baseline is None:                         # per_unit 방식: 아직 이 로봇의 기준이 없음
             if row["period"] < C.BASELINE_PERIODS:        # 처음 5분은 창을 모으기만 하고 판정하지 않음
-                if not row["bump"]:
+                if not row["bump"] and all(np.isfinite(row[f]) for f in self.feats):   # 값이 빈 창은 기준에 넣지 않음
                     self.base_rows.append(row)
                 out["phase"] = "learning"
                 return out
-            self.baseline = SegmentBaseline().fit(self.base_rows)   # 5분이 지나면 모은 창으로 기준을 만듦
+            self.baseline = SegmentBaseline().fit(self.base_rows, self.feats)   # 5분이 지나면 모은 창으로 기준을 만듦
 
         if row["bump"]:                                   # 문턱 통과 순간은 판정에서 제외
+            out["phase"] = "skip"
+            return out
+        if not all(np.isfinite(row[f]) for f in self.feats):   # 모델이 쓰는 특징 값이 비어 있으면 판정하지 않음 (채워 넣지 않음)
+            self.skipped += 1
             out["phase"] = "skip"
             return out
 
@@ -147,7 +160,7 @@ class Predictor:
             self.cause_buf.append(self.b["cause"].proba(z)[0])
         out.update(score=self.ewma, window_score=h, z=z[0])
         order = np.argsort(-np.abs(z[0]))[:3]             # 평소에서 가장 많이 벗어난 특징 3개
-        out["top_feats"] = [(feat_ko(FEATS[i]), float(z[0][i])) for i in order]
+        out["top_feats"] = [(feat_ko(self.feats[i]), float(z[0][i])) for i in order]
         if self.cause_buf and self.status >= 1:           # 주의 이상이면 원인 확률 순위와 추정 원인을 채움
             top, p = self._top_cause()
             cls = self.b["cause"].classes
