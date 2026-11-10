@@ -13,7 +13,7 @@
   └ 전류·전압 → 로봇마다 처음 5분과 비교 (학습 없음) → 전류 높음, 배터리 전압·사용량
 ```
 
-**지금까지 진행한 내용 요약: [`amr_pdm_real/진행_요약.md`](amr_pdm_real/진행_요약.md) · 최신 결과 보고서: [`amr_pdm_real/결과_보고서_2026-11-10.md`](amr_pdm_real/결과_보고서_2026-11-10.md)**
+**지금까지 진행한 내용 요약: [`amr_pdm_real/진행_요약.md`](amr_pdm_real/진행_요약.md) · 바꿀 수 있는 설정: [`amr_pdm_real/파라미터_설명.md`](amr_pdm_real/파라미터_설명.md)**
 
 ## 처음 받은 팀원용: 바로 시작하기 (Windows + VS Code)
 

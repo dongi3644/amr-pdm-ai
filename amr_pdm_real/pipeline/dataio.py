@@ -67,6 +67,119 @@ def _unwrap_counter(v, bits=32):
     return v + np.cumsum(jumps) * 2.0 ** bits if jumps.any() else v
 
 
+def encoder_state(aux, t, fname, data):
+    """엔코더 4개가 각각 살아 있는지와 얼마나 쓰였는지 → {엔코더: dict(state, active_pct, speed, pulses)}
+        state  '정상' · '죽음'(로봇이 움직이는데 기록 내내 펄스 0) · '도중에 멈춤'(움직이는데 ENCODER_STALL_S초 넘게 펄스 0)
+               · '움직임 없음'(비교할 다른 신호가 없어 판단 못 함: 정지 기록이거나 고장) · '없음'(열이 없거나 비어 있음)
+        active_pct 1초 창 중 펄스가 있었던 비율[%],  speed 펄스가 있던 1초들의 평균 속도[펄스/초],  pulses 전체 펄스 수
+    '로봇이 움직이는 중'은 모터 명령이 0이 아니거나, 다른 엔코더 중 하나라도 펄스가 있는 1초로 본다.
+    죽은 엔코더는 열이 없는 것과 같게 처리한다 (aux에서 None으로) → 4개가 다 살아 있지 않으면 바퀴 특징은 자동으로 꺼짐"""
+    sec = np.floor((t - t[0]) / C.WINDOW_S + 1e-9).astype(int)   # 줄마다 몇 번째 1초인가
+    n = int(sec[-1]) + 1
+
+    def per_sec(v):
+        """누적 펄스 → 1초마다 늘어난 펄스 수 (값이 없는 1초는 nan)"""
+        out = np.full(n, np.nan)
+        ok = ~np.isnan(v)
+        if ok.sum() < 2:
+            return out
+        s, x = sec[ok], v[ok]
+        first = np.r_[True, np.diff(s) > 0]                # 1초마다 첫 줄
+        last = np.r_[np.diff(s) > 0, True]                 # 1초마다 마지막 줄
+        out[s[first]] = x[last] - x[first]
+        return out
+
+    present = [k for k in C.ENCODER_CHANNELS if aux.get(k) is not None]
+    d = {k: per_sec(aux[k]) for k in present}
+    cmd = aux.get("motor_cmd")
+    cmd_on = np.zeros(n, bool)
+    if cmd is not None:
+        ok = ~np.isnan(cmd)
+        np.logical_or.at(cmd_on, sec[ok], np.abs(cmd[ok]) > 0)
+    out = {}
+    for k in C.ENCODER_CHANNELS:
+        if k not in present:
+            out[k] = dict(state="없음", active_pct=None, speed=None, pulses=None)
+            continue
+        act = np.abs(np.nan_to_num(d[k])) > 0                  # 이 엔코더에 펄스가 있었던 1초
+        others = [np.abs(np.nan_to_num(d[j])) > 0 for j in present if j != k]
+        moving = cmd_on | (np.any(others, axis=0) if others else np.zeros(n, bool))   # 로봇이 움직인 1초
+        has_ref = cmd is not None or bool(others)
+        # 마지막 펄스 이후 '로봇이 움직인 시간'만 더함 (주행 중 잠깐 서는 시간은 건너뜀, 펄스가 오면 다시 0부터)
+        run, longest = 0, 0
+        for m, a in zip(moving, act):
+            if a:
+                run = 0
+            elif m:
+                run += 1
+            longest = max(longest, run)
+        if not act.any():
+            state = "죽음" if moving.any() else "움직임 없음"
+        elif longest * C.WINDOW_S >= C.ENCODER_STALL_S:
+            state = "도중에 멈춤"
+        else:
+            state = "정상"
+        sp = np.abs(d[k][act]) / C.WINDOW_S
+        out[k] = dict(state=state, active_pct=round(100.0 * act.mean(), 1), speed=round(float(sp.mean()), 1) if len(sp) else 0.0,
+                      pulses=int(np.nansum(np.abs(d[k]))), stalled_s=longest * C.WINDOW_S, has_ref=has_ref)
+        wheel = C.WHEEL_KO[k[-2:]]
+        if state == "죽음":
+            data.warn(f"{fname}: 엔코더 {k}({wheel})가 로봇이 움직이는 동안 펄스가 하나도 없습니다 → 고장·배선 확인. 이 엔코더는 쓰지 않습니다.")
+        elif state == "도중에 멈춤":
+            data.warn(f"{fname}: 엔코더 {k}({wheel})가 로봇이 움직이는데 {longest * C.WINDOW_S:g}초 동안 펄스가 없었습니다 → 선이 빠졌는지 확인. "
+                      "바퀴 고장이 아니라 센서 이상일 수 있습니다.")
+        elif state == "움직임 없음":
+            data.warn(f"{fname}: 엔코더 {k}({wheel})에 펄스가 없습니다. 정지 기록이 아니라면 고장·배선을 확인하세요.")
+    return out
+
+
+def encoder_report(data):
+    """로봇별 엔코더 상태 표 (check 명령에서 출력): 바퀴, 상태, 펄스가 있던 1초 비율, 평균 속도, 전체 펄스"""
+    rows = []
+    for robot, st in data.enc_state.items():
+        for k in C.ENCODER_CHANNELS:
+            s = st.get(k)
+            if s is None or s["state"] == "없음":
+                continue
+            rows.append({"로봇": robot, "엔코더": k, "바퀴": C.WHEEL_KO[k[-2:]], "상태": s["state"],
+                         "펄스 있던 1초(%)": s["active_pct"], "평균 속도(펄스/초)": s["speed"], "전체 펄스": s["pulses"]})
+    return pd.DataFrame(rows)
+
+
+def _encoder_kind(v):
+    """엔코더 열의 값 모양으로 종류를 짐작 → 'counter' / 'increment' / 'speed'
+    누적 펄스는 한 방향으로 계속 늘거나 줄어서, 바로 앞 변화와 부호가 바뀌는 일이 방향을 바꿀 때뿐이다.
+    샘플마다 센 펄스(3, 4, 3, 4 ...)나 속도 값은 늘었다 줄었다를 반복한다 → 작은 정수면 increment, 아니면 speed."""
+    x = v[~np.isnan(v)]
+    d = np.diff(x)
+    nz = d[d != 0]
+    if len(nz) < 3:
+        return "counter"
+    flips = float(np.mean(np.sign(nz[1:]) != np.sign(nz[:-1])))
+    if flips < 0.3:
+        return "counter"
+    small_int = np.all(np.abs(x - np.round(x)) < 1e-9) and np.nanmax(np.abs(x)) <= 255
+    return "increment" if small_int else "speed"
+
+
+def _to_counter(v, t, name, fname, data):
+    """엔코더 열 → 누적 펄스 (config.ENCODER_MODE에 따라. auto면 _encoder_kind로 짐작하고 알림)"""
+    mode = C.ENCODER_MODE if C.ENCODER_MODE != "auto" else _encoder_kind(v)
+    if C.ENCODER_MODE == "auto" and mode != "counter":   # 기본(누적 펄스)과 다르게 읽을 때만 알림
+        ko = {"counter": "누적 펄스", "increment": "샘플마다 센 펄스", "speed": "속도(펄스/초)"}[mode]
+        data.warn(f"{fname}: {name} 값을 '{ko}'로 보고 읽었습니다. 다르면 config.ENCODER_MODE를 정해 주세요.")
+    v = v.copy()
+    ok = ~np.isnan(v)
+    if mode == "counter":                                # 아두이노 int(16비트) 넘침을 이어 붙임
+        v[ok] = _unwrap_counter(v[ok], bits=16) if np.nanmax(np.abs(v)) <= 32768 else v[ok]
+    elif mode == "increment":                          # 샘플마다 센 펄스를 차례로 더함 (빈칸은 0개로 세지 않고 그 자리만 비워 둠)
+        v[ok] = np.cumsum(v[ok])
+    else:                                                # 속도 × 샘플 간격을 차례로 더함
+        dt = np.r_[0, np.diff(t)]
+        v[ok] = np.cumsum(v[ok] * dt[ok])
+    return v
+
+
 def _spikes(x):
     """센서 읽기 오류로 보이는 '샘플 하나만 튀는 값'의 위치 (True = 뺄 샘플). 값을 고치지 않고 빼기만 한다.
     조건: 앞·뒤 샘플과 모두 같은 방향으로 크게(평소 샘플 간 변화의 SPIKE_K배 넘게) 다르고, 앞·뒤 샘플끼리는 서로 비슷함.
@@ -144,6 +257,8 @@ class Dataset:
 
     def __init__(self):
         self.robots, self.warnings, self.fs = {}, [], {}
+        self.enc_state = {}                                # 로봇 이름 → {엔코더: 상태 dict} (encoder_state가 만듦)
+        self._last_enc = {}                                # 방금 읽은 파일의 엔코더 상태 (load가 로봇 이름에 붙임)
 
     def warn(self, text):
         """경고 문구를 모아 둔다. 같은 문구는 한 번만 (파일이 여러 개여도 같은 경고가 반복되지 않게)"""
@@ -166,10 +281,11 @@ class Dataset:
             lbl = self.label_of(name)
             kind = "없음" if lbl is None else C.KIND_KO.get(lbl.split("|")[0], lbl.split("|")[0])
             has = lambda k: "있음" if any(not np.isnan(r.get(k, np.nan)) for r in recs) else "없음"   # 값이 하나라도 있나
-            n_enc = sum(has(k) == "있음" for k in C.ENCODER_CHANNELS)
+            n_enc = sum(has(k) == "있음" for k in C.ENCODER_CHANNELS)   # 살아 있어 쓰이는 엔코더 수
+            n_rec = sum(1 for s in self.enc_state.get(name, {}).values() if s["state"] != "없음")   # 기록된 엔코더 수
             rows.append({"로봇": name, "기록(분)": round(C.minutes(recs[-1]["period"] + 1), 1) if recs else 0, "1초 창": len(recs),
                          "진동 샘플링(Hz)": round(self.fs.get(name, 0), 1), "구간": len({r["segment"] for r in recs}),
-                         "전류": has("current"), "전압": has("voltage"), "엔코더": f"{n_enc}개" if n_enc else "없음",
+                         "전류": has("current"), "전압": has("voltage"), "엔코더": (f"{n_enc}/4 동작" + (f" ({n_rec - n_enc}개 이상)" if n_rec > n_enc else "")) if n_rec else "없음",
                          "모터 명령": has("motor_cmd"), "라벨": kind})
         return pd.DataFrame(rows)
 
@@ -312,17 +428,18 @@ def _windows(df, fname, data, fs_arg):
     power = {k: _numeric(df, k, data, fname) for k in POWER_COLUMNS}
     # 엔코더(누적 펄스면 16비트 넘침을 이어 붙임)·모터 명령. 진단 표에 보여 주고, 4개가 다 있으면 바퀴 특징에도 씀
     aux = {k: _numeric(df, k, data, fname) for k in AUX_COLUMNS}
-    for k in C.ENCODER_CHANNELS:
-        if aux[k] is not None and C.ENCODER_IS_COUNTER:
-            ok = ~np.isnan(aux[k])
-            aux[k][ok] = _unwrap_counter(aux[k][ok], bits=16) if np.nanmax(np.abs(aux[k])) <= 32768 else aux[k][ok]
+    for k in C.ENCODER_CHANNELS:                         # 엔코더 값의 종류가 무엇이든 '누적 펄스'로 맞춘다
+        if aux[k] is not None:
+            aux[k] = _to_counter(aux[k], t, k, fname, data)
+    # 엔코더 상태: 죽은 엔코더는 없는 것으로 (값이 0인 바퀴를 '안 도는 바퀴'로 오해하지 않게)
+    data._last_enc = encoder_state(aux, t, fname, data) if any(aux[k] is not None for k in C.ENCODER_CHANNELS) else {}
+    for k, s in data._last_enc.items():
+        if s["state"] in ("죽음", "움직임 없음"):
+            aux[k] = None
     # 엔코더 4개가 모두 있으면 바퀴 특징(features.enc_features)을 낼 수 있게 누적 펄스 표(샘플 × 바퀴 4)를 만든다
     enc = None
     if all(aux[k] is not None for k in C.ENCODER_CHANNELS):
         enc = np.column_stack([aux[k] for k in C.ENCODER_CHANNELS])
-        if not C.ENCODER_IS_COUNTER:                      # 속도로 적은 경우: 시간에 따라 더해 누적 펄스로 바꿈
-            dt = np.r_[0, np.diff(t)]
-            enc = np.cumsum(np.nan_to_num(enc) * dt[:, None], axis=0)
     if all(v is None for v in power.values()):
         data.warn(f"{fname}: current·voltage 열이 없어 전류·배터리 감시는 하지 않습니다 (진동만으로 진단).")
     # 구간이 없으면 전체를 한 구간으로 본다 (값을 만들어 넣는 게 아니라 구간 구분을 하지 않는 것)
@@ -359,7 +476,7 @@ def _windows(df, fname, data, fs_arg):
             if col is None:
                 continue
             ok = ~np.isnan(col[a:b])
-            if ok.sum() >= 2 and k in C.ENCODER_CHANNELS and C.ENCODER_IS_COUNTER:   # 누적 펄스: 늘어난 펄스 ÷ 걸린 시간
+            if ok.sum() >= 2 and k in C.ENCODER_CHANNELS:   # 누적 펄스: 늘어난 펄스 ÷ 걸린 시간
                 tt, vv = t[a:b][ok], col[a:b][ok]
                 rec[k] = float((vv[-1] - vv[0]) / (tt[-1] - tt[0])) if tt[-1] > tt[0] else float("nan")
             elif ok.any():
@@ -412,6 +529,12 @@ def load(path=C.DATA_DIR, fs=None):
                 r["t"] += shift                            # 시각이 앞 파일보다 뒤로 가지 않게
             have += recs
             data.fs[str(robot)] = rate
+            if data._last_enc:                             # 이 파일의 엔코더 상태 (같은 로봇의 파일이 여럿이면 나쁜 쪽을 남김)
+                prev = data.enc_state.setdefault(str(robot), {})
+                rank = {"정상": 0, "움직임 없음": 1, "도중에 멈춤": 2, "죽음": 3, "없음": -1}
+                for k, s in data._last_enc.items():
+                    if k not in prev or rank[s["state"]] > rank[prev[k]["state"]]:
+                        prev[k] = s
     return data
 
 

@@ -33,6 +33,23 @@ def show_data(data):
             print(" -", w)
 
 
+def show_encoders(data):
+    """엔코더 4개 중 몇 개가 살아 있고 얼마나 쓰였는지 (엔코더 열이 있는 로봇만)"""
+    rep = D.encoder_report(data)
+    if rep.empty:
+        return
+    print("\n엔코더 상태:")
+    print(rep.to_string(index=False))
+    for robot, st in data.enc_state.items():
+        alive = [k for k, s in st.items() if s["state"] in ("정상", "도중에 멈춤")]
+        stalled = [k for k, s in st.items() if s["state"] == "도중에 멈춤"]
+        dead = [k for k, s in st.items() if s["state"] in ("죽음", "움직임 없음")]
+        msg = f"  {robot}: 엔코더 4개 중 {len(alive)}개 동작" + (f", {len(dead)}개 이상({', '.join(dead)})" if dead else "")
+        msg += f" (그중 {', '.join(stalled)}는 도중에 멈춤 → 배선 확인, 오경보 주의)" if stalled else ""
+        msg += " → 바퀴 특징 사용" if len(alive) == 4 else " → 바퀴 특징은 쓰지 않고 진동(가속도·각속도)만으로 진단"
+        print(msg)
+
+
 def show_baseline(data, mode):
     """정상 기준 방식과, auto가 공통 기준(reference)을 고른 경우 그 원인이 된 로봇을 출력"""
     chosen = D.choose_baseline(data, mode)
@@ -63,6 +80,7 @@ def cmd_check(a):
     """파일을 읽기만 한다. 로봇별 기록 길이·창 수·샘플링·라벨 표와, 빠진 열·가정한 값 같은 경고를 보여 준다."""
     data = D.load(a.path, a.fs)
     show_data(data)
+    show_encoders(data)
     show_baseline(data, a.baseline)
 
 
@@ -72,6 +90,7 @@ def cmd_train(a):
     1)의 수치가 발표용 성능이고, 2)의 모델이 diagnose와 대시보드에서 쓰인다."""
     data = D.load(a.path, a.fs)
     show_data(data)
+    show_encoders(data)
     show_baseline(data, a.baseline)
     C.REPORT_DIR.mkdir(exist_ok=True)
     metrics = None
