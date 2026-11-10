@@ -158,8 +158,9 @@ class AEDetector:
 
 class WheelMaxDetector:
     """바퀴 '하나'만 다른 바퀴들보다 튀는 정도 (엔코더 바퀴 특징의 z로 계산). 바퀴 하나에만 생기는 고장용 점수
-        속도 흔들림: 가장 크게 오른 바퀴의 z - 네 바퀴 z의 중앙값  → 거친 바닥처럼 네 바퀴가 함께 흔들리면 0 근처
-        상대 속도  : 네 바퀴 z의 중앙값에서 가장 멀리 벗어난 바퀴
+        속도 흔들림: (가장 크게 오른 바퀴의 z - 네 바퀴 z의 중앙값) ÷ (네 바퀴 z가 서로 흩어진 정도 + 1)
+        상대 속도  : 네 바퀴 z의 중앙값에서 가장 멀리 벗어난 거리 ÷ (흩어진 정도 + 1)
+                    → 한 바퀴만 튀면 크고, 거친 바닥처럼 네 바퀴가 함께(제각각) 흔들리면 작다 (네 값 중 '외톨이' 정도)
         앞뒤 차이  : 왼쪽·오른쪽 앞뒤 바퀴 속도 차이의 |z|
     세 값 중 가장 큰 것. 학습할 것이 없는 단순한 규칙이라 과대적합될 여지가 없고, 눈금은 학습에 안 쓴 정상 로봇으로 맞춘다."""
     name = "바퀴 이상 (엔코더)"
@@ -176,8 +177,9 @@ class WheelMaxDetector:
 
     def raw(self, Z):
         rip, rel = Z[:, self.rip], Z[:, self.rel]
-        a = rip.max(1) - np.median(rip, axis=1)
-        b = np.abs(rel - np.median(rel, axis=1, keepdims=True)).max(1)
+        spread = lambda X: np.median(np.abs(X - np.median(X, axis=1, keepdims=True)), axis=1) + 1.0   # 네 바퀴의 흩어짐(MAD) + 1
+        a = (rip.max(1) - np.median(rip, axis=1)) / spread(rip)
+        b = np.abs(rel - np.median(rel, axis=1, keepdims=True)).max(1) / spread(rel)
         c = np.abs(Z[:, self.diff]).max(1) if self.diff else np.zeros(len(Z))
         return np.maximum.reduce([a, b, c])
 
