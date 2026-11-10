@@ -34,3 +34,10 @@ amr_pdm_real/가상테스트/compare_period.py
 amr_pdm_real/결과_보고서_2026-11-10.md
 amr_pdm_real/실측_결과/
 amr_pdm_real/실측점검/
+
+# second_model: 데이터·학습 결과는 올리지 않음
+second_model/data/*
+!second_model/data/README.md
+second_model/artifacts/
+second_model/reports/
+second_model/가상테스트_결과/
