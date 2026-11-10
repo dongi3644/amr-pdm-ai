@@ -36,11 +36,17 @@ def show_data(data):
 def show_baseline(data, mode):
     """정상 기준 방식과, auto가 공통 기준(reference)을 고른 경우 그 원인이 된 로봇을 출력"""
     chosen = D.choose_baseline(data, mode)
-    print(f"\n정상 기준 방식: {chosen} · 판정 주기 {C.PERIOD_S:g}초")
+    print(f"\n정상 기준 방식: {chosen} · 판정 주기 {C.PERIOD_S:g}초 · 주기 점수 {quantile_ko(C.PERIOD_QUANTILE)}"
+          f" · 상태 변경 {C.CONFIRM_PERIODS}번 연속")
     if chosen == "reference" and (mode or C.BASELINE_MODE) == "auto":
         print(f"  공통 기준을 고른 이유 (자기 처음 {C.minutes(C.BASELINE_PERIODS):g}분으로 기준을 만들 수 없는 로봇): "
               + ", ".join(D.reference_reasons(data)))
         print("  실수로 짧게 끊긴 파일이면 빼고 다시 실행하세요. 그러면 로봇마다 자기 기준(per_unit)을 씁니다.")
+
+
+def quantile_ko(q):
+    """주기 점수 지점 → 화면 문구 (0.5 → '중앙값', 0.75 → '상위 25% 지점')"""
+    return "중앙값" if q == 0.5 else f"상위 {round((1 - q) * 100):g}% 지점"
 
 
 def safe(name):
@@ -102,6 +108,9 @@ def cmd_diagnose(a):
         raise D.DataError("모델이 없습니다. 먼저 python run.py train 을 실행하세요.")
     pipe = AMRPipeline.load()
     C.PERIOD_S = pipe.bundle.get("period_s", C.PERIOD_S)    # 학습 때와 같은 판정 주기로 읽어야 기준이 맞음
+    # 주기 점수 지점·연속 횟수도 모델에 저장된 학습 때 값을 씀 (infer.Predictor가 직접 읽음. 예전 모델은 중앙값·2번)
+    print(f"모델 설정: 판정 주기 {C.PERIOD_S:g}초 · 주기 점수 {quantile_ko(pipe.bundle.get('period_quantile', 0.5))}"
+          f" · 상태 변경 {pipe.bundle.get('confirm_periods', 2)}번 연속")
     data = D.load(a.path, a.fs)
     out = C.REPORT_DIR / "diagnose"
     out.mkdir(parents=True, exist_ok=True)

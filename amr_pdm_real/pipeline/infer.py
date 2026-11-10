@@ -1,7 +1,7 @@
 """실시간 추론기: 1초 창이 들어올 때마다 상태·원인·정지 위험 시점을 갱신한다.
 
 [역할] 학습이 끝난 bundle을 받아 로봇 1대를 '지켜보는' 객체(Predictor). 로봇마다 하나씩 만든다.
-       창 하나는 흔들리기 쉬우므로, 판정은 판정 주기(기본 1분) 단위로 모아서 하고 상태는 2번 연속일 때만 바꾼다 (오경보 방지).
+       창 하나는 흔들리기 쉬우므로, 판정은 판정 주기(기본 1분) 단위로 모아서 하고 상태는 2번(기본값) 연속일 때만 바꾼다 (오경보 방지).
 [흐름에서 위치] bundle(system.py) + 1초 창(dataio) → (여기) update() → 상태·점수·원인·남은 시간
 [누가 쓰나] workflow.diagnose(주기별 표), workflow.cross_validate(평가)
 
@@ -9,7 +9,8 @@
   (per_unit 기준) 처음 BASELINE_PERIODS주기(기본 5분) → 구간별 정상 기준 학습 (이 로봇만의 '복도 지문')
   (reference 기준) 학습 때 만든 공통 기준을 바로 사용
   이후 창마다 → 진동 특징 → z-score → 오토인코더 건강 점수
-  판정 주기가 끝날 때마다 → 주기 점수(중앙값) → 상태(정상/주의/경고, 2번 연속일 때만 변경)
+  판정 주기가 끝날 때마다 → 주기 점수(기본: 중앙값) → 상태(정상/주의/경고, 기본 2번 연속일 때만 변경)
+                      (주기 점수의 지점·연속 횟수는 config.PERIOD_QUANTILE·CONFIRM_PERIODS. 학습 때 값이 모델에 저장됨)
                       → 주의 이상이면 칼만 필터로 정지 위험까지 남은 시간과 범위 예측
   주의 이상인 동안 → 랜덤포레스트로 원인 확률 누적, 주기마다 SHAP으로 판단 근거 갱신
 """
@@ -42,6 +43,9 @@ class Predictor:
         self.b, self.det = bundle, bundle["detectors"][detector]    # 건강 점수를 낼 모델 (기본: 오토인코더)
         self.use_cause = use_cause and bundle["cause"] is not None   # 고장 라벨 없이 학습하면 원인 모델이 없음
         self.calibrated = bundle["scale"] != "normal_only"           # 고장 데이터가 없으면 남은 시간을 예측하지 않음
+        # 주기 점수의 지점·상태 변경 연속 횟수: 학습 때 모델에 저장한 값 (이 값이 없는 예전 모델은 예전 방식 0.5·2번)
+        self.quantile = float(bundle.get("period_quantile", 0.5))
+        self.confirm = int(bundle.get("confirm_periods", 2))
         self.reset()
 
     def reset(self):
@@ -60,10 +64,11 @@ class Predictor:
         self.last_cause_label = None
 
     def _finish_period(self, period):
-        """판정 주기가 끝날 때 한 번: 주기 점수 → 상태 변경(2번 연속 규칙) → 남은 시간 예측 → 원인 판단 근거(SHAP) 갱신"""
+        """판정 주기가 끝날 때 한 번: 주기 점수 → 상태 변경(연속 규칙) → 남은 시간 예측 → 원인 판단 근거(SHAP) 갱신"""
         if not self.period_buf:
             return
-        s = float(np.median(self.period_buf))           # 주기 점수 = 그 주기 창 점수들의 중앙값 (튀는 창 몇 개에 흔들리지 않음)
+        # 주기 점수 = 그 주기 창 점수들의 quantile 지점. 0.5(중앙값)면 튀는 창 몇 개에 흔들리지 않음
+        s = float(np.median(self.period_buf)) if self.quantile == 0.5 else float(np.quantile(self.period_buf, self.quantile))
         self.period_scores.append((period, s))
         self.period_buf = []
         lv = level(s)                                    # 이번 주기 점수만 보면 어떤 상태인가
@@ -71,8 +76,8 @@ class Predictor:
             tgt, cnt = self.pending
             cnt = cnt + 1 if tgt == lv else 1            # 지난 주기와 같은 방향이면 +1, 아니면 1부터 다시
             self.pending = (lv, cnt)
-            # 2번 연속이면 상태 변경. 단, 9점 이상으로 뛰면 기다리지 않고 바로 올림
-            if cnt >= 2 or (lv > self.status and s >= C.THRESH["danger"]):
+            # confirm번(기본 2번) 연속이면 상태 변경. 단, 9점 이상으로 뛰면 기다리지 않고 바로 올림
+            if cnt >= self.confirm or (lv > self.status and s >= C.THRESH["danger"]):
                 self.status, self.pending = lv, (lv, 0)
                 self.events.append((period, self.status))
                 if self.status == 0:                     # 정상 복귀(정비 후): 이전 고장의 원인·추세를 비움
@@ -135,7 +140,7 @@ class Predictor:
         h = float(health(self.det, z)[0])                   # 오토인코더 복원 오차 → 건강 점수 (3 주의 · 6 경고 · 9 정지 위험)
         a = 2 / (C.EWMA_SPAN + 1)                           # 화면 표시용 지수 이동 평균 (최근 약 20개 창)
         self.ewma = h if self.ewma is None else (1 - a) * self.ewma + a * h
-        self.period_buf.append(h)                         # 주기가 끝날 때 중앙값을 낼 창 점수
+        self.period_buf.append(h)                         # 주기가 끝날 때 주기 점수(기본: 중앙값)를 낼 창 점수
         self.period_z.append(z[0])
         # 원인 확률은 점수가 주의 근처(2.4점)까지 올랐거나 이미 주의 이상일 때부터 쌓는다 (정상일 땐 원인을 묻지 않음)
         if self.use_cause and (self.ewma >= 0.8 * C.THRESH["caution"] or self.status >= 1):
