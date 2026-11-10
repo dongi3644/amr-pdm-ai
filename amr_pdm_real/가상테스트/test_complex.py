@@ -209,7 +209,7 @@ def write_md(r, df, path, a, train_specs):
         "# 복잡한 고장 가상 로봇 학습·시험 결과 (코드 점검용 · 성능 아님)", "",
         "> **이 %는 발표·성능 자료로 쓰지 않습니다.** 진동과 고장을 사람이 식으로 만든 가상 로봇이라 실제 로봇 성능이 아닙니다.",
         "> 이 시험이 보여 주는 것: 어떤 종류의 어려운 경우에서 이 AI 구조가 약한지 (실측 기록을 계획할 때 참고).", "",
-        f"- 실행: `가상테스트/test_complex.py --seed {a.seed}`" + (f" --scale {a.scale:g}" if a.scale != 1 else "") + " (같은 명령이면 같은 결과)",
+        f"- 실행: `가상테스트/test_complex.py --seed {a.seed}" + (f" --scale {a.scale:g}" if a.scale != 1 else "") + "` (같은 명령이면 같은 결과)",
         f"- 학습: 가상 로봇 {tr['robots']}대, 기록 {tr['hours']}시간 분량, 학습에 걸린 시간 {tr['minutes']}분 (칼만 필터 조정 포함)",
         "  - " + " · ".join(f"{c} {n}" for c, n in cnt.items()),
         f"- 시험: 학습에 쓰지 않은 가상 로봇 {r['all']['robots']}대, 걸린 시간 {r['test_minutes']}분",
