@@ -143,6 +143,12 @@ def diagnose(pipe, recs, detector="ae"):
         raise DataError(f"기록이 짧습니다. 로봇마다 기준을 만드는 방식에서는 {C.minutes(C.BASELINE_PERIODS + 1):g}분 이상이 필요합니다.")
     # mon: 진동 진단기, power: 전류·배터리 감시기, rows: 표의 줄(주기마다 1줄), truth: 주기별 파일 라벨
     mon, power, rows, truth = pipe.monitor(detector), PowerMonitor(), [], {}
+    aux = {}                                              # 주기 번호 → {엔코더·모터 명령 열: 그 주기 창 값들} (표에 보여 주기만 함)
+    aux_ko = {**{k: f"바퀴 속도 {C.WHEEL_KO[k[-2:]]}(펄스/초)" for k in C.ENCODER_CHANNELS}, "motor_cmd": "모터 명령"}
+
+    def aux_cols(period):
+        """그 주기의 모터 명령·바퀴 속도 평균 (열이 없는 데이터면 아무것도 붙지 않음)"""
+        return {aux_ko[k]: round(float(np.mean(v)), 1) for k, v in aux.get(period, {}).items() if v}
 
     def flush():
         """새로 끝난 주기가 있으면 표에 한 줄씩 추가"""
@@ -153,10 +159,15 @@ def diagnose(pipe, recs, detector="ae"):
                          "빠르면(분)": round(C.minutes(fc["periods_lo"]), 1) if fc else None,
                          "추정 원인": mon.current_cause(), "판단 근거": ", ".join(n for n, _ in mon.reason),
                          **power.columns(period),         # 전류·배터리 칸 (열이 없는 데이터면 아무것도 붙지 않음)
+                         **aux_cols(period),              # 모터 명령·바퀴 속도 칸 (엔코더·모터 명령 열이 있을 때만)
                          "파일 라벨": truth.get(period, "")})
 
     for rec in recs:                                      # 1초 창을 시간 순서대로 하나씩 넣는다 (실시간과 같은 방식)
         power.update(rec)                                 # 전력 감시를 먼저: 주기가 바뀌면 지난 주기 결과가 표에 들어갈 수 있게
+        for k in aux_ko:                                  # 엔코더·모터 명령 값 모으기 (nan은 뺌)
+            v = rec.get(k, float("nan"))
+            if not np.isnan(v):
+                aux.setdefault(rec["period"], {}).setdefault(k, []).append(v)
         mon.update(rec)
         if rec["labeled"]:                                # 비교용으로 파일에 적힌 라벨도 표에 남김 (예: '베어링 결함 0.62')
             kind = C.KIND_KO.get(rec["true_kind"], rec["true_kind"])

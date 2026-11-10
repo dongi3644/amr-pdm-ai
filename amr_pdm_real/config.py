@@ -76,7 +76,19 @@ COLUMN_ALIASES = {                # 파일의 열 이름이 달라도 알아듣�
     "fault_kind": ["kind", "label", "고장종류"],
     "fault_wheel": ["wheel", "고장바퀴"],
     "fault_severity": ["severity", "고장정도"],
+    # 엔코더 4개·모터 명령 (선택). 번호로 적었으면 1 = 앞 왼쪽, 2 = 앞 오른쪽, 3 = 뒤 왼쪽, 4 = 뒤 오른쪽으로 본다 (다르면 여기 순서를 바꿀 것)
+    "enc_fl": ["enc1", "enc_1", "encoder1", "encoder_1", "encoder_fl", "엔코더1", "엔코더_1"],
+    "enc_fr": ["enc2", "enc_2", "encoder2", "encoder_2", "encoder_fr", "엔코더2", "엔코더_2"],
+    "enc_rl": ["enc3", "enc_3", "encoder3", "encoder_3", "encoder_rl", "엔코더3", "엔코더_3"],
+    "enc_rr": ["enc4", "enc_4", "encoder4", "encoder_4", "encoder_rr", "엔코더4", "엔코더_4"],
+    "motor_cmd": ["cmd", "motor", "pwm", "spd", "speed", "motor_pwm", "command", "명령", "모터명령", "모터_명령", "모터"],
 }
+
+# ---------------- 엔코더·모터 명령 (선택 열) ----------------
+# 지금은 모델 입력에 넣지 않고 check·diagnose 표에만 보여 준다 (실측 데이터로 효과를 확인한 뒤 특징으로 추가 검토)
+ENCODER_CHANNELS = ["enc_fl", "enc_fr", "enc_rl", "enc_rr"]
+ENCODER_IS_COUNTER = True         # True: 엔코더 열이 '누적 펄스 수' → 1초 동안 늘어난 펄스 = 바퀴 속도[펄스/초]
+                                  # False: 엔코더 열에 이미 속도(펄스/초 등)를 적은 경우 → 1초 평균
 
 # ---------------- 판정 주기 (회차 대신 시간으로 묶음) ----------------
 # 정해진 경로를 반복하지 않으므로 '회차'가 없다. 1초 창 점수를 PERIOD_S초씩 묶어 그 주기 점수(기본: 중앙값)로 상태를 판정하고,

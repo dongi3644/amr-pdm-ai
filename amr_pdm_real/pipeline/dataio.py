@@ -24,6 +24,7 @@ CSV 한 줄 = 샘플 하나 (아두이노가 한 번 읽은 값). 파일 하나 
     _windows()        로봇 1대의 표를 1초 창으로 자르는 핵심 부분
     choose_baseline() 정상 기준 방식(per_unit / reference) 자동 결정
 """
+import re
 from pathlib import Path
 
 import numpy as np
@@ -47,15 +48,23 @@ POWER_COLUMNS = ("current", "voltage")      # INA219 열 (선택). 진동보다 
 UNIT_COLUMNS = {"time": [("t_us", 1e-6), ("time_us", 1e-6), ("micros", 1e-6), ("t_ms", 1e-3), ("time_ms", 1e-3), ("millis", 1e-3)],
                 "voltage": [("mv", 1e-3), ("voltage_mv", 1e-3), ("bus_mv", 1e-3)],
                 "current": [("ma", 1e-3), ("current_ma", 1e-3)]}
+# 엔코더·모터 명령 (선택 열). 창마다 바퀴 속도[펄스/초]와 모터 명령 평균을 담아 check·diagnose 표에 보여 준다 (모델 입력 아님)
+AUX_COLUMNS = tuple(C.ENCODER_CHANNELS) + ("motor_cmd",)
 # 파이프라인이 읽는 열 (나머지 열은 '쓰지 않은 열'로 한 번 알려 줌)
-USED_COLUMNS = {"time", "robot", "segment", "bump", "current", "voltage", "fault_kind", "fault_wheel", "fault_severity"}
+USED_COLUMNS = {"time", "robot", "segment", "bump", "current", "voltage", "fault_kind", "fault_wheel", "fault_severity", *AUX_COLUMNS}
+# 열 이름 끝에 붙은 단위 → 표준 단위로 곱할 값. 예: '시간(ms)' → time × 0.001, '전류[mA]' → current × 0.001
+UNIT_SUFFIX = {"us": 1e-6, "µs": 1e-6, "μs": 1e-6, "ms": 1e-3, "s": 1.0, "sec": 1.0,
+               "ma": 1e-3, "a": 1.0, "mv": 1e-3, "v": 1.0}
 
 
-def _unwrap_counter(v):
-    """아두이노 micros()/millis()처럼 2^32에서 0으로 돌아가는 정수 시각을 이어지게 펴 줌 (크게 줄어드는 곳마다 2^32를 더함)"""
+def _unwrap_counter(v, bits=32):
+    """2^bits에서 0으로 돌아가는 정수 카운터를 이어지게 펴 줌 (크게 줄어들거나 늘어나는 곳마다 2^bits를 더하거나 뺌)
+    bits=32: 아두이노 micros()/millis() 시각. bits=16: 아두이노 int(16비트)로 센 엔코더 펄스 (32767 다음에 -32768)"""
     v = np.asarray(v, float)
-    drops = np.r_[0, np.diff(v)] < -(2 ** 31)
-    return v + np.cumsum(drops) * 2.0 ** 32 if drops.any() else v
+    d = np.r_[0, np.diff(v)]
+    half = 2.0 ** (bits - 1)
+    jumps = (d < -half).astype(float) - (d > half).astype(float)
+    return v + np.cumsum(jumps) * 2.0 ** bits if jumps.any() else v
 
 
 def _standardize(df, fname, data):
@@ -97,10 +106,16 @@ def _standardize(df, fname, data):
             if v.notna().any() and float(v.abs().max()) == 0.0:
                 df = df.drop(columns=k)
                 data.warn(f"{fname}: {k} 값이 모두 0이라 INA219를 읽지 못한 것으로 보고 쓰지 않습니다 (배선·주소 0x40 확인).")
+                continue
+            # 이름은 current·voltage인데 값이 mA·mV인 경우 (INA219 최대 3.2 A, 2S 배터리 최대 8.4 V라 이보다 훨씬 크면 단위가 다름)
+            med = float(v.abs().median()) if v.notna().any() else 0.0
+            if (k == "current" and med > 20) or (k == "voltage" and med > 100):
+                df[k] = v / 1000
+                data.warn(f"{fname}: {k} 값이 커서({med:g}) {'mA' if k == 'current' else 'mV'}로 보고 1000으로 나눴습니다.")
     unused = [c for c in df.columns if c not in USED_COLUMNS and c not in C.VIB_CHANNELS
               and not any(c == col for cands in UNIT_COLUMNS.values() for col, _ in cands)]
     if unused:
-        data.warn(f"쓰지 않은 열: {', '.join(unused)} (엔코더·모터 명령 등은 아직 모델에 넣지 않음)")
+        data.warn(f"쓰지 않은 열: {', '.join(unused)} (열 이름을 알아듣지 못함. 필요하면 config.COLUMN_ALIASES에 추가)")
     return df
 
 
@@ -134,10 +149,12 @@ class Dataset:
         for name, recs in self.robots.items():
             lbl = self.label_of(name)
             kind = "없음" if lbl is None else C.KIND_KO.get(lbl.split("|")[0], lbl.split("|")[0])
-            has = lambda k: "있음" if any(not np.isnan(r[k]) for r in recs) else "없음"   # 전류·전압 값이 하나라도 있나
+            has = lambda k: "있음" if any(not np.isnan(r.get(k, np.nan)) for r in recs) else "없음"   # 값이 하나라도 있나
+            n_enc = sum(has(k) == "있음" for k in C.ENCODER_CHANNELS)
             rows.append({"로봇": name, "기록(분)": round(C.minutes(recs[-1]["period"] + 1), 1) if recs else 0, "1초 창": len(recs),
                          "진동 샘플링(Hz)": round(self.fs.get(name, 0), 1), "구간": len({r["segment"] for r in recs}),
-                         "전류": has("current"), "전압": has("voltage"), "라벨": kind})
+                         "전류": has("current"), "전압": has("voltage"), "엔코더": f"{n_enc}개" if n_enc else "없음",
+                         "모터 명령": has("motor_cmd"), "라벨": kind})
         return pd.DataFrame(rows)
 
 
@@ -167,6 +184,23 @@ def read_table(path):
     else:
         raise DataError(f"{Path(path).name}: 글자 인코딩을 알 수 없습니다. UTF-8로 저장해 주세요.")
     df.columns = [str(c).strip().lower() for c in df.columns]    # 열 이름의 앞뒤 공백 제거 + 소문자 (Time, TIME → time)
+    # 열 이름 끝의 단위 표기를 떼고 값을 표준 단위로: '시간(ms)' → 시간 × 0.001, '전류 [mA]' → 전류 × 0.001, 'gx(raw)' → gx
+    notes, strip = [], {}
+    for c in df.columns:
+        m = re.match(r"^(.+?)\s*[\(\[]\s*(.+?)\s*[\)\]]$", c)
+        if not m:
+            continue
+        base, unit = m.group(1).strip(), m.group(2).strip()
+        strip[c] = base
+        scale = UNIT_SUFFIX.get(unit)
+        if scale is not None and scale != 1.0:
+            v = pd.to_numeric(df[c], errors="coerce").to_numpy(float)
+            if unit in ("us", "µs", "μs", "ms"):              # 아두이노 시각이면 2^32 한 바퀴 돌기를 먼저 이어 붙임
+                v = _unwrap_counter(v)
+            df[c] = v * scale
+            notes.append(f"'{c}' 열을 단위 {unit}로 보고 × {scale:g} 해서 읽었습니다.")
+    df = df.rename(columns=strip)
+    df.attrs["notes"] = notes                              # load()가 '확인할 점'으로 옮김
     rename = {}
     for name, aliases in {**C.COLUMN_ALIASES, **C.CHANNEL_ALIASES}.items():
         if name not in df.columns:                         # 표준 이름이 이미 있으면 그대로 두고
@@ -251,6 +285,12 @@ def _windows(df, fname, data, fs_arg):
 
     # ③ 선택 열. INA219 전류·전압: 없으면 None (전력 감시를 하지 않음). 몇 샘플에 한 번만 값이 있어도 된다
     power = {k: _numeric(df, k, data, fname) for k in POWER_COLUMNS}
+    # 엔코더(누적 펄스면 16비트 넘침을 이어 붙임)·모터 명령. 모델 입력이 아니라 표에 보여 주기만 함
+    aux = {k: _numeric(df, k, data, fname) for k in AUX_COLUMNS}
+    for k in C.ENCODER_CHANNELS:
+        if aux[k] is not None and C.ENCODER_IS_COUNTER:
+            ok = ~np.isnan(aux[k])
+            aux[k][ok] = _unwrap_counter(aux[k][ok], bits=16) if np.nanmax(np.abs(aux[k])) <= 32768 else aux[k][ok]
     if all(v is None for v in power.values()):
         data.warn(f"{fname}: current·voltage 열이 없어 전류·배터리 감시는 하지 않습니다 (진동만으로 진단).")
     # 구간이 없으면 전체를 한 구간으로 본다 (값을 만들어 넣는 게 아니라 구간 구분을 하지 않는 것)
@@ -282,6 +322,16 @@ def _windows(df, fname, data, fs_arg):
         for k, col in power.items():                                 # 전류·전압: 이 1초에 기록된 값들의 평균 (없으면 nan)
             v = col[a:b][~np.isnan(col[a:b])] if col is not None else ()
             rec[k] = float(np.mean(v)) if len(v) else float("nan")
+        for k, col in aux.items():                                   # 바퀴 속도[펄스/초]·모터 명령 (없으면 nan)
+            rec[k] = float("nan")
+            if col is None:
+                continue
+            ok = ~np.isnan(col[a:b])
+            if ok.sum() >= 2 and k in C.ENCODER_CHANNELS and C.ENCODER_IS_COUNTER:   # 누적 펄스: 늘어난 펄스 ÷ 걸린 시간
+                tt, vv = t[a:b][ok], col[a:b][ok]
+                rec[k] = float((vv[-1] - vv[0]) / (tt[-1] - tt[0])) if tt[-1] > tt[0] else float("nan")
+            elif ok.any():
+                rec[k] = float(np.mean(col[a:b][ok]))
         if has_label:                                                # 라벨: 창 안의 마지막 고장 종류와 최대 고장 정도
             kind = next((k for k in (kinds[a:b][::-1] if kinds is not None else ()) if k), "")   # 뒤에서부터 첫 빈칸 아닌 종류
             sv = sevs[a:b][~np.isnan(sevs[a:b])] if sevs is not None else ()
@@ -307,6 +357,8 @@ def load(path=C.DATA_DIR, fs=None):
     for f in files:
         f = Path(f)
         df = read_table(f)
+        for n in df.attrs.get("notes", []):                # 열 이름의 단위 표기로 바꾼 것
+            data.warn(f"{f.name}: {n}")
         stem = f.name.split(".")[0]                        # 확장자를 뗀 파일 이름 (robot 열이 없을 때 로봇 이름으로 씀)
         # robot 열이 있으면 그 값마다 따로 나눠 처리하고, 없으면 파일 전체가 로봇 1대
         groups = df.groupby(df["robot"].astype(str), sort=False) if "robot" in df.columns else [(stem, df)]
