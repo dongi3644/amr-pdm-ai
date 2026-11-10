@@ -1,0 +1,3387 @@
+{
+ "summary": {
+  "all": {
+   "robots": 45,
+   "fault": 24,
+   "normal": 21,
+   "accuracy_pct": 73.3,
+   "detect_pct": 50.0,
+   "false_alarm_pct": 0.0,
+   "warned_before_fail_pct": 25.0,
+   "fail_robots": 8,
+   "mean_detect_delay_min": 7.4,
+   "kind_ok_pct": 100.0,
+   "cause_robots": 11
+  },
+  "groups": {
+   "일반": {
+    "robots": 25,
+    "fault": 10,
+    "normal": 15,
+    "accuracy_pct": 76.0,
+    "detect_pct": 40.0,
+    "false_alarm_pct": 0.0,
+    "warned_before_fail_pct": 0.0,
+    "fail_robots": 2,
+    "mean_detect_delay_min": 9.1,
+    "kind_ok_pct": 100.0,
+    "cause_robots": 4
+   },
+   "복잡한 고장": {
+    "robots": 14,
+    "fault": 14,
+    "normal": 0,
+    "accuracy_pct": 57.1,
+    "detect_pct": 57.1,
+    "false_alarm_pct": null,
+    "warned_before_fail_pct": 33.3,
+    "fail_robots": 6,
+    "mean_detect_delay_min": 6.6,
+    "kind_ok_pct": 100.0,
+    "cause_robots": 7
+   },
+   "어려운 정상": {
+    "robots": 6,
+    "fault": 0,
+    "normal": 6,
+    "accuracy_pct": 100.0,
+    "detect_pct": null,
+    "false_alarm_pct": 0.0,
+    "warned_before_fail_pct": null,
+    "fail_robots": 0,
+    "mean_detect_delay_min": null,
+    "kind_ok_pct": null,
+    "cause_robots": 0
+   }
+  },
+  "cases": {
+   "일반 정상": {
+    "robots": 15,
+    "fault": 0,
+    "normal": 15,
+    "accuracy_pct": 100.0,
+    "detect_pct": null,
+    "false_alarm_pct": 0.0,
+    "warned_before_fail_pct": null,
+    "fail_robots": 0,
+    "mean_detect_delay_min": null,
+    "kind_ok_pct": null,
+    "cause_robots": 0
+   },
+   "일반 고장": {
+    "robots": 10,
+    "fault": 10,
+    "normal": 0,
+    "accuracy_pct": 40.0,
+    "detect_pct": 40.0,
+    "false_alarm_pct": null,
+    "warned_before_fail_pct": 0.0,
+    "fail_robots": 2,
+    "mean_detect_delay_min": 9.1,
+    "kind_ok_pct": 100.0,
+    "cause_robots": 4
+   },
+   "급성 고장": {
+    "robots": 2,
+    "fault": 2,
+    "normal": 0,
+    "accuracy_pct": 100.0,
+    "detect_pct": 100.0,
+    "false_alarm_pct": null,
+    "warned_before_fail_pct": 0.0,
+    "fail_robots": 2,
+    "mean_detect_delay_min": 1.9,
+    "kind_ok_pct": 100.0,
+    "cause_robots": 2
+   },
+   "간헐 고장": {
+    "robots": 2,
+    "fault": 2,
+    "normal": 0,
+    "accuracy_pct": 0.0,
+    "detect_pct": 0.0,
+    "false_alarm_pct": null,
+    "warned_before_fail_pct": 0.0,
+    "fail_robots": 1,
+    "mean_detect_delay_min": null,
+    "kind_ok_pct": null,
+    "cause_robots": 0
+   },
+   "복합 고장": {
+    "robots": 2,
+    "fault": 2,
+    "normal": 0,
+    "accuracy_pct": 100.0,
+    "detect_pct": 100.0,
+    "false_alarm_pct": null,
+    "warned_before_fail_pct": null,
+    "fail_robots": 0,
+    "mean_detect_delay_min": 9.8,
+    "kind_ok_pct": 100.0,
+    "cause_robots": 2
+   },
+   "약한 고장": {
+    "robots": 2,
+    "fault": 2,
+    "normal": 0,
+    "accuracy_pct": 0.0,
+    "detect_pct": 0.0,
+    "false_alarm_pct": null,
+    "warned_before_fail_pct": null,
+    "fail_robots": 0,
+    "mean_detect_delay_min": null,
+    "kind_ok_pct": null,
+    "cause_robots": 0
+   },
+   "속도 다름": {
+    "robots": 2,
+    "fault": 2,
+    "normal": 0,
+    "accuracy_pct": 50.0,
+    "detect_pct": 50.0,
+    "false_alarm_pct": null,
+    "warned_before_fail_pct": 0.0,
+    "fail_robots": 1,
+    "mean_detect_delay_min": 10.4,
+    "kind_ok_pct": null,
+    "cause_robots": 0
+   },
+   "베어링 변형": {
+    "robots": 2,
+    "fault": 2,
+    "normal": 0,
+    "accuracy_pct": 100.0,
+    "detect_pct": 100.0,
+    "false_alarm_pct": null,
+    "warned_before_fail_pct": 100.0,
+    "fail_robots": 2,
+    "mean_detect_delay_min": 5.6,
+    "kind_ok_pct": 100.0,
+    "cause_robots": 2
+   },
+   "고장+저전압": {
+    "robots": 2,
+    "fault": 2,
+    "normal": 0,
+    "accuracy_pct": 50.0,
+    "detect_pct": 50.0,
+    "false_alarm_pct": null,
+    "warned_before_fail_pct": null,
+    "fail_robots": 0,
+    "mean_detect_delay_min": 7.6,
+    "kind_ok_pct": 100.0,
+    "cause_robots": 1
+   },
+   "바닥 바뀜": {
+    "robots": 2,
+    "fault": 0,
+    "normal": 2,
+    "accuracy_pct": 100.0,
+    "detect_pct": null,
+    "false_alarm_pct": 0.0,
+    "warned_before_fail_pct": null,
+    "fail_robots": 0,
+    "mean_detect_delay_min": null,
+    "kind_ok_pct": null,
+    "cause_robots": 0
+   },
+   "짐 실음": {
+    "robots": 2,
+    "fault": 0,
+    "normal": 2,
+    "accuracy_pct": 100.0,
+    "detect_pct": null,
+    "false_alarm_pct": 0.0,
+    "warned_before_fail_pct": null,
+    "fail_robots": 0,
+    "mean_detect_delay_min": null,
+    "kind_ok_pct": null,
+    "cause_robots": 0
+   },
+   "저전압 정상": {
+    "robots": 2,
+    "fault": 0,
+    "normal": 2,
+    "accuracy_pct": 100.0,
+    "detect_pct": null,
+    "false_alarm_pct": 0.0,
+    "warned_before_fail_pct": null,
+    "fail_robots": 0,
+    "mean_detect_delay_min": null,
+    "kind_ok_pct": null,
+    "cause_robots": 0
+   }
+  },
+  "windows": {
+   "기준선 (z-score)": {
+    "auc": 0.719,
+    "detect_pct": 3.5,
+    "false_alarm_pct": 0.3
+   },
+   "ECOD": {
+    "auc": 0.707,
+    "detect_pct": 10.3,
+    "false_alarm_pct": 3.4
+   },
+   "Isolation Forest": {
+    "auc": 0.656,
+    "detect_pct": 1.9,
+    "false_alarm_pct": 0.3
+   },
+   "PCA": {
+    "auc": 0.786,
+    "detect_pct": 20.7,
+    "false_alarm_pct": 0.2
+   },
+   "오토인코더 (AI)": {
+    "auc": 0.792,
+    "detect_pct": 24.2,
+    "false_alarm_pct": 0.2
+   }
+  },
+  "forecast": {
+   "kalman": {
+    "mae_min": 1.0,
+    "n": 15,
+    "coverage": 0.67
+   },
+   "trend": {
+    "mae_min": 2.4,
+    "n": 15
+   }
+  },
+  "train": {
+   "robots": 40,
+   "hours": 10.7,
+   "minutes": 2.3,
+   "notes": [
+    "특징: 진동 36개 + 엔코더 11개 (바퀴 속도·속도 흔들림·앞뒤 바퀴 차이, 모터 명령 대비 속도)",
+    "판정 주기 60초 · 정상 기준: 로봇마다 처음 5분 · 학습 로봇 40대 · 정상 창 7,571개 · 고장 창 15,893개",
+    "원인 분류 항목: 앞 왼쪽 바퀴 베어링 결함, 앞 오른쪽 바퀴 베어링 결함, 뒤 왼쪽 바퀴 베어링 결함, 뒤 오른쪽 바퀴 베어링 결함, 앞 왼쪽 바퀴 체결부 풀림, 앞 오른쪽 바퀴 체결부 풀림, 뒤 왼쪽 바퀴 체결부 풀림, 뒤 오른쪽 바퀴 체결부 풀림, 정상, 앞 왼쪽 바퀴 불평형, 앞 오른쪽 바퀴 불평형, 뒤 왼쪽 바퀴 불평형, 뒤 오른쪽 바퀴 불평형",
+    "칼만 필터: 학습 고장 기록 27대로 잡음 값을 맞췄습니다 {'q_level': 0.01, 'q_slope': 0.5, 'r': 0.02} (예측 23회, 학습 데이터 오차 0.9분)"
+   ]
+  },
+  "test_minutes": 4.6,
+  "seed": 2027,
+  "scale": 0.25,
+  "skipped": []
+ },
+ "cv_metrics": {
+  "protocol": {
+   "split": "로봇 단위",
+   "folds": 1,
+   "baseline": "per_unit",
+   "period_s": 60.0,
+   "note": "각 겹에서 평가 로봇의 데이터는 학습·기준·눈금 보정에 전혀 쓰지 않음"
+  },
+  "windows": {
+   "n": 28870,
+   "fault": 15131
+  },
+  "detectors": {
+   "zscore": {
+    "name": "기준선 (z-score)",
+    "auc": 0.719,
+    "recall": 0.035,
+    "false_positive": 0.003
+   },
+   "ecod": {
+    "name": "ECOD",
+    "auc": 0.707,
+    "recall": 0.103,
+    "false_positive": 0.034
+   },
+   "iforest": {
+    "name": "Isolation Forest",
+    "auc": 0.656,
+    "recall": 0.019,
+    "false_positive": 0.003
+   },
+   "pca": {
+    "name": "PCA",
+    "auc": 0.786,
+    "recall": 0.207,
+    "false_positive": 0.002
+   },
+   "ae": {
+    "name": "오토인코더 (AI)",
+    "auc": 0.792,
+    "recall": 0.242,
+    "false_positive": 0.002
+   }
+  },
+  "units": {
+   "fault": 24,
+   "normal": 21,
+   "normal_assumed": 0,
+   "fault_detected": "12/24",
+   "false_alarm": "0/21",
+   "warned_before_fail": "2/8",
+   "mean_lead_min": 1.5
+  },
+  "cause": {
+   "window_accuracy": 0.741,
+   "unit_accuracy": "8/11",
+   "unseen_windows": 0,
+   "unseen_units": 0,
+   "labels": [
+    "bearing|fl",
+    "bearing|fr",
+    "bearing|rl",
+    "bearing|rr",
+    "looseness|fl",
+    "looseness|fr",
+    "looseness|rl",
+    "looseness|rr",
+    "unbalance|fl",
+    "unbalance|fr",
+    "unbalance|rl",
+    "unbalance|rr",
+    "normal|"
+   ],
+   "confusion": [
+    [
+     1115,
+     0,
+     73,
+     56,
+     110,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     92
+    ],
+    [
+     75,
+     295,
+     4,
+     6,
+     0,
+     1,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     15
+    ],
+    [
+     0,
+     0,
+     656,
+     5,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     0,
+     0,
+     97
+    ],
+    [
+     5,
+     0,
+     129,
+     470,
+     1,
+     2,
+     0,
+     9,
+     19,
+     145,
+     2,
+     1,
+     40
+    ],
+    [
+     142,
+     0,
+     0,
+     5,
+     803,
+     6,
+     1,
+     0,
+     0,
+     1,
+     0,
+     0,
+     365
+    ],
+    [
+     0,
+     3,
+     27,
+     16,
+     22,
+     1029,
+     1,
+     11,
+     1,
+     3,
+     0,
+     0,
+     165
+    ],
+    [
+     0,
+     0,
+     11,
+     1,
+     14,
+     3,
+     930,
+     56,
+     0,
+     0,
+     0,
+     0,
+     207
+    ],
+    [
+     20,
+     0,
+     0,
+     40,
+     34,
+     19,
+     3,
+     451,
+     0,
+     0,
+     0,
+     0,
+     247
+    ],
+    [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    [
+     0,
+     0,
+     277,
+     125,
+     1,
+     2,
+     1,
+     0,
+     140,
+     407,
+     0,
+     1,
+     36
+    ],
+    [
+     0,
+     0,
+     0,
+     0,
+     0,
+     2,
+     0,
+     0,
+     42,
+     0,
+     335,
+     0,
+     64
+    ],
+    [
+     0,
+     0,
+     0,
+     1,
+     106,
+     0,
+     0,
+     2,
+     13,
+     62,
+     11,
+     35,
+     301
+    ],
+    [
+     1028,
+     92,
+     186,
+     602,
+     231,
+     141,
+     147,
+     226,
+     7,
+     1,
+     1,
+     0,
+     11077
+    ]
+   ]
+  },
+  "forecast": {
+   "kalman": {
+    "mae_min": 1.0,
+    "n": 15,
+    "coverage": 0.67
+   },
+   "trend": {
+    "mae_min": 2.4,
+    "n": 15
+   }
+  },
+  "health_indicator": {
+   "monotonicity": 0.672,
+   "units": 24,
+   "trendability": 0.005,
+   "prognosability": 0.35
+  },
+  "unit_results": [
+   {
+    "robot": "일반001",
+    "label": "normal|",
+    "label_assumed": false,
+    "label_ko": "정상",
+    "onset": null,
+    "caution": null,
+    "warning": null,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 0.0,
+    "cause_pred": null,
+    "cause_unseen": false,
+    "cause_ok": null,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.0
+     ],
+     [
+      9,
+      0.0
+     ],
+     [
+      10,
+      0.0
+     ],
+     [
+      11,
+      0.0
+     ],
+     [
+      12,
+      0.0
+     ],
+     [
+      13,
+      0.0
+     ]
+    ],
+    "sev_range": 0.0
+   },
+   {
+    "robot": "일반002",
+    "label": "normal|",
+    "label_assumed": false,
+    "label_ko": "정상",
+    "onset": null,
+    "caution": null,
+    "warning": null,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 0.0,
+    "cause_pred": null,
+    "cause_unseen": false,
+    "cause_ok": null,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.0
+     ],
+     [
+      9,
+      0.0
+     ],
+     [
+      10,
+      0.0
+     ],
+     [
+      11,
+      0.0
+     ]
+    ],
+    "sev_range": 0.0
+   },
+   {
+    "robot": "일반003",
+    "label": "normal|",
+    "label_assumed": false,
+    "label_ko": "정상",
+    "onset": null,
+    "caution": null,
+    "warning": null,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 0.0,
+    "cause_pred": null,
+    "cause_unseen": false,
+    "cause_ok": null,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.0
+     ],
+     [
+      9,
+      0.0
+     ],
+     [
+      10,
+      0.0
+     ],
+     [
+      11,
+      0.0
+     ],
+     [
+      12,
+      0.0
+     ],
+     [
+      13,
+      0.0
+     ],
+     [
+      14,
+      0.0
+     ]
+    ],
+    "sev_range": 0.0
+   },
+   {
+    "robot": "일반004",
+    "label": "normal|",
+    "label_assumed": false,
+    "label_ko": "정상",
+    "onset": null,
+    "caution": null,
+    "warning": null,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 0.0,
+    "cause_pred": null,
+    "cause_unseen": false,
+    "cause_ok": null,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.0
+     ],
+     [
+      9,
+      0.0
+     ],
+     [
+      10,
+      0.0
+     ]
+    ],
+    "sev_range": 0.0
+   },
+   {
+    "robot": "일반005",
+    "label": "bearing|rl",
+    "label_assumed": false,
+    "label_ko": "뒤 왼쪽 바퀴 베어링 결함",
+    "onset": 7,
+    "caution": 13,
+    "warning": 13,
+    "fail": 13,
+    "lead_periods": -1,
+    "max_score": 12.33,
+    "cause_pred": "뒤 왼쪽 바퀴 베어링 결함",
+    "cause_unseen": false,
+    "cause_ok": true,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.34
+     ],
+     [
+      9,
+      1.16
+     ],
+     [
+      10,
+      2.383
+     ],
+     [
+      11,
+      5.29
+     ],
+     [
+      12,
+      8.022
+     ],
+     [
+      13,
+      10.738
+     ],
+     [
+      14,
+      11.962
+     ],
+     [
+      15,
+      12.328
+     ]
+    ],
+    "sev_range": 0.97
+   },
+   {
+    "robot": "일반006",
+    "label": "unbalance|rl",
+    "label_assumed": false,
+    "label_ko": "뒤 왼쪽 바퀴 불평형",
+    "onset": 6,
+    "caution": 15,
+    "warning": 15,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 11.54,
+    "cause_pred": "뒤 왼쪽 바퀴 불평형",
+    "cause_unseen": false,
+    "cause_ok": true,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.51
+     ],
+     [
+      8,
+      0.555
+     ],
+     [
+      9,
+      0.997
+     ],
+     [
+      10,
+      1.428
+     ],
+     [
+      11,
+      2.023
+     ],
+     [
+      12,
+      2.781
+     ],
+     [
+      13,
+      4.558
+     ],
+     [
+      14,
+      6.624
+     ],
+     [
+      15,
+      8.396
+     ],
+     [
+      16,
+      10.478
+     ],
+     [
+      17,
+      11.406
+     ],
+     [
+      18,
+      11.538
+     ],
+     [
+      19,
+      0.0
+     ]
+    ],
+    "sev_range": 0.79
+   },
+   {
+    "robot": "일반007",
+    "label": "normal|",
+    "label_assumed": false,
+    "label_ko": "정상",
+    "onset": null,
+    "caution": null,
+    "warning": null,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 0.0,
+    "cause_pred": null,
+    "cause_unseen": false,
+    "cause_ok": null,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.0
+     ],
+     [
+      9,
+      0.0
+     ],
+     [
+      10,
+      0.0
+     ]
+    ],
+    "sev_range": 0.0
+   },
+   {
+    "robot": "일반008",
+    "label": "looseness|fr",
+    "label_assumed": false,
+    "label_ko": "앞 오른쪽 바퀴 체결부 풀림",
+    "onset": 7,
+    "caution": null,
+    "warning": null,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 2.91,
+    "cause_pred": null,
+    "cause_unseen": false,
+    "cause_ok": null,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.0
+     ],
+     [
+      9,
+      0.0
+     ],
+     [
+      10,
+      0.0
+     ],
+     [
+      11,
+      0.038
+     ],
+     [
+      12,
+      0.114
+     ],
+     [
+      13,
+      0.316
+     ],
+     [
+      14,
+      0.731
+     ],
+     [
+      15,
+      0.947
+     ],
+     [
+      16,
+      1.627
+     ],
+     [
+      17,
+      2.47
+     ],
+     [
+      18,
+      2.914
+     ],
+     [
+      19,
+      1.913
+     ]
+    ],
+    "sev_range": 0.65
+   },
+   {
+    "robot": "일반009",
+    "label": "looseness|rr",
+    "label_assumed": false,
+    "label_ko": "뒤 오른쪽 바퀴 체결부 풀림",
+    "onset": 7,
+    "caution": null,
+    "warning": null,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 1.61,
+    "cause_pred": null,
+    "cause_unseen": false,
+    "cause_ok": null,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.069
+     ],
+     [
+      9,
+      0.271
+     ],
+     [
+      10,
+      0.334
+     ],
+     [
+      11,
+      0.591
+     ],
+     [
+      12,
+      0.745
+     ],
+     [
+      13,
+      0.825
+     ],
+     [
+      14,
+      1.164
+     ],
+     [
+      15,
+      1.46
+     ],
+     [
+      16,
+      1.519
+     ],
+     [
+      17,
+      1.609
+     ]
+    ],
+    "sev_range": 0.58
+   },
+   {
+    "robot": "일반010",
+    "label": "bearing|fr",
+    "label_assumed": false,
+    "label_ko": "앞 오른쪽 바퀴 베어링 결함",
+    "onset": 6,
+    "caution": 17,
+    "warning": 17,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 7.76,
+    "cause_pred": "앞 오른쪽 바퀴 베어링 결함",
+    "cause_unseen": false,
+    "cause_ok": true,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.119
+     ],
+     [
+      7,
+      0.214
+     ],
+     [
+      8,
+      0.349
+     ],
+     [
+      9,
+      0.586
+     ],
+     [
+      10,
+      0.956
+     ],
+     [
+      11,
+      1.309
+     ],
+     [
+      12,
+      1.823
+     ],
+     [
+      13,
+      2.331
+     ],
+     [
+      14,
+      2.846
+     ],
+     [
+      15,
+      4.542
+     ],
+     [
+      16,
+      6.182
+     ],
+     [
+      17,
+      7.369
+     ],
+     [
+      18,
+      7.756
+     ]
+    ],
+    "sev_range": 0.5
+   },
+   {
+    "robot": "일반011",
+    "label": "looseness|rr",
+    "label_assumed": false,
+    "label_ko": "뒤 오른쪽 바퀴 체결부 풀림",
+    "onset": 7,
+    "caution": null,
+    "warning": null,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 0.86,
+    "cause_pred": null,
+    "cause_unseen": false,
+    "cause_ok": null,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.0
+     ],
+     [
+      9,
+      0.0
+     ],
+     [
+      10,
+      0.0
+     ],
+     [
+      11,
+      0.0
+     ],
+     [
+      12,
+      0.017
+     ],
+     [
+      13,
+      0.101
+     ],
+     [
+      14,
+      0.162
+     ],
+     [
+      15,
+      0.367
+     ],
+     [
+      16,
+      0.576
+     ],
+     [
+      17,
+      0.651
+     ],
+     [
+      18,
+      0.861
+     ]
+    ],
+    "sev_range": 0.51
+   },
+   {
+    "robot": "일반012",
+    "label": "normal|",
+    "label_assumed": false,
+    "label_ko": "정상",
+    "onset": null,
+    "caution": null,
+    "warning": null,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 0.0,
+    "cause_pred": null,
+    "cause_unseen": false,
+    "cause_ok": null,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.0
+     ],
+     [
+      9,
+      0.0
+     ],
+     [
+      10,
+      0.0
+     ],
+     [
+      11,
+      0.0
+     ],
+     [
+      12,
+      0.0
+     ],
+     [
+      13,
+      0.0
+     ]
+    ],
+    "sev_range": 0.0
+   },
+   {
+    "robot": "일반013",
+    "label": "normal|",
+    "label_assumed": false,
+    "label_ko": "정상",
+    "onset": null,
+    "caution": null,
+    "warning": null,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 0.36,
+    "cause_pred": null,
+    "cause_unseen": false,
+    "cause_ok": null,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.0
+     ],
+     [
+      9,
+      0.0
+     ],
+     [
+      10,
+      0.0
+     ],
+     [
+      11,
+      0.0
+     ],
+     [
+      12,
+      0.0
+     ],
+     [
+      13,
+      0.358
+     ]
+    ],
+    "sev_range": 0.0
+   },
+   {
+    "robot": "일반014",
+    "label": "normal|",
+    "label_assumed": false,
+    "label_ko": "정상",
+    "onset": null,
+    "caution": null,
+    "warning": null,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 0.0,
+    "cause_pred": null,
+    "cause_unseen": false,
+    "cause_ok": null,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.0
+     ],
+     [
+      9,
+      0.0
+     ],
+     [
+      10,
+      0.0
+     ],
+     [
+      11,
+      0.0
+     ]
+    ],
+    "sev_range": 0.0
+   },
+   {
+    "robot": "일반015",
+    "label": "normal|",
+    "label_assumed": false,
+    "label_ko": "정상",
+    "onset": null,
+    "caution": null,
+    "warning": null,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 0.0,
+    "cause_pred": null,
+    "cause_unseen": false,
+    "cause_ok": null,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.0
+     ],
+     [
+      9,
+      0.0
+     ],
+     [
+      10,
+      0.0
+     ],
+     [
+      11,
+      0.0
+     ],
+     [
+      12,
+      0.0
+     ],
+     [
+      13,
+      0.0
+     ],
+     [
+      14,
+      0.0
+     ],
+     [
+      15,
+      0.0
+     ]
+    ],
+    "sev_range": 0.0
+   },
+   {
+    "robot": "일반016",
+    "label": "looseness|rl",
+    "label_assumed": false,
+    "label_ko": "뒤 왼쪽 바퀴 체결부 풀림",
+    "onset": 6,
+    "caution": null,
+    "warning": null,
+    "fail": 13,
+    "lead_periods": null,
+    "max_score": 0.91,
+    "cause_pred": null,
+    "cause_unseen": false,
+    "cause_ok": null,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.0
+     ],
+     [
+      9,
+      0.0
+     ],
+     [
+      10,
+      0.013
+     ],
+     [
+      11,
+      0.126
+     ],
+     [
+      12,
+      0.42
+     ],
+     [
+      13,
+      0.468
+     ],
+     [
+      14,
+      0.764
+     ],
+     [
+      15,
+      0.907
+     ],
+     [
+      16,
+      0.853
+     ]
+    ],
+    "sev_range": 0.99
+   },
+   {
+    "robot": "일반017",
+    "label": "looseness|fl",
+    "label_assumed": false,
+    "label_ko": "앞 왼쪽 바퀴 체결부 풀림",
+    "onset": 7,
+    "caution": null,
+    "warning": null,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 1.65,
+    "cause_pred": null,
+    "cause_unseen": false,
+    "cause_ok": null,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.0
+     ],
+     [
+      9,
+      0.0
+     ],
+     [
+      10,
+      0.034
+     ],
+     [
+      11,
+      0.069
+     ],
+     [
+      12,
+      0.312
+     ],
+     [
+      13,
+      0.737
+     ],
+     [
+      14,
+      1.273
+     ],
+     [
+      15,
+      1.391
+     ],
+     [
+      16,
+      1.645
+     ]
+    ],
+    "sev_range": 0.52
+   },
+   {
+    "robot": "일반018",
+    "label": "normal|",
+    "label_assumed": false,
+    "label_ko": "정상",
+    "onset": null,
+    "caution": null,
+    "warning": null,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 0.0,
+    "cause_pred": null,
+    "cause_unseen": false,
+    "cause_ok": null,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.0
+     ],
+     [
+      9,
+      0.0
+     ],
+     [
+      10,
+      0.0
+     ],
+     [
+      11,
+      0.0
+     ],
+     [
+      12,
+      0.0
+     ],
+     [
+      13,
+      0.0
+     ],
+     [
+      14,
+      0.0
+     ],
+     [
+      15,
+      0.0
+     ]
+    ],
+    "sev_range": 0.0
+   },
+   {
+    "robot": "일반019",
+    "label": "normal|",
+    "label_assumed": false,
+    "label_ko": "정상",
+    "onset": null,
+    "caution": null,
+    "warning": null,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 0.0,
+    "cause_pred": null,
+    "cause_unseen": false,
+    "cause_ok": null,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.0
+     ],
+     [
+      9,
+      0.0
+     ],
+     [
+      10,
+      0.0
+     ],
+     [
+      11,
+      0.0
+     ],
+     [
+      12,
+      0.0
+     ],
+     [
+      13,
+      0.0
+     ],
+     [
+      14,
+      0.0
+     ]
+    ],
+    "sev_range": 0.0
+   },
+   {
+    "robot": "일반020",
+    "label": "bearing|rr",
+    "label_assumed": false,
+    "label_ko": "뒤 오른쪽 바퀴 베어링 결함",
+    "onset": 7,
+    "caution": 16,
+    "warning": null,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 5.67,
+    "cause_pred": "뒤 오른쪽 바퀴 베어링 결함",
+    "cause_unseen": false,
+    "cause_ok": true,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.034
+     ],
+     [
+      9,
+      0.328
+     ],
+     [
+      10,
+      0.657
+     ],
+     [
+      11,
+      1.133
+     ],
+     [
+      12,
+      1.84
+     ],
+     [
+      13,
+      2.496
+     ],
+     [
+      14,
+      2.919
+     ],
+     [
+      15,
+      4.578
+     ],
+     [
+      16,
+      5.666
+     ],
+     [
+      17,
+      5.626
+     ]
+    ],
+    "sev_range": 0.7
+   },
+   {
+    "robot": "일반021",
+    "label": "normal|",
+    "label_assumed": false,
+    "label_ko": "정상",
+    "onset": null,
+    "caution": null,
+    "warning": null,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 0.0,
+    "cause_pred": null,
+    "cause_unseen": false,
+    "cause_ok": null,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.0
+     ],
+     [
+      9,
+      0.0
+     ],
+     [
+      10,
+      0.0
+     ]
+    ],
+    "sev_range": 0.0
+   },
+   {
+    "robot": "일반022",
+    "label": "normal|",
+    "label_assumed": false,
+    "label_ko": "정상",
+    "onset": null,
+    "caution": null,
+    "warning": null,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 0.0,
+    "cause_pred": null,
+    "cause_unseen": false,
+    "cause_ok": null,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.0
+     ],
+     [
+      9,
+      0.0
+     ],
+     [
+      10,
+      0.0
+     ],
+     [
+      11,
+      0.0
+     ],
+     [
+      12,
+      0.0
+     ],
+     [
+      13,
+      0.0
+     ],
+     [
+      14,
+      0.0
+     ]
+    ],
+    "sev_range": 0.0
+   },
+   {
+    "robot": "일반023",
+    "label": "looseness|fr",
+    "label_assumed": false,
+    "label_ko": "앞 오른쪽 바퀴 체결부 풀림",
+    "onset": 7,
+    "caution": null,
+    "warning": null,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 3.27,
+    "cause_pred": null,
+    "cause_unseen": false,
+    "cause_ok": null,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.0
+     ],
+     [
+      9,
+      0.0
+     ],
+     [
+      10,
+      0.088
+     ],
+     [
+      11,
+      0.148
+     ],
+     [
+      12,
+      0.591
+     ],
+     [
+      13,
+      1.158
+     ],
+     [
+      14,
+      1.44
+     ],
+     [
+      15,
+      2.468
+     ],
+     [
+      16,
+      2.652
+     ],
+     [
+      17,
+      3.267
+     ]
+    ],
+    "sev_range": 0.76
+   },
+   {
+    "robot": "일반024",
+    "label": "normal|",
+    "label_assumed": false,
+    "label_ko": "정상",
+    "onset": null,
+    "caution": null,
+    "warning": null,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 0.0,
+    "cause_pred": null,
+    "cause_unseen": false,
+    "cause_ok": null,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.0
+     ],
+     [
+      9,
+      0.0
+     ],
+     [
+      10,
+      0.0
+     ],
+     [
+      11,
+      0.0
+     ],
+     [
+      12,
+      0.0
+     ]
+    ],
+    "sev_range": 0.0
+   },
+   {
+    "robot": "일반025",
+    "label": "normal|",
+    "label_assumed": false,
+    "label_ko": "정상",
+    "onset": null,
+    "caution": null,
+    "warning": null,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 0.0,
+    "cause_pred": null,
+    "cause_unseen": false,
+    "cause_ok": null,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.0
+     ],
+     [
+      9,
+      0.0
+     ],
+     [
+      10,
+      0.0
+     ],
+     [
+      11,
+      0.0
+     ]
+    ],
+    "sev_range": 0.0
+   },
+   {
+    "robot": "복잡_급성고장_01",
+    "label": "bearing|fl",
+    "label_assumed": false,
+    "label_ko": "앞 왼쪽 바퀴 베어링 결함",
+    "onset": 7,
+    "caution": 8,
+    "warning": 8,
+    "fail": 7,
+    "lead_periods": -2,
+    "max_score": 15.71,
+    "cause_pred": "앞 왼쪽 바퀴 베어링 결함",
+    "cause_unseen": false,
+    "cause_ok": true,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      15.623
+     ],
+     [
+      9,
+      15.66
+     ],
+     [
+      10,
+      15.707
+     ],
+     [
+      11,
+      15.507
+     ],
+     [
+      12,
+      15.568
+     ],
+     [
+      13,
+      15.516
+     ],
+     [
+      14,
+      15.691
+     ],
+     [
+      15,
+      15.626
+     ]
+    ],
+    "sev_range": 0.82
+   },
+   {
+    "robot": "복잡_급성고장_02",
+    "label": "looseness|fr",
+    "label_assumed": false,
+    "label_ko": "앞 오른쪽 바퀴 체결부 풀림",
+    "onset": 7,
+    "caution": 9,
+    "warning": 9,
+    "fail": 7,
+    "lead_periods": -3,
+    "max_score": 7.07,
+    "cause_pred": "앞 오른쪽 바퀴 체결부 풀림",
+    "cause_unseen": false,
+    "cause_ok": true,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      5.347
+     ],
+     [
+      8,
+      7.073
+     ],
+     [
+      9,
+      6.221
+     ],
+     [
+      10,
+      6.787
+     ],
+     [
+      11,
+      6.703
+     ],
+     [
+      12,
+      6.081
+     ],
+     [
+      13,
+      6.452
+     ],
+     [
+      14,
+      6.629
+     ]
+    ],
+    "sev_range": 0.97
+   },
+   {
+    "robot": "복잡_간헐고장_01",
+    "label": "unbalance|rr",
+    "label_assumed": false,
+    "label_ko": "뒤 오른쪽 바퀴 불평형",
+    "onset": 7,
+    "caution": null,
+    "warning": null,
+    "fail": 18,
+    "lead_periods": null,
+    "max_score": 0.08,
+    "cause_pred": null,
+    "cause_unseen": false,
+    "cause_ok": null,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.0
+     ],
+     [
+      9,
+      0.0
+     ],
+     [
+      10,
+      0.0
+     ],
+     [
+      11,
+      0.001
+     ],
+     [
+      12,
+      0.0
+     ],
+     [
+      13,
+      0.03
+     ],
+     [
+      14,
+      0.0
+     ],
+     [
+      15,
+      0.047
+     ],
+     [
+      16,
+      0.0
+     ],
+     [
+      17,
+      0.023
+     ],
+     [
+      18,
+      0.0
+     ],
+     [
+      19,
+      0.08
+     ],
+     [
+      20,
+      0.0
+     ],
+     [
+      21,
+      0.0
+     ]
+    ],
+    "sev_range": 0.94
+   },
+   {
+    "robot": "복잡_간헐고장_02",
+    "label": "looseness|fl",
+    "label_assumed": false,
+    "label_ko": "앞 왼쪽 바퀴 체결부 풀림",
+    "onset": 7,
+    "caution": null,
+    "warning": null,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 0.0,
+    "cause_pred": null,
+    "cause_unseen": false,
+    "cause_ok": null,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.0
+     ],
+     [
+      9,
+      0.0
+     ],
+     [
+      10,
+      0.0
+     ],
+     [
+      11,
+      0.0
+     ],
+     [
+      12,
+      0.003
+     ],
+     [
+      13,
+      0.0
+     ],
+     [
+      14,
+      0.0
+     ],
+     [
+      15,
+      0.003
+     ],
+     [
+      16,
+      0.0
+     ]
+    ],
+    "sev_range": 0.72
+   },
+   {
+    "robot": "복잡_복합고장_01",
+    "label": "bearing|rr",
+    "label_assumed": false,
+    "label_ko": "뒤 오른쪽 바퀴 베어링 결함",
+    "onset": 7,
+    "caution": 17,
+    "warning": null,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 4.6,
+    "cause_pred": "뒤 왼쪽 바퀴 베어링 결함",
+    "cause_unseen": false,
+    "cause_ok": false,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.002
+     ],
+     [
+      9,
+      0.063
+     ],
+     [
+      10,
+      0.232
+     ],
+     [
+      11,
+      0.382
+     ],
+     [
+      12,
+      0.686
+     ],
+     [
+      13,
+      1.173
+     ],
+     [
+      14,
+      1.82
+     ],
+     [
+      15,
+      2.459
+     ],
+     [
+      16,
+      3.827
+     ],
+     [
+      17,
+      4.556
+     ],
+     [
+      18,
+      4.6
+     ]
+    ],
+    "sev_range": 0.73
+   },
+   {
+    "robot": "복잡_복합고장_02",
+    "label": "unbalance|fr",
+    "label_assumed": false,
+    "label_ko": "앞 오른쪽 바퀴 불평형",
+    "onset": 7,
+    "caution": 16,
+    "warning": 19,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 7.25,
+    "cause_pred": "뒤 왼쪽 바퀴 베어링 결함",
+    "cause_unseen": false,
+    "cause_ok": false,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.252
+     ],
+     [
+      9,
+      0.361
+     ],
+     [
+      10,
+      0.554
+     ],
+     [
+      11,
+      0.925
+     ],
+     [
+      12,
+      1.309
+     ],
+     [
+      13,
+      1.856
+     ],
+     [
+      14,
+      2.345
+     ],
+     [
+      15,
+      3.127
+     ],
+     [
+      16,
+      4.166
+     ],
+     [
+      17,
+      5.916
+     ],
+     [
+      18,
+      6.651
+     ],
+     [
+      19,
+      7.245
+     ]
+    ],
+    "sev_range": 0.6
+   },
+   {
+    "robot": "복잡_약한고장_01",
+    "label": "looseness|rl",
+    "label_assumed": false,
+    "label_ko": "뒤 왼쪽 바퀴 체결부 풀림",
+    "onset": 7,
+    "caution": null,
+    "warning": null,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 0.17,
+    "cause_pred": null,
+    "cause_unseen": false,
+    "cause_ok": null,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.0
+     ],
+     [
+      9,
+      0.0
+     ],
+     [
+      10,
+      0.0
+     ],
+     [
+      11,
+      0.0
+     ],
+     [
+      12,
+      0.0
+     ],
+     [
+      13,
+      0.031
+     ],
+     [
+      14,
+      0.086
+     ],
+     [
+      15,
+      0.091
+     ],
+     [
+      16,
+      0.173
+     ]
+    ],
+    "sev_range": 0.36
+   },
+   {
+    "robot": "복잡_약한고장_02",
+    "label": "looseness|fl",
+    "label_assumed": false,
+    "label_ko": "앞 왼쪽 바퀴 체결부 풀림",
+    "onset": 7,
+    "caution": null,
+    "warning": null,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 0.56,
+    "cause_pred": null,
+    "cause_unseen": false,
+    "cause_ok": null,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.0
+     ],
+     [
+      9,
+      0.0
+     ],
+     [
+      10,
+      0.0
+     ],
+     [
+      11,
+      0.0
+     ],
+     [
+      12,
+      0.0
+     ],
+     [
+      13,
+      0.069
+     ],
+     [
+      14,
+      0.168
+     ],
+     [
+      15,
+      0.509
+     ],
+     [
+      16,
+      0.559
+     ]
+    ],
+    "sev_range": 0.47
+   },
+   {
+    "robot": "복잡_속도다름_01",
+    "label": "bearing|rl",
+    "label_assumed": false,
+    "label_ko": "뒤 왼쪽 바퀴 베어링 결함",
+    "onset": 6,
+    "caution": 16,
+    "warning": 16,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 6.48,
+    "cause_pred": null,
+    "cause_unseen": false,
+    "cause_ok": null,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.002
+     ],
+     [
+      8,
+      0.035
+     ],
+     [
+      9,
+      0.269
+     ],
+     [
+      10,
+      0.656
+     ],
+     [
+      11,
+      0.992
+     ],
+     [
+      12,
+      1.787
+     ],
+     [
+      13,
+      2.59
+     ],
+     [
+      14,
+      4.614
+     ],
+     [
+      15,
+      6.477
+     ],
+     [
+      16,
+      6.375
+     ]
+    ],
+    "sev_range": 0.78
+   },
+   {
+    "robot": "복잡_속도다름_02",
+    "label": "looseness|rl",
+    "label_assumed": false,
+    "label_ko": "뒤 왼쪽 바퀴 체결부 풀림",
+    "onset": 6,
+    "caution": null,
+    "warning": null,
+    "fail": 17,
+    "lead_periods": null,
+    "max_score": 1.87,
+    "cause_pred": null,
+    "cause_unseen": false,
+    "cause_ok": null,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.0
+     ],
+     [
+      9,
+      0.0
+     ],
+     [
+      10,
+      0.0
+     ],
+     [
+      11,
+      0.002
+     ],
+     [
+      12,
+      0.05
+     ],
+     [
+      13,
+      0.303
+     ],
+     [
+      14,
+      0.41
+     ],
+     [
+      15,
+      0.731
+     ],
+     [
+      16,
+      0.992
+     ],
+     [
+      17,
+      1.497
+     ],
+     [
+      18,
+      1.589
+     ],
+     [
+      19,
+      1.866
+     ]
+    ],
+    "sev_range": 0.93
+   },
+   {
+    "robot": "복잡_베어링변형_01",
+    "label": "bearing|fl",
+    "label_assumed": false,
+    "label_ko": "앞 왼쪽 바퀴 베어링 결함",
+    "onset": 7,
+    "caution": 12,
+    "warning": 12,
+    "fail": 14,
+    "lead_periods": 1,
+    "max_score": 16.34,
+    "cause_pred": "앞 왼쪽 바퀴 베어링 결함",
+    "cause_unseen": false,
+    "cause_ok": true,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.54
+     ],
+     [
+      8,
+      0.899
+     ],
+     [
+      9,
+      1.661
+     ],
+     [
+      10,
+      3.143
+     ],
+     [
+      11,
+      7.287
+     ],
+     [
+      12,
+      10.811
+     ],
+     [
+      13,
+      13.601
+     ],
+     [
+      14,
+      15.581
+     ],
+     [
+      15,
+      16.137
+     ],
+     [
+      16,
+      16.328
+     ],
+     [
+      17,
+      16.341
+     ]
+    ],
+    "sev_range": 0.95
+   },
+   {
+    "robot": "복잡_베어링변형_02",
+    "label": "bearing|fl",
+    "label_assumed": false,
+    "label_ko": "앞 왼쪽 바퀴 베어링 결함",
+    "onset": 7,
+    "caution": 12,
+    "warning": 14,
+    "fail": 17,
+    "lead_periods": 2,
+    "max_score": 14.82,
+    "cause_pred": "앞 왼쪽 바퀴 베어링 결함",
+    "cause_unseen": false,
+    "cause_ok": true,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.522
+     ],
+     [
+      9,
+      1.163
+     ],
+     [
+      10,
+      2.007
+     ],
+     [
+      11,
+      3.666
+     ],
+     [
+      12,
+      5.657
+     ],
+     [
+      13,
+      7.695
+     ],
+     [
+      14,
+      9.592
+     ],
+     [
+      15,
+      11.279
+     ],
+     [
+      16,
+      12.495
+     ],
+     [
+      17,
+      14.025
+     ],
+     [
+      18,
+      14.722
+     ],
+     [
+      19,
+      14.819
+     ],
+     [
+      20,
+      14.56
+     ]
+    ],
+    "sev_range": 0.89
+   },
+   {
+    "robot": "복잡_고장+저전압_01",
+    "label": "unbalance|fr",
+    "label_assumed": false,
+    "label_ko": "앞 오른쪽 바퀴 불평형",
+    "onset": 7,
+    "caution": 14,
+    "warning": 17,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 9.39,
+    "cause_pred": "앞 왼쪽 바퀴 불평형",
+    "cause_unseen": false,
+    "cause_ok": false,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.16
+     ],
+     [
+      8,
+      0.551
+     ],
+     [
+      9,
+      0.864
+     ],
+     [
+      10,
+      1.391
+     ],
+     [
+      11,
+      2.037
+     ],
+     [
+      12,
+      2.423
+     ],
+     [
+      13,
+      3.095
+     ],
+     [
+      14,
+      5.167
+     ],
+     [
+      15,
+      5.922
+     ],
+     [
+      16,
+      7.016
+     ],
+     [
+      17,
+      8.829
+     ],
+     [
+      18,
+      9.327
+     ],
+     [
+      19,
+      9.391
+     ]
+    ],
+    "sev_range": 0.66
+   },
+   {
+    "robot": "복잡_고장+저전압_02",
+    "label": "looseness|fl",
+    "label_assumed": false,
+    "label_ko": "앞 왼쪽 바퀴 체결부 풀림",
+    "onset": 7,
+    "caution": null,
+    "warning": null,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 3.36,
+    "cause_pred": null,
+    "cause_unseen": false,
+    "cause_ok": null,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.0
+     ],
+     [
+      9,
+      0.0
+     ],
+     [
+      10,
+      0.0
+     ],
+     [
+      11,
+      0.0
+     ],
+     [
+      12,
+      0.337
+     ],
+     [
+      13,
+      0.635
+     ],
+     [
+      14,
+      1.933
+     ],
+     [
+      15,
+      2.882
+     ],
+     [
+      16,
+      3.356
+     ]
+    ],
+    "sev_range": 0.77
+   },
+   {
+    "robot": "어려운정상_바닥바뀜_01",
+    "label": "normal|",
+    "label_assumed": false,
+    "label_ko": "정상",
+    "onset": null,
+    "caution": null,
+    "warning": null,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 0.05,
+    "cause_pred": null,
+    "cause_unseen": false,
+    "cause_ok": null,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.006
+     ],
+     [
+      9,
+      0.038
+     ],
+     [
+      10,
+      0.02
+     ],
+     [
+      11,
+      0.003
+     ],
+     [
+      12,
+      0.0
+     ],
+     [
+      13,
+      0.046
+     ],
+     [
+      14,
+      0.021
+     ]
+    ],
+    "sev_range": 0.0
+   },
+   {
+    "robot": "어려운정상_바닥바뀜_02",
+    "label": "normal|",
+    "label_assumed": false,
+    "label_ko": "정상",
+    "onset": null,
+    "caution": null,
+    "warning": null,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 0.14,
+    "cause_pred": null,
+    "cause_unseen": false,
+    "cause_ok": null,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.046
+     ],
+     [
+      9,
+      0.076
+     ],
+     [
+      10,
+      0.099
+     ],
+     [
+      11,
+      0.107
+     ],
+     [
+      12,
+      0.095
+     ],
+     [
+      13,
+      0.065
+     ],
+     [
+      14,
+      0.143
+     ]
+    ],
+    "sev_range": 0.0
+   },
+   {
+    "robot": "어려운정상_짐실음_01",
+    "label": "normal|",
+    "label_assumed": false,
+    "label_ko": "정상",
+    "onset": null,
+    "caution": null,
+    "warning": null,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 0.0,
+    "cause_pred": null,
+    "cause_unseen": false,
+    "cause_ok": null,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.0
+     ],
+     [
+      9,
+      0.0
+     ],
+     [
+      10,
+      0.0
+     ],
+     [
+      11,
+      0.0
+     ],
+     [
+      12,
+      0.0
+     ],
+     [
+      13,
+      0.0
+     ],
+     [
+      14,
+      0.0
+     ],
+     [
+      15,
+      0.0
+     ],
+     [
+      16,
+      0.0
+     ],
+     [
+      17,
+      0.0
+     ]
+    ],
+    "sev_range": 0.0
+   },
+   {
+    "robot": "어려운정상_짐실음_02",
+    "label": "normal|",
+    "label_assumed": false,
+    "label_ko": "정상",
+    "onset": null,
+    "caution": null,
+    "warning": null,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 0.0,
+    "cause_pred": null,
+    "cause_unseen": false,
+    "cause_ok": null,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.0
+     ],
+     [
+      9,
+      0.0
+     ],
+     [
+      10,
+      0.0
+     ],
+     [
+      11,
+      0.0
+     ],
+     [
+      12,
+      0.0
+     ],
+     [
+      13,
+      0.0
+     ]
+    ],
+    "sev_range": 0.0
+   },
+   {
+    "robot": "어려운정상_저전압정상_01",
+    "label": "normal|",
+    "label_assumed": false,
+    "label_ko": "정상",
+    "onset": null,
+    "caution": null,
+    "warning": null,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 0.0,
+    "cause_pred": null,
+    "cause_unseen": false,
+    "cause_ok": null,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.0
+     ],
+     [
+      9,
+      0.0
+     ],
+     [
+      10,
+      0.0
+     ],
+     [
+      11,
+      0.0
+     ]
+    ],
+    "sev_range": 0.0
+   },
+   {
+    "robot": "어려운정상_저전압정상_02",
+    "label": "normal|",
+    "label_assumed": false,
+    "label_ko": "정상",
+    "onset": null,
+    "caution": null,
+    "warning": null,
+    "fail": null,
+    "lead_periods": null,
+    "max_score": 0.0,
+    "cause_pred": null,
+    "cause_unseen": false,
+    "cause_ok": null,
+    "period_scores": [
+     [
+      5,
+      0.0
+     ],
+     [
+      6,
+      0.0
+     ],
+     [
+      7,
+      0.0
+     ],
+     [
+      8,
+      0.0
+     ],
+     [
+      9,
+      0.0
+     ],
+     [
+      10,
+      0.0
+     ],
+     [
+      11,
+      0.0
+     ],
+     [
+      12,
+      0.0
+     ],
+     [
+      13,
+      0.0
+     ],
+     [
+      14,
+      0.0
+     ],
+     [
+      15,
+      0.0
+     ]
+    ],
+    "sev_range": 0.0
+   }
+  ],
+  "skipped": []
+ }
+}

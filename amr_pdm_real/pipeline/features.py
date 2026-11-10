@@ -41,13 +41,13 @@ def vib_features(x, fs):
 
 
 WHEELS = [ch.split("_")[1] for ch in C.ENCODER_CHANNELS]   # fl, fr, rl, rr
-ENC_MIN_SPEED = 5.0                                        # 속도로 나눌 때 더하는 값 [펄스/초] (멈춰 있을 때 0으로 나누지 않게)
+ENC_MOVING = 30.0                                          # 0.1초 구간의 네 바퀴 속도 중앙값이 이보다 크면 '바퀴가 도는 구간' [펄스/초]
 
 
 def enc_features(rec):
     """엔코더 4개(+모터 명령) 1초 → 바퀴 특징 11개. 엔코더가 없거나 값이 모자라면 모두 nan (값을 지어내지 않음)
         {바퀴}_spd   바퀴 속도 [펄스/초, 방향 무시]       — 마찰(베어링)이 생기면 그 바퀴만 느려짐
-        {바퀴}_rip   0.1초마다 잰 속도가 다른 세 바퀴와 얼마나 다르게 출렁이나 ÷ 평균 속도 — 풀림·불평형이면 그 바퀴만 덜컹임
+        {바퀴}_rip   0.1초마다 잰 속도가 다른 세 바퀴와 얼마나 다르게 출렁이나 ÷ 평균 속도 (도는 구간만) — 풀림·불평형이면 그 바퀴만 덜컹임
         left_diff   왼쪽 앞·뒤 바퀴 속도 차이 ÷ 평균 속도 — 같은 쪽 바퀴는 같은 명령으로 돌므로 평소엔 0 근처
         right_diff  오른쪽 앞·뒤 바퀴 속도 차이 ÷ 평균 속도
         cmd_eff     모터 명령 대비 평균 속도 — 같은 명령에 덜 달리면 전체 저항이 커진 것 (모터 명령 열이 있을 때만)"""
@@ -61,22 +61,28 @@ def enc_features(rec):
     # 0.1초마다 바퀴별 속도 크기 (구간 수 × 바퀴 4)
     sub = np.abs(np.diff(np.column_stack([np.interp(edges, t, cnt[:, i]) for i in range(len(WHEELS))]), axis=0)) / 0.1 \
         if len(edges) >= 3 else None
-    spd = {}
     for i, w in enumerate(WHEELS):
-        s = abs(cnt[-1, i] - cnt[0, i]) / (t[-1] - t[0])
-        spd[w] = s
-        out[f"{w}_spd"] = s
-        if sub is not None:
-            # 다른 세 바퀴(중앙값)와의 차이가 얼마나 출렁이나 → 출발·정지·회전처럼 네 바퀴가 함께 바뀌는 변화는 지워지고
+        out[f"{w}_spd"] = abs(cnt[-1, i] - cnt[0, i]) / (t[-1] - t[0])
+    # 흔들림·앞뒤 차이·명령 대비 속도는 '바퀴가 실제로 도는 0.1초 구간'만으로 계산한다.
+    # 멈추거나 막 출발하는 구간까지 넣으면 속도가 0 근처라 나눗셈이 튀어서, 정상인데도 크게 벗어난 값이 나온다 (가상 시험에서 확인)
+    med = np.median(sub, axis=1) if sub is not None else np.array([])   # 0.1초마다 네 바퀴 속도의 중앙값
+    moving = med > ENC_MOVING
+    if moving.sum() < 3:                                   # 이 1초 동안 거의 멈춰 있었음 → 흔들림·차이가 생길 수 없으므로 0
+        for f in [f"{w}_rip" for w in WHEELS] + ["left_diff", "right_diff"]:
+            out[f] = 0.0
+        level = 0.0
+    else:
+        S, level = sub[moving], float(np.mean(med[moving]))   # 도는 구간의 바퀴별 속도, 그 구간의 평균 속도
+        for i, w in enumerate(WHEELS):
+            # 다른 세 바퀴(중앙값)와의 차이가 얼마나 출렁이나 → 가감속·회전처럼 네 바퀴가 함께 바뀌는 변화는 지워지고
             # 이 바퀴만 덜컹이는 것(풀림·불평형)만 남는다
-            others = np.median(np.delete(sub, i, axis=1), axis=1)
-            out[f"{w}_rip"] = float(np.std(sub[:, i] - others) / (s + ENC_MIN_SPEED))
-    mean = float(np.mean(list(spd.values())))
-    out["left_diff"] = (spd["fl"] - spd["rl"]) / (mean + ENC_MIN_SPEED)
-    out["right_diff"] = (spd["fr"] - spd["rr"]) / (mean + ENC_MIN_SPEED)
+            others = np.median(np.delete(S, i, axis=1), axis=1)
+            out[f"{w}_rip"] = float(np.std(S[:, i] - others) / level)
+        out["left_diff"] = float(np.mean(S[:, 0] - S[:, 2]) / level)    # 앞 왼쪽 - 뒤 왼쪽
+        out["right_diff"] = float(np.mean(S[:, 1] - S[:, 3]) / level)   # 앞 오른쪽 - 뒤 오른쪽
     cmd = rec.get("motor_cmd", float("nan"))
     if not np.isnan(cmd):
-        out["cmd_eff"] = mean / abs(cmd) if abs(cmd) > 0 else 0.0
+        out["cmd_eff"] = level / abs(cmd) if abs(cmd) > 0 else 0.0
     return out
 
 
