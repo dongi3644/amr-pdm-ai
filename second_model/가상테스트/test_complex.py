@@ -56,6 +56,8 @@ def main():
     p = argparse.ArgumentParser(description="복잡한 고장 가상 로봇 학습·시험 (코드 점검용)")
     p.add_argument("--seed", type=int, default=2027)
     p.add_argument("--scale", type=float, default=1.0, help="로봇 대수 배율 (0.3이면 30%%로 줄여 빠르게)")
+    p.add_argument("--train-scale", type=float, default=None, help="학습 로봇만 따로 배율 (없으면 --scale). 0.45 ≈ 학습 10분")
+    p.add_argument("--test-scale", type=float, default=None, help="시험 로봇만 따로 배율 (없으면 --scale). 0.5 ≈ 시험 10분")
     p.add_argument("--out", default=str(PROJ / "가상테스트_결과"))
     p.add_argument("--model-out", default=None, help="학습한 모델을 저장할 곳 (기본: 저장 안 함. artifacts/에는 쓰지 않음)")
     p.add_argument("--encoders", action="store_true", help="모든 가상 로봇에 엔코더 4개·모터 명령을 넣음 (바퀴 특징까지 학습)")
@@ -69,7 +71,8 @@ def main():
     log = lambda s: print(f"[{(time.time() - t0) / 60:5.1f}분] {s}", flush=True)
 
     # 1) 로봇 설정 (학습 / 시험)
-    train_specs, test_specs = make_specs(a.seed, a.scale)
+    train_specs, _ = make_specs(a.seed, a.train_scale or a.scale)   # 학습·시험 규모를 따로 정할 수 있음
+    _, test_specs = make_specs(a.seed + 1 if a.train_scale or a.test_scale else a.seed, a.test_scale or a.scale)
     for s in train_specs + test_specs:                    # 같은 로봇들에 엔코더·읽기 오류만 더함 (진동 신호는 그대로)
         s["encoders"] = a.encoders
         s["glitch"] = 0.2 if a.glitches else 0
@@ -82,7 +85,10 @@ def main():
         setattr(C, k, v)
     a.set_note = ", ".join(a.set)
     log(f"학습 로봇 {len(train_specs)}대 · 시험 로봇 {len(test_specs)}대")
-    run(a, out, train_specs, test_specs, t0, log)
+    from pipeline.heartbeat import Heartbeat
+    with Heartbeat("가상 데이터 만드는 중") as hb:        # 지금 하는 작업을 시작할 때 한 번, 그 뒤 5분마다 알림
+        a.hb = hb
+        run(a, out, train_specs, test_specs, t0, log)
 
 
 def make_specs(seed, scale=1.0):
@@ -118,38 +124,31 @@ def run(a, out, train_specs, test_specs, t0, log):
     # 2) 가상 기록 만들기 (메모리에서만)
     data = D.Dataset()
     allspecs = train_specs + test_specs
-    for i, spec in enumerate(allspecs, 1):
+    for spec in allspecs:
         add_robot(data, spec)
-        if i % 40 == 0 or i == len(allspecs):
-            log(f"가상 기록 만드는 중 {i}/{len(allspecs)}")
+    gen_s = time.time() - t0
+    log(f"가상 기록 {len(allspecs)}대 만듦 ({gen_s / 60:.1f}분)")
     test_names = [s["name"] for s in test_specs]
     train_min = sum(s["minutes"] for s in train_specs)
 
     # 3) 학습 → 시험. 채점은 실측 교차검증과 같은 코드(cross_validate)를 '겹 1개 = 시험 로봇 전체'로 불러서 함
     #    실제 train처럼 칼만 필터 잡음도 학습 고장 로봇으로 맞추도록 tune=True로 학습
-    orig_train, orig_diag, box = W.train, W.diagnose, {}
+    orig_train, box = W.train, {}
 
     def train_full(data_, units=None, baseline=None, tune=True):
-        log(f"학습 시작: 로봇 {len(units)}대, 기록 {train_min / 60:.1f}시간 분량")
+        a.hb.set(f"학습 중 (로봇 {len(units)}대, 기록 {train_min / 60:.1f}시간 분량)")
         t = time.time()
         pipe, notes = orig_train(data_, units, baseline, tune=True)
-        box.update(pipe=pipe, notes=notes, train_s=time.time() - t)
-        log(f"학습 끝 ({(time.time() - t) / 60:.1f}분). 시험 로봇 진단 시작")
+        box.update(pipe=pipe, notes=notes, train_s=time.time() - t, test_t0=time.time())
+        log(f"학습 끝 ({(time.time() - t) / 60:.1f}분)")
+        a.hb.set(f"평가 중 (처음 보는 시험 로봇 {len(test_names)}대 진단·채점)")
         return pipe, notes
 
-    count = {"n": 0}
-
-    def diag_log(pipe, recs, detector=None):
-        count["n"] += 1
-        if count["n"] % 25 == 0:
-            log(f"  진단 {count['n']}대째 (학습 중 칼만 조정 진단 포함)")
-        return orig_diag(pipe, recs, detector)
-
-    W.train, W.diagnose = train_full, diag_log
+    W.train = train_full                                 # 진행 알림은 Heartbeat가 5분마다 (pipeline/heartbeat.py)
     W.make_folds = lambda data_, names: [test_names]
     m = W.cross_validate(data, "per_unit", progress=lambda s: None)
-    test_s = time.time() - t0 - box["train_s"]
-    log("시험 끝, 결과 정리")
+    test_s = time.time() - box["test_t0"]              # 시험(진단·채점)에만 걸린 시간
+    log(f"시험 끝 ({test_s / 60:.1f}분), 결과 정리")
     if a.model_out:
         box["pipe"].save(Path(a.model_out))
 
@@ -224,7 +223,7 @@ def write_md(r, df, path, a, train_specs):
         "# 복잡한 고장 가상 로봇 학습·시험 결과 (코드 점검용 · 성능 아님)", "",
         "> **이 %는 발표·성능 자료로 쓰지 않습니다.** 진동과 고장을 사람이 식으로 만든 가상 로봇이라 실제 로봇 성능이 아닙니다.",
         "> 이 시험이 보여 주는 것: 어떤 종류의 어려운 경우에서 이 AI 구조가 약한지 (실측 기록을 계획할 때 참고).", "",
-        f"- 실행: `가상테스트/test_complex.py --seed {a.seed}" + (f" --scale {a.scale:g}" if a.scale != 1 else "") + (" --encoders" if a.encoders else "") + (" --glitches" if a.glitches else "") + "".join(f" --set {x}" for x in a.set) + "` (같은 명령이면 같은 결과)",
+        f"- 실행: `가상테스트/test_complex.py --seed {a.seed}" + (f" --scale {a.scale:g}" if a.scale != 1 else "") + (f" --train-scale {a.train_scale:g}" if a.train_scale else "") + (f" --test-scale {a.test_scale:g}" if a.test_scale else "") + (" --encoders" if a.encoders else "") + (" --glitches" if a.glitches else "") + "".join(f" --set {x}" for x in a.set) + "` (같은 명령이면 같은 결과)",
         f"- 학습: 가상 로봇 {tr['robots']}대, 기록 {tr['hours']}시간 분량, 학습에 걸린 시간 {tr['minutes']}분 (칼만 필터 조정 포함)",
         "  - " + " · ".join(f"{c} {n}" for c, n in cnt.items()),
         f"- 시험: 학습에 쓰지 않은 가상 로봇 {r['all']['robots']}대, 걸린 시간 {r['test_minutes']}분",

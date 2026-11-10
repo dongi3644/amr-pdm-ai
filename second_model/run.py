@@ -21,6 +21,7 @@ import sys
 
 import config as C
 from pipeline import dataio as D, report, workflow as W
+from pipeline.heartbeat import Heartbeat
 from pipeline.system import AMRPipeline
 
 
@@ -76,7 +77,7 @@ def at_min(period):
     return f"{C.minutes(period + 1):g}분"
 
 
-def cmd_check(a):
+def cmd_check(a, hb=None):
     """파일을 읽기만 한다. 로봇별 기록 길이·창 수·샘플링·라벨 표와, 빠진 열·가정한 값 같은 경고를 보여 준다."""
     data = D.load(a.path, a.fs)
     show_data(data)
@@ -84,7 +85,7 @@ def cmd_check(a):
     show_baseline(data, a.baseline)
 
 
-def cmd_train(a):
+def cmd_train(a, hb=None):
     """두 단계. 1) 성능 측정용 교차검증 (로봇마다 '자신이 빠진 모델'로 평가)
                2) 실제로 쓸 최종 모델은 모든 로봇으로 다시 학습해 저장
     1)의 수치가 발표용 성능이고, 2)의 모델이 diagnose와 대시보드에서 쓰인다."""
@@ -96,8 +97,10 @@ def cmd_train(a):
     metrics = None
     if not a.no_eval and len(data.robots) >= 2:           # 로봇이 1대면 빼고 평가할 수 없으므로 건너뜀
         print("\n[1/2] 로봇 단위 교차검증 (평가 로봇은 학습에 쓰지 않음)", flush=True)
+        hb.set("평가 중 (로봇 단위 교차검증: 겹마다 평가 로봇을 빼고 학습 → 그 로봇 진단)")
         metrics = W.cross_validate(data, a.baseline, progress=lambda s: print(s, flush=True))
     print("\n[2/2] 최종 모델 학습 (모든 로봇)", flush=True)
+    hb.set("학습 중 (최종 모델: 모든 로봇)")
     pipe, notes = W.train(data, baseline=a.baseline)
     print("저장:", pipe.save())                            # artifacts/model_bundle.joblib 한 파일에 모든 모델이 들어감
     for n in notes:
@@ -120,7 +123,7 @@ def cmd_train(a):
         print("보고서:", C.REPORT_DIR)
 
 
-def cmd_diagnose(a):
+def cmd_diagnose(a, hb=None):
     """저장된 최종 모델로 로봇마다 처음부터 끝까지 1초 창을 넣어 보고, 판정 주기별 결과 표(CSV)와 점수 그래프(PNG)를 남긴다.
     학습에 쓰인 로봇은 표시해 둔다 (그 로봇의 결과는 성능이 아님)."""
     if not C.BUNDLE_PATH.exists():
@@ -134,6 +137,7 @@ def cmd_diagnose(a):
     out = C.REPORT_DIR / "diagnose"
     out.mkdir(parents=True, exist_ok=True)
     trained = pipe.bundle.get("trained_units", [])
+    hb.set("평가 중 (로봇별 진단)")
     for name, recs in data.robots.items():
         try:
             table, mon = W.diagnose(pipe, recs)
@@ -172,7 +176,10 @@ def main():
     if getattr(a, "period_s", None):
         C.PERIOD_S = a.period_s                            # 이번 실행에서만 판정 주기를 바꿈
     try:
-        globals()[f"cmd_{a.cmd}"](a)                       # 명령 이름 그대로 cmd_check / cmd_train ... 함수를 부름
+        # 지금 하는 작업을 시작할 때 한 번, 그 뒤 5분마다 화면에 알림 (config.HEARTBEAT_S)
+        start = {"check": "데이터 검사 중", "train": "데이터 읽는 중", "diagnose": "모델·데이터 읽는 중"}[a.cmd]
+        with Heartbeat(start) as hb:
+            globals()[f"cmd_{a.cmd}"](a, hb)                # 명령 이름 그대로 cmd_check / cmd_train ... 함수를 부름
     except D.DataError as e:                               # 데이터 문제는 긴 오류 대신 고칠 방법만 보여 줌
         print("오류:", e)
         sys.exit(2)

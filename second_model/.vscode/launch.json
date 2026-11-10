@@ -1,0 +1,57 @@
+{
+  // VS Code 왼쪽 '실행 및 디버그'(Ctrl+Shift+D) 목록에서 골라 ▶ (또는 F5). 처음에는 '1. 환경 설치'를 먼저 실행한다.
+  // 실행 중에는 아래 터미널에 지금 하는 작업이 처음 한 번, 그 뒤 5분마다 나온다 (예: [14:03:10] ▶ 학습 중).
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "1. 환경 설치 (처음 한 번)",
+      "type": "debugpy", "request": "launch",
+      "program": "${workspaceFolder}/실행/1_환경설치.py",
+      "cwd": "${workspaceFolder}", "console": "integratedTerminal"
+    },
+    {
+      "name": "2. 데이터 검사 (check)",
+      "type": "debugpy", "request": "launch",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "program": "${workspaceFolder}/run.py", "args": ["check"],
+      "cwd": "${workspaceFolder}", "console": "integratedTerminal", "env": { "PYTHONUTF8": "1" }
+    },
+    {
+      "name": "3. 학습 + 교차검증 (train)",
+      "type": "debugpy", "request": "launch",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "program": "${workspaceFolder}/run.py", "args": ["train"],
+      "cwd": "${workspaceFolder}", "console": "integratedTerminal", "env": { "PYTHONUTF8": "1" }
+    },
+    {
+      "name": "4. 진단 (diagnose)",
+      "type": "debugpy", "request": "launch",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "program": "${workspaceFolder}/run.py", "args": ["diagnose"],
+      "cwd": "${workspaceFolder}", "console": "integratedTerminal", "env": { "PYTHONUTF8": "1" }
+    },
+    {
+      "name": "가상 시험: 학습 약 10분 + 시험 약 10분 (코드 점검용)",
+      "type": "debugpy", "request": "launch",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "program": "${workspaceFolder}/가상테스트/test_complex.py",
+      "args": ["--train-scale", "0.45", "--test-scale", "0.5", "--encoders"],
+      "cwd": "${workspaceFolder}", "console": "integratedTerminal", "env": { "PYTHONUTF8": "1" }
+    },
+    {
+      "name": "가상 시험: 빠른 확인 (약 4분)",
+      "type": "debugpy", "request": "launch",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "program": "${workspaceFolder}/가상테스트/test_complex.py",
+      "args": ["--scale", "0.1", "--encoders"],
+      "cwd": "${workspaceFolder}", "console": "integratedTerminal", "env": { "PYTHONUTF8": "1" }
+    },
+    {
+      "name": "0. 아두이노 기록 (저장소 스케치를 쓸 때만, USB 연결 후)",
+      "type": "debugpy", "request": "launch",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "program": "${workspaceFolder}/실행/0_아두이노_기록.py",
+      "cwd": "${workspaceFolder}", "console": "integratedTerminal", "env": { "PYTHONUTF8": "1" }
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 {
-  // 이 파일을 VS Code로 열면 (파일 → 파일에서 작업 영역 열기) 실측 진동 버전이 열린다.
-  // 실행 및 디버그 목록에서 1 → 2 → 3 → 4 순서로 고르면 된다.
+  // 이 파일을 VS Code로 열면 (파일 → 파일에서 작업 영역 열기) 최종 정리본 second_model이 열린다.
+  // 실행 및 디버그 목록에서 1 → 2 → 3 → 4 순서로 고르면 된다. 자세한 안내: second_model/README.md
   "folders": [
-    { "path": "amr_pdm_real", "name": "실측 진동 버전" }
+    { "path": "second_model", "name": "second_model (최종)" }
   ]
 }
