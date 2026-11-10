@@ -32,6 +32,10 @@ BUNDLE_PATH = ART_DIR / "model_bundle.joblib"
 VIB_CHANNELS = ["ax", "ay", "az", "gx", "gy", "gz"]
 CHANNEL_KO = {"ax": "X축 가속도", "ay": "Y축 가속도", "az": "Z축 가속도",
               "gx": "X축 각속도", "gy": "Y축 각속도", "gz": "Z축 각속도"}
+# 가속도·각속도를 센서 원래 정수값으로 적은 CSV일 때 나눌 값 (가속도 값이 50을 넘으면 원래값으로 보고 자동으로 나눔)
+# MPU6050 범위 설정마다 다름: 가속도 ±2g 16384 · ±4g 8192 · ±8g 4096 / 각속도 ±250°/s 131 · ±500°/s 65.5 · ±1000°/s 32.8
+RAW_ACCEL_LSB_PER_G = 8192        # 기록 스케치의 가속도 범위 ±4g
+RAW_GYRO_LSB_PER_DPS = 65.5       # 기록 스케치의 각속도 범위 ±500°/s (스케치가 범위를 안 바꿨다면 기본값 ±250°/s = 131)
 CHANNEL_ALIASES = {               # 열 이름이 이렇게 적혀 있어도 알아들음 (소문자로 비교)
     "ax": ["acc_x", "accel_x", "accx", "a_x"], "ay": ["acc_y", "accel_y", "accy", "a_y"], "az": ["acc_z", "accel_z", "accz", "a_z"],
     "gx": ["gyro_x", "gyr_x", "gyrox", "g_x"], "gy": ["gyro_y", "gyr_y", "gyroy", "g_y"], "gz": ["gyro_z", "gyr_z", "gyroz", "g_z"],

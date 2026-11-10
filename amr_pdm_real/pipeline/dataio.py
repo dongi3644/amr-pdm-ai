@@ -35,6 +35,7 @@ EXTENSIONS = (".csv", ".csv.gz", ".zip")   # 이 확장자만 데이터로 읽�
 # fault_kind 라벨에 적힌 이름 → 표준 이름. 'healthy', '정상' → 'normal', '베어링 결함' → 'bearing' 처럼
 # 영어·한국어 어느 쪽으로 적어도 같은 고장으로 알아듣게 한다 (한국어 이름은 config.KIND_KO를 거꾸로 뒤집어 만듦)
 KIND_NAMES = {"healthy": "normal", "ok": "normal", "none": "normal", "정상": "normal",
+              "idle": "normal", "stop": "normal", "stopped": "normal", "정지": "normal", "대기": "normal",   # 멈춰 있는 정상 상태
               **{v: k for k, v in C.KIND_KO.items()}}
 # fault_wheel 라벨에 적힌 이름 → config.WHEELS의 바퀴 이름 (예: '앞 오른쪽', 'front-right', 'fr' → 'fr')
 WHEEL_NAMES = {name: w for w in C.WHEELS
@@ -42,6 +43,65 @@ WHEEL_NAMES = {name: w for w in C.WHEELS
 
 
 POWER_COLUMNS = ("current", "voltage")      # INA219 열 (선택). 진동보다 드물게 기록돼 빈칸이 많아도 됨
+# 단위가 이름에 붙은 열 → (표준 열, 곱할 값). 예: mV → voltage[V] (× 0.001), t_us → time[s] (× 0.000001)
+UNIT_COLUMNS = {"time": [("t_us", 1e-6), ("time_us", 1e-6), ("micros", 1e-6), ("t_ms", 1e-3), ("time_ms", 1e-3), ("millis", 1e-3)],
+                "voltage": [("mv", 1e-3), ("voltage_mv", 1e-3), ("bus_mv", 1e-3)],
+                "current": [("ma", 1e-3), ("current_ma", 1e-3)]}
+# 파이프라인이 읽는 열 (나머지 열은 '쓰지 않은 열'로 한 번 알려 줌)
+USED_COLUMNS = {"time", "robot", "segment", "bump", "current", "voltage", "fault_kind", "fault_wheel", "fault_severity"}
+
+
+def _unwrap_counter(v):
+    """아두이노 micros()/millis()처럼 2^32에서 0으로 돌아가는 정수 시각을 이어지게 펴 줌 (크게 줄어드는 곳마다 2^32를 더함)"""
+    v = np.asarray(v, float)
+    drops = np.r_[0, np.diff(v)] < -(2 ** 31)
+    return v + np.cumsum(drops) * 2.0 ** 32 if drops.any() else v
+
+
+def _standardize(df, fname, data):
+    """기록 스케치마다 다른 단위·형식을 표준(초, g, °/s, A, V)으로 맞춘다. 바꾼 것은 모두 '확인할 점'으로 알린다.
+    - t_us·t_ms 같은 열 → time[s] (micros() 한 바퀴 돌기도 이어 붙임)
+    - mV·mA 열 → voltage[V]·current[A]
+    - 가속도가 센서 원래 정수값이면 (값이 50을 넘으면 g일 수 없음) config의 눈금으로 나눠 g·°/s로
+    - 값이 모두 0인 전류·전압 열 → 센서를 못 읽은 것으로 보고 쓰지 않음 (0 V는 실제 값이 될 수 없음)"""
+    df = df.copy()
+    for target, cands in UNIT_COLUMNS.items():
+        if target in df.columns:
+            continue
+        for col, scale in cands:
+            if col in df.columns:
+                v = pd.to_numeric(df[col], errors="coerce")
+                if target == "time":
+                    v = pd.Series(_unwrap_counter(v.to_numpy(float)), index=df.index)
+                df[target] = v * scale
+                data.warn(f"{col} 열을 {target}[{'s' if target == 'time' else 'V' if target == 'voltage' else 'A'}]로 바꿔 읽었습니다 (× {scale:g}).")
+                break
+    acc = [ch for ch in ("ax", "ay", "az") if ch in df.columns]
+    if acc:
+        a = df[acc].apply(pd.to_numeric, errors="coerce")
+        if np.nanmax(np.abs(a.to_numpy(float))) > 50:      # g 단위라면 MPU6050 최대 ±16 g를 넘을 수 없음 → 원래 정수값
+            for ch in acc:
+                df[ch] = a[ch] / C.RAW_ACCEL_LSB_PER_G
+            gyr = [ch for ch in ("gx", "gy", "gz") if ch in df.columns]
+            for ch in gyr:
+                df[ch] = pd.to_numeric(df[ch], errors="coerce") / C.RAW_GYRO_LSB_PER_DPS
+            data.warn(f"가속도{'·각속도' if gyr else ''}가 센서 원래값이라 가속도 ÷{C.RAW_ACCEL_LSB_PER_G:g}(g)"
+                      + (f", 각속도 ÷{C.RAW_GYRO_LSB_PER_DPS:g}(°/s)" if gyr else "")
+                      + "로 바꿨습니다. 스케치의 센서 범위 설정이 다르면 config.RAW_ACCEL_LSB_PER_G·RAW_GYRO_LSB_PER_DPS를 고치세요.")
+        g = np.sqrt((df[acc].apply(pd.to_numeric, errors="coerce") ** 2).sum(axis=1)) if len(acc) == 3 else None
+        if g is not None and g.notna().any() and not 0.7 < float(g.median()) < 1.3:   # 가속도 크기의 중앙값은 중력 1 g 근처여야 함
+            data.warn(f"{fname}: 가속도 크기의 중앙값이 {float(g.median()):.2f} g입니다 (1 g 근처여야 함). 단위나 센서 범위 설정을 확인하세요.")
+    for k in POWER_COLUMNS:
+        if k in df.columns:
+            v = pd.to_numeric(df[k], errors="coerce")
+            if v.notna().any() and float(v.abs().max()) == 0.0:
+                df = df.drop(columns=k)
+                data.warn(f"{fname}: {k} 값이 모두 0이라 INA219를 읽지 못한 것으로 보고 쓰지 않습니다 (배선·주소 0x40 확인).")
+    unused = [c for c in df.columns if c not in USED_COLUMNS and c not in C.VIB_CHANNELS
+              and not any(c == col for cands in UNIT_COLUMNS.values() for col, _ in cands)]
+    if unused:
+        data.warn(f"쓰지 않은 열: {', '.join(unused)} (엔코더·모터 명령 등은 아직 모델에 넣지 않음)")
+    return df
 
 
 class DataError(ValueError):
@@ -149,6 +209,7 @@ def _windows(df, fname, data, fs_arg):
     순서: ① MPU6050 6축 열 확인(하나라도 없으면 오류) ② time으로 샘플링 주파수 계산
           ③ 선택 열(전류·전압·구간·문턱·라벨) 준비 ④ time을 1초 단위로 잘라 창마다 진동 파형과 전류·전압 평균을 담음
           ⑤ 진동 샘플이 모자란 창은 버림"""
+    df = _standardize(df, fname, data)                    # 스케치마다 다른 단위(µs, 원래 정수값, mV·mA)를 표준으로
     # ① 진동: MPU6050의 6축(가속도 3 + 각속도 3)이 모두 있어야 한다. 빈 축을 다른 값으로 채우지 않는다
     vib = {ch: _numeric(df, ch, data, fname) for ch in C.VIB_CHANNELS}
     missing = [ch for ch in C.VIB_CHANNELS if vib[ch] is None]
@@ -162,6 +223,7 @@ def _windows(df, fname, data, fs_arg):
         t = _seconds(df["time"], fname)
         if np.isnan(t).any():
             raise DataError(f"{fname}: time 열에 빈칸이 있습니다.")
+        t = _unwrap_counter(t) if np.nanmax(np.abs(t)) > 2 ** 31 else t   # time 열에 micros() 값을 그대로 적은 경우
         if (np.diff(t) < 0).any():
             raise DataError(f"{fname}: time이 줄어드는 곳이 {int((np.diff(t) < 0).sum())}군데 있습니다. "
                             "기록이 다시 시작됐다면 파일을 나눠 주세요.")
@@ -170,6 +232,11 @@ def _windows(df, fname, data, fs_arg):
         if not len(steps):
             raise DataError(f"{fname}: time 값이 모두 같아 샘플링 주파수를 알 수 없습니다.")
         fs = 1.0 / float(np.median(steps))
+        for scale, unit in ((1e-3, "밀리초"), (1e-6, "마이크로초")):   # time 열이 초가 아니라 ms·µs로 적힌 경우
+            if fs < C.MIN_FS and C.MIN_FS <= fs / scale <= 20000:
+                t, fs = t * scale, fs / scale
+                data.warn(f"{fname}: time 열이 {unit} 단위로 보여 초로 바꿨습니다 (샘플링 {fs:.0f} Hz).")
+                break
     elif fs_arg:                                           # time 열이 없으면 사용자가 알려 준 샘플링으로 시각을 계산
         fs = float(fs_arg)
         t = np.arange(n) / fs                              # 0, 1/fs, 2/fs, ... 초
