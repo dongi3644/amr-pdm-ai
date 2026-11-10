@@ -13,6 +13,8 @@
   └ 전류·전압 → 로봇마다 처음 5분과 비교 (학습 없음) → 전류 높음, 배터리 전압·사용량
 ```
 
+**지금까지 진행한 내용(구성 · 평가 방법 · 가상 데이터 실험 · 남은 일) 요약: [`amr_pdm_real/진행_요약.md`](amr_pdm_real/진행_요약.md)**
+
 ## 처음 받은 팀원용: 바로 시작하기 (Windows + VS Code)
 
 미리 설치할 것: [Python 3.9 이상](https://www.python.org/downloads/) (설치할 때 "Add python.exe to PATH" 체크), [VS Code](https://code.visualstudio.com/), [Git](https://git-scm.com/download/win)
