@@ -23,7 +23,7 @@
    ```
    git clone https://github.com/dongi3644/amr-pdm-ai.git
    ```
-2. **VS Code로 열기.** `파일 → 파일에서 작업 영역 열기` → `AMR_고장예지AI.code-workspace` (또는 `파일 → 폴더 열기` → `second_model`). 오른쪽 아래 확장 설치 안내가 뜨면 `설치` (Python, Python Debugger)
+2. **VS Code로 열기.** `파일 → 폴더 열기` → 받은 폴더(`amr-pdm-ai`) 또는 그 안의 `second_model`. 어느 쪽을 열어도 실행 목록이 나옵니다. 오른쪽 아래 확장 설치 안내가 뜨면 `설치` (Python, Python Debugger)
 3. **실행.** 왼쪽 `실행 및 디버그`(Ctrl+Shift+D) 목록에서 고르고 ▶(F5). 아래 터미널에 지금 하는 작업이 처음 한 번, 그 뒤 5분마다 나옵니다 (예: `[14:03:10] ▶ 학습 중`)
    | 순서 | 항목 | 언제 |
    |---|---|---|

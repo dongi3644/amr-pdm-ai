@@ -1,0 +1,109 @@
+{
+  // 이 폴더(저장소 맨 위)를 VS Code로 열었을 때도 second_model을 실행하는 목록.
+  // '실행 및 디버그'(Ctrl+Shift+D) 위쪽 목록에서 고르고 ▶. 처음에는 '1. 환경 설치'를 먼저.
+
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "1. 환경 설치 (처음 한 번)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/second_model/실행/1_환경설치.py",
+      "cwd": "${workspaceFolder}/second_model",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "2. 데이터 검사 (check)",
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/second_model/.venv/Scripts/python.exe",
+      "program": "${workspaceFolder}/second_model/run.py",
+      "args": [
+        "check"
+      ],
+      "cwd": "${workspaceFolder}/second_model",
+      "console": "integratedTerminal",
+      "env": {
+        "PYTHONUTF8": "1"
+      }
+    },
+    {
+      "name": "3. 학습 + 교차검증 (train)",
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/second_model/.venv/Scripts/python.exe",
+      "program": "${workspaceFolder}/second_model/run.py",
+      "args": [
+        "train"
+      ],
+      "cwd": "${workspaceFolder}/second_model",
+      "console": "integratedTerminal",
+      "env": {
+        "PYTHONUTF8": "1"
+      }
+    },
+    {
+      "name": "4. 진단 (diagnose)",
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/second_model/.venv/Scripts/python.exe",
+      "program": "${workspaceFolder}/second_model/run.py",
+      "args": [
+        "diagnose"
+      ],
+      "cwd": "${workspaceFolder}/second_model",
+      "console": "integratedTerminal",
+      "env": {
+        "PYTHONUTF8": "1"
+      }
+    },
+    {
+      "name": "가상 시험: 학습 약 10분 + 시험 약 10분 (코드 점검용)",
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/second_model/.venv/Scripts/python.exe",
+      "program": "${workspaceFolder}/second_model/가상테스트/test_complex.py",
+      "args": [
+        "--train-scale",
+        "0.8",
+        "--test-scale",
+        "0.75",
+        "--encoders"
+      ],
+      "cwd": "${workspaceFolder}/second_model",
+      "console": "integratedTerminal",
+      "env": {
+        "PYTHONUTF8": "1"
+      }
+    },
+    {
+      "name": "가상 시험: 빠른 확인 (약 4분)",
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/second_model/.venv/Scripts/python.exe",
+      "program": "${workspaceFolder}/second_model/가상테스트/test_complex.py",
+      "args": [
+        "--scale",
+        "0.1",
+        "--encoders"
+      ],
+      "cwd": "${workspaceFolder}/second_model",
+      "console": "integratedTerminal",
+      "env": {
+        "PYTHONUTF8": "1"
+      }
+    },
+    {
+      "name": "0. 아두이노 기록 (저장소 스케치를 쓸 때만, USB 연결 후)",
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/second_model/.venv/Scripts/python.exe",
+      "program": "${workspaceFolder}/second_model/실행/0_아두이노_기록.py",
+      "cwd": "${workspaceFolder}/second_model",
+      "console": "integratedTerminal",
+      "env": {
+        "PYTHONUTF8": "1"
+      }
+    }
+  ]
+}

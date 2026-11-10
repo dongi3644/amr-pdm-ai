@@ -82,7 +82,7 @@ CSV (시간, 가속도·각속도 6축, 엔코더 4개, 모터 명령, 전류, �
 
 ### VS Code에서 (GitHub에서 받은 코드)
 1. `git clone https://github.com/dongi3644/amr-pdm-ai.git` (또는 GitHub `Code` → `Download ZIP`)
-2. VS Code `파일 → 폴더 열기` → `amr-pdm-ai/second_model` (또는 `파일 → 파일에서 작업 영역 열기` → `AMR_고장예지AI.code-workspace`). 확장 설치 안내가 뜨면 `설치` (Python, Python Debugger)
+2. VS Code `파일 → 폴더 열기` → `amr-pdm-ai` 또는 `amr-pdm-ai/second_model` (어느 쪽을 열어도 실행 목록이 나옴). 확장 설치 안내가 뜨면 `설치` (Python, Python Debugger). F5를 눌렀는데 "Select a debug configuration" 창(Python File, Django …)만 뜨면 다른 폴더가 열린 것 → Esc 후 폴더를 다시 열기
 3. 왼쪽 `실행 및 디버그`(Ctrl+Shift+D) 목록에서 **1. 환경 설치** ▶ (처음 한 번) → **2 → 3 → 4** 순서로 ▶
 4. 실행 중에는 아래 터미널에 **지금 하는 작업이 처음 한 번, 그 뒤 5분마다** 나옵니다 (`config.HEARTBEAT_S`)
    ```
