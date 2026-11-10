@@ -89,6 +89,8 @@ COLUMN_ALIASES = {                # 파일의 열 이름이 달라도 알아듣�
 # 진단 표에는 1분마다 바퀴 속도·모터 명령도 보여 준다.
 ENCODER_CHANNELS = ["enc_fl", "enc_fr", "enc_rl", "enc_rr"]
 ENCODER_FEATURES = "auto"         # "auto": 모든 학습 기록에 엔코더가 있을 때만 사용 · True: 반드시 사용(없으면 오류) · False: 쓰지 않음
+WHEEL_SCORE = True                # 엔코더 특징이 있을 때 '바퀴 이상 점수'(바퀴 하나만 튀는 정도)를 오토인코더 점수와 함께 쓸지
+                                  # True: 고장 감지가 크게 늘지만 정상 로봇의 바닥이 바뀌면 오경보가 날 수 있음 (가상 최종 시험)
 ENCODER_IS_COUNTER = True         # True: 엔코더 열이 '누적 펄스 수' → 1초 동안 늘어난 펄스 = 바퀴 속도[펄스/초]
                                   # False: 엔코더 열에 이미 속도(펄스/초 등)를 적은 경우 → 1초 평균
 
