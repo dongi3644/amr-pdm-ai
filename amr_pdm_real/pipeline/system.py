@@ -112,7 +112,7 @@ class AMRPipeline:
         if wheel_idx:                                      # 엔코더가 있으면: 바퀴 하나에만 생긴 이상을 따로 보는 점수를 더함
             # 오토인코더는 특징 47개의 복원 오차를 평균 내므로 바퀴 하나의 이상이 묻히기 쉽다 → 바퀴 특징 중 가장 크게
             # 벗어난 값을 따로 보고, 두 점수를 같은 눈금(정상 99.5% = 3점)으로 맞춘 뒤 큰 쪽을 건강 점수로 쓴다
-            dets["wheel"] = calibrate(WheelMaxDetector(wheel_idx).fit(Zfit), Zcal, Zfail)
+            dets["wheel"] = calibrate(WheelMaxDetector(feats).fit(Zfit), Zcal, Zfail)
             dets["ae_wheel"] = calibrate(CombinedDetector(dets["ae"], dets["wheel"]).fit(Zfit), Zcal, Zfail)
             main = "ae_wheel"
 

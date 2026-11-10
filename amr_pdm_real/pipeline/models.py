@@ -157,18 +157,29 @@ class AEDetector:
 
 
 class WheelMaxDetector:
-    """엔코더 바퀴 특징(상대 속도·속도 흔들림·앞뒤 차이) 중 평소에서 가장 크게 벗어난 |z| (바퀴 하나에만 생긴 이상용)
-    학습할 것이 없는 단순한 규칙이라 과대적합될 여지가 없다. 눈금은 다른 모델처럼 학습에 안 쓴 정상 로봇으로 맞춘다."""
+    """바퀴 '하나'만 다른 바퀴들보다 튀는 정도 (엔코더 바퀴 특징의 z로 계산). 바퀴 하나에만 생기는 고장용 점수
+        속도 흔들림: 가장 크게 오른 바퀴의 z - 네 바퀴 z의 중앙값  → 거친 바닥처럼 네 바퀴가 함께 흔들리면 0 근처
+        상대 속도  : 네 바퀴 z의 중앙값에서 가장 멀리 벗어난 바퀴
+        앞뒤 차이  : 왼쪽·오른쪽 앞뒤 바퀴 속도 차이의 |z|
+    세 값 중 가장 큰 것. 학습할 것이 없는 단순한 규칙이라 과대적합될 여지가 없고, 눈금은 학습에 안 쓴 정상 로봇으로 맞춘다."""
     name = "바퀴 이상 (엔코더)"
 
-    def __init__(self, idx):
-        self.idx = list(idx)                               # z에서 바퀴 특징이 있는 열 번호
+    def __init__(self, feats):
+        pos = {f: i for i, f in enumerate(feats)}
+        wheels = [f.split("_")[0] for f in feats if f.endswith("_rip")]
+        self.rip = [pos[f"{w}_rip"] for w in wheels]      # z에서 바퀴별 속도 흔들림 열 번호
+        self.rel = [pos[f"{w}_rel"] for w in wheels]      # 바퀴별 상대 속도 열 번호
+        self.diff = [pos[f] for f in ("left_diff", "right_diff") if f in pos]
 
     def fit(self, Z):
         return self
 
     def raw(self, Z):
-        return np.abs(Z[:, self.idx]).max(1)
+        rip, rel = Z[:, self.rip], Z[:, self.rel]
+        a = rip.max(1) - np.median(rip, axis=1)
+        b = np.abs(rel - np.median(rel, axis=1, keepdims=True)).max(1)
+        c = np.abs(Z[:, self.diff]).max(1) if self.diff else np.zeros(len(Z))
+        return np.maximum.reduce([a, b, c])
 
 
 class CombinedDetector:
