@@ -27,3 +27,10 @@ amr_fault_sim/
 lstm_rul.py
 web_simulator.html
 AMR_고장예지AI_Colab.ipynb
+
+# 이 컴퓨터에만 두는 이전 단계 자료 (GitHub에서 뺌, 2026-11-10 밤)
+amr_pdm_real/가상테스트/test_robots.py
+amr_pdm_real/가상테스트/compare_period.py
+amr_pdm_real/결과_보고서_2026-11-10.md
+amr_pdm_real/실측_결과/
+amr_pdm_real/실측점검/
