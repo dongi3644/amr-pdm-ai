@@ -24,9 +24,9 @@ import joblib
 import numpy as np
 
 import config as C
-from pipeline.features import FEATS
+from pipeline.features import FEATS, WHEEL_FEATS
 from pipeline.infer import Predictor
-from pipeline.models import NORMAL_LABEL, CauseClassifier, SegmentBaseline, calibrate, make_detectors
+from pipeline.models import NORMAL_LABEL, CauseClassifier, CombinedDetector, SegmentBaseline, WheelMaxDetector, calibrate, make_detectors
 
 
 def usable(rows, feats):
@@ -107,6 +107,14 @@ class AMRPipeline:
         dets = make_detectors()
         for d in dets.values():
             calibrate(d.fit(Zfit), Zcal, Zfail)            # 학습은 fit 로봇, 3점 눈금은 cal 로봇, 9점 눈금은 고장 창
+        main = "ae"                                         # 진단에 쓸 주 모델
+        wheel_idx = [i for i, f in enumerate(feats) if f in WHEEL_FEATS]
+        if wheel_idx:                                      # 엔코더가 있으면: 바퀴 하나에만 생긴 이상을 따로 보는 점수를 더함
+            # 오토인코더는 특징 47개의 복원 오차를 평균 내므로 바퀴 하나의 이상이 묻히기 쉽다 → 바퀴 특징 중 가장 크게
+            # 벗어난 값을 따로 보고, 두 점수를 같은 눈금(정상 99.5% = 3점)으로 맞춘 뒤 큰 쪽을 건강 점수로 쓴다
+            dets["wheel"] = calibrate(WheelMaxDetector(wheel_idx).fit(Zfit), Zcal, Zfail)
+            dets["ae_wheel"] = calibrate(CombinedDetector(dets["ae"], dets["wheel"]).fit(Zfit), Zcal, Zfail)
+            main = "ae_wheel"
 
         # 3) 원인 분류: 고장 창(라벨 = 종류|바퀴) + 보정용 정상 창(라벨 = 정상)으로 랜덤포레스트 학습
         cause = None
@@ -120,7 +128,7 @@ class AMRPipeline:
                 cause = CauseClassifier().fit(Zc, yc, feats)
 
         self.bundle = dict(detectors=dets, cause=cause, feats=list(feats), version="real-vib-1.0", baseline=baseline,
-                           reference=ref, scale=scale, kalman=dict(C.KALMAN), fit_units=fit_units, cal_units=cal_units)
+                           reference=ref, scale=scale, main=main, kalman=dict(C.KALMAN), fit_units=fit_units, cal_units=cal_units)
         return self
 
     def save(self, path=C.BUNDLE_PATH):
@@ -134,6 +142,6 @@ class AMRPipeline:
         """저장한 파일을 읽어 파이프라인을 되살림 (diagnose 명령이 씀)"""
         return cls(joblib.load(Path(path)))
 
-    def monitor(self, detector="ae", use_cause=True):
+    def monitor(self, detector=None, use_cause=True):
         """로봇 1대를 실시간으로 지켜보는 추론기"""
         return Predictor(self.bundle, detector, use_cause)

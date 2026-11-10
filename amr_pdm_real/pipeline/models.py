@@ -156,6 +156,42 @@ class AEDetector:
         return np.sqrt(np.mean((self.m.predict(X) - X) ** 2, axis=1))   # 복원한 값(predict)과 원래 값의 차이(RMSE)
 
 
+class WheelMaxDetector:
+    """엔코더 바퀴 특징(상대 속도·속도 흔들림·앞뒤 차이) 중 평소에서 가장 크게 벗어난 |z| (바퀴 하나에만 생긴 이상용)
+    학습할 것이 없는 단순한 규칙이라 과대적합될 여지가 없다. 눈금은 다른 모델처럼 학습에 안 쓴 정상 로봇으로 맞춘다."""
+    name = "바퀴 이상 (엔코더)"
+
+    def __init__(self, idx):
+        self.idx = list(idx)                               # z에서 바퀴 특징이 있는 열 번호
+
+    def fit(self, Z):
+        return self
+
+    def raw(self, Z):
+        return np.abs(Z[:, self.idx]).max(1)
+
+
+class CombinedDetector:
+    """오토인코더 건강 점수와 바퀴 이상 점수 중 큰 값 → 다시 눈금을 맞춤 (엔코더가 있을 때의 주 모델)
+    두 점수를 각각 정상 99.5% = 3점으로 맞춘 뒤 큰 쪽을 쓰면 '둘 중 하나라도' 넘는 경우가 늘어 오경보가 조금 많아지므로,
+    합친 점수로 눈금을 한 번 더 맞춰 정상 99.5% = 3점을 지킨다."""
+    name = "오토인코더 + 바퀴 (AI)"
+
+    def __init__(self, ae, wheel):
+        self.ae, self.wheel = ae, wheel
+
+    def fit(self, Z):
+        return self
+
+    def raw(self, Z):
+        return np.maximum(health(self.ae, Z), health(self.wheel, Z))
+
+
+# 교차검증 결과 표에 쓰는 모델 이름 (엔코더가 있을 때만 생기는 두 모델 포함)
+DETECTOR_NAMES = {"zscore": "기준선 (z-score)", "ecod": "ECOD", "iforest": "Isolation Forest", "pca": "PCA",
+                  "ae": "오토인코더 (AI)", "wheel": WheelMaxDetector.name, "ae_wheel": CombinedDetector.name}
+
+
 def make_detectors():
     """학습할 이상 감지 모델 5종. 진단은 'ae'(오토인코더)를 쓰고 나머지는 교차검증에서 비교용으로만 쓴다."""
     return {"zscore": ZScoreDetector(), "ecod": ECODDetector(), "iforest": IForestDetector(), "pca": PCADetector(), "ae": AEDetector()}

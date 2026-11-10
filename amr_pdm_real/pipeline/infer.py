@@ -26,7 +26,7 @@ FEAT_KO = {"rms": "진동 크기(RMS)", "kurt": "충격성(첨도)", "crest": "�
            "mid": "중주파 진동", "high": "고주파 진동"}
 
 
-ENC_KO = {**{f"{w}_spd": f"{C.WHEEL_KO[w]} 바퀴 속도" for w in C.WHEEL_KO},
+ENC_KO = {**{f"{w}_rel": f"{C.WHEEL_KO[w]} 바퀴 상대 속도" for w in C.WHEEL_KO},
           **{f"{w}_rip": f"{C.WHEEL_KO[w]} 바퀴 속도 흔들림" for w in C.WHEEL_KO},
           "left_diff": "왼쪽 앞뒤 바퀴 속도 차이", "right_diff": "오른쪽 앞뒤 바퀴 속도 차이", "cmd_eff": "모터 명령 대비 속도"}
 
@@ -46,8 +46,9 @@ def level(score):
 
 
 class Predictor:
-    def __init__(self, bundle, detector="ae", use_cause=True):
-        self.b, self.det = bundle, bundle["detectors"][detector]    # 건강 점수를 낼 모델 (기본: 오토인코더)
+    def __init__(self, bundle, detector=None, use_cause=True):
+        # 건강 점수를 낼 모델: 지정하지 않으면 학습 때 정한 주 모델 (엔코더가 있으면 오토인코더 + 바퀴 이상, 없으면 오토인코더)
+        self.b, self.det = bundle, bundle["detectors"][detector or bundle.get("main", "ae")]    # 건강 점수를 낼 모델 (기본: 오토인코더)
         self.use_cause = use_cause and bundle["cause"] is not None   # 고장 라벨 없이 학습하면 원인 모델이 없음
         self.calibrated = bundle["scale"] != "normal_only"           # 고장 데이터가 없으면 남은 시간을 예측하지 않음
         # 주기 점수의 지점·상태 변경 연속 횟수: 학습 때 모델에 저장한 값 (이 값이 없는 예전 모델은 예전 방식 0.5·2번)

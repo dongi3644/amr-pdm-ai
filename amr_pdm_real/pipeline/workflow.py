@@ -91,6 +91,8 @@ def train(data, units=None, baseline=None, tune=True):
     elif b["scale"] == "all_fault":
         notes.append(f"고장 정도 {C.FAIL_CAL_BAND[0]}~{C.FAIL_CAL_BAND[1]} 구간의 창이 없어 고장 창 전체의 중앙값을 9점으로 맞췄습니다.")
     ae = b["detectors"]["ae"]
+    if b.get("main") == "ae_wheel":
+        notes.append("주 모델: 오토인코더 + 바퀴 이상 점수 중 큰 값 (엔코더 특징 사용)")
     # 고장 창 점수가 정상 상위 0.5% 경계의 1.5배도 안 되면 9점 눈금을 믿을 수 없다고 알림
     if b["scale"] != "normal_only" and ae.rfail <= ae.r995 * C.MIN_FAIL_RATIO:
         notes.append("고장 창의 이상 점수가 정상 범위와 충분히 구분되지 않아 9점 눈금을 맞추지 못했습니다 "
@@ -140,7 +142,7 @@ def tune_kalman(pipe, data, names):
 
 
 # ---------------------------------------------------------------- 진단
-def diagnose(pipe, recs, detector="ae"):
+def diagnose(pipe, recs, detector=None):
     """로봇 1대를 처음부터 끝까지 진단 → (판정 주기별 표, 추론기). 표의 시간·남은 시간은 '분' 단위
     진동 AI(건강 점수·상태·원인·남은 시간)와 전류·배터리 감시(current·voltage 열이 있을 때)를 같은 표에 나란히 담는다.
     전력 감시 결과는 mon.power (power.PowerMonitor)에 있다."""
@@ -305,8 +307,7 @@ def summarize(units, win, det_scores, skipped, baseline, n_folds):
     units    : 고장 로봇 중 주의 이상이 뜬 수, 정상 로봇 중 오경보 난 수, 정지 위험(고장 정도 0.8) 전 경고 수와 여유 시간[분]
     cause    : 원인 분류 정확도(창·로봇)와 혼동행렬,  forecast: 칼만 vs 추세선 남은 시간 예측 오차[분]
     health_indicator: 고장 정도가 0.3 이상 변한(진행형) 로봇의 점수 궤적 품질"""
-    from pipeline.models import make_detectors
-    names = {k: d.name for k, d in make_detectors().items()}   # 모델 이름표 (화면용)
+    from pipeline.models import DETECTOR_NAMES as names   # 모델 이름표 (화면용)
     y = np.concatenate(win["y"]) if win["y"] else np.array([], bool)   # 모든 평가 창의 정답을 한 줄로
     det = {}
     for k, parts in det_scores.items():

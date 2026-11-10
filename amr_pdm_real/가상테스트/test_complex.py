@@ -127,7 +127,7 @@ def run(a, out, train_specs, test_specs, t0, log):
 
     count = {"n": 0}
 
-    def diag_log(pipe, recs, detector="ae"):
+    def diag_log(pipe, recs, detector=None):
         count["n"] += 1
         if count["n"] % 25 == 0:
             log(f"  진단 {count['n']}대째 (학습 중 칼만 조정 진단 포함)")

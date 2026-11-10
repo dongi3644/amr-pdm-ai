@@ -46,7 +46,8 @@ ENC_MOVING = 30.0                                          # 0.1초 구간의 �
 
 def enc_features(rec):
     """엔코더 4개(+모터 명령) 1초 → 바퀴 특징 11개. 엔코더가 없거나 값이 모자라면 모두 nan (값을 지어내지 않음)
-        {바퀴}_spd   바퀴 속도 [펄스/초, 방향 무시]       — 마찰(베어링)이 생기면 그 바퀴만 느려짐
+        {바퀴}_rel   다른 세 바퀴보다 얼마나 빠르거나 느린가 (도는 구간, 비율) — 마찰(베어링)이 생기면 그 바퀴만 느려짐
+                    (바퀴 속도 자체는 주행·정지·회전에 따라 크게 바뀌어 고장과 섞이므로, 다른 바퀴와의 비율만 씀)
         {바퀴}_rip   0.1초마다 잰 속도가 다른 세 바퀴와 얼마나 다르게 출렁이나 ÷ 평균 속도 (도는 구간만) — 풀림·불평형이면 그 바퀴만 덜컹임
         left_diff   왼쪽 앞·뒤 바퀴 속도 차이 ÷ 평균 속도 — 같은 쪽 바퀴는 같은 명령으로 돌므로 평소엔 0 근처
         right_diff  오른쪽 앞·뒤 바퀴 속도 차이 ÷ 평균 속도
@@ -61,14 +62,12 @@ def enc_features(rec):
     # 0.1초마다 바퀴별 속도 크기 (구간 수 × 바퀴 4)
     sub = np.abs(np.diff(np.column_stack([np.interp(edges, t, cnt[:, i]) for i in range(len(WHEELS))]), axis=0)) / 0.1 \
         if len(edges) >= 3 else None
-    for i, w in enumerate(WHEELS):
-        out[f"{w}_spd"] = abs(cnt[-1, i] - cnt[0, i]) / (t[-1] - t[0])
     # 흔들림·앞뒤 차이·명령 대비 속도는 '바퀴가 실제로 도는 0.1초 구간'만으로 계산한다.
     # 멈추거나 막 출발하는 구간까지 넣으면 속도가 0 근처라 나눗셈이 튀어서, 정상인데도 크게 벗어난 값이 나온다 (가상 시험에서 확인)
     med = np.median(sub, axis=1) if sub is not None else np.array([])   # 0.1초마다 네 바퀴 속도의 중앙값
     moving = med > ENC_MOVING
     if moving.sum() < 3:                                   # 이 1초 동안 거의 멈춰 있었음 → 흔들림·차이가 생길 수 없으므로 0
-        for f in [f"{w}_rip" for w in WHEELS] + ["left_diff", "right_diff"]:
+        for f in [f"{w}_{k}" for w in WHEELS for k in ("rel", "rip")] + ["left_diff", "right_diff"]:
             out[f] = 0.0
         level = 0.0
     else:
@@ -78,6 +77,7 @@ def enc_features(rec):
             # 이 바퀴만 덜컹이는 것(풀림·불평형)만 남는다
             others = np.median(np.delete(S, i, axis=1), axis=1)
             out[f"{w}_rip"] = float(np.std(S[:, i] - others) / level)
+            out[f"{w}_rel"] = float(np.mean(S[:, i] - others) / level)   # +면 다른 바퀴보다 빠름, -면 느림
         out["left_diff"] = float(np.mean(S[:, 0] - S[:, 2]) / level)    # 앞 왼쪽 - 뒤 왼쪽
         out["right_diff"] = float(np.mean(S[:, 1] - S[:, 3]) / level)   # 앞 오른쪽 - 뒤 오른쪽
     cmd = rec.get("motor_cmd", float("nan"))
@@ -101,7 +101,9 @@ def extract(rec):
 # 모델에 들어가는 진동 특징 이름 36개와 그 순서. 모든 모델이 이 순서대로 숫자를 받으므로 순서를 바꾸면 저장된 모델과 맞지 않게 된다
 FEATS = [f"{ch}_{k}" for ch in CHANNELS for k in VIB_KEYS]
 # 엔코더 특징 11개 (학습 데이터에 엔코더가 있을 때만 FEATS 뒤에 붙음. 실제로 쓴 목록은 모델 파일의 bundle["feats"])
-ENC_BASE = [f"{w}_{k}" for w in WHEELS for k in ("spd", "rip")] + ["left_diff", "right_diff"]
+ENC_BASE = [f"{w}_{k}" for w in WHEELS for k in ("rel", "rip")] + ["left_diff", "right_diff"]
+# 바퀴 하나에만 생기는 이상을 보는 특징 (models.WheelMaxDetector가 이 중 가장 크게 벗어난 값을 봄)
+WHEEL_FEATS = list(ENC_BASE)
 ENC_FEATS = ENC_BASE + ["cmd_eff"]
 
 
@@ -115,7 +117,7 @@ def choose_feats(rows):
         return list(FEATS), "특징: 진동 36개 (엔코더 특징은 config.ENCODER_FEATURES = False로 끔)"
     if all(has(f) for f in ENC_BASE):
         extra = ENC_BASE + (["cmd_eff"] if has("cmd_eff") else [])
-        return list(FEATS) + extra, f"특징: 진동 36개 + 엔코더 {len(extra)}개 (바퀴 속도·속도 흔들림·앞뒤 바퀴 차이" + \
+        return list(FEATS) + extra, f"특징: 진동 36개 + 엔코더 {len(extra)}개 (바퀴 상대 속도·속도 흔들림·앞뒤 바퀴 차이" + \
             (", 모터 명령 대비 속도)" if "cmd_eff" in extra else ")")
     if mode is True:
         raise ValueError("config.ENCODER_FEATURES = True인데 학습 데이터의 엔코더 값이 부족합니다 (창의 90% 미만).")
