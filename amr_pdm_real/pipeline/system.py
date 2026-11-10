@@ -61,7 +61,10 @@ def split_units(names, cal_share=1 / 3):
     names = sorted(names)                                  # 이름순으로 정렬해 매번 같은 로봇이 같은 쪽에 가게 함
     if len(names) < 2:                                     # 1대뿐이면 나눌 수 없음 (fit에서 그 로봇의 뒤 30%를 보정에 씀)
         return names, []
-    cal = names[-max(1, round(len(names) * cal_share)):]   # 뒤쪽 1/3(최소 1대) = 눈금 보정용
+    if C.CAL_SPLIT == "interleave":                       # 이름순으로 세 대마다 한 대 (3·6·9번째 ...) → 여러 조건의 정상 기록이 고루 들어감
+        cal = names[2::3] or [names[-1]]
+    else:                                                  # 예전 방식: 뒤쪽 1/3(최소 1대)
+        cal = names[-max(1, round(len(names) * cal_share)):]
     return [n for n in names if n not in cal], cal
 
 

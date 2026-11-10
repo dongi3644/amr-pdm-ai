@@ -67,6 +67,22 @@ def _unwrap_counter(v, bits=32):
     return v + np.cumsum(jumps) * 2.0 ** bits if jumps.any() else v
 
 
+def _spikes(x):
+    """센서 읽기 오류로 보이는 '샘플 하나만 튀는 값'의 위치 (True = 뺄 샘플). 값을 고치지 않고 빼기만 한다.
+    조건: 앞·뒤 샘플과 모두 같은 방향으로 크게(평소 샘플 간 변화의 SPIKE_K배 넘게) 다르고, 앞·뒤 샘플끼리는 서로 비슷함.
+    실제 충격(체결부 풀림 등)은 그 뒤로 진동이 이어져 앞뒤 샘플이 서로 다르므로 빠지지 않는다."""
+    out = np.zeros(len(x), bool)
+    if C.SPIKE_K <= 0 or len(x) < 5:
+        return out
+    v = np.asarray(x, float)
+    s = 1.4826 * np.nanmedian(np.abs(np.diff(v))) + 1e-9           # 평소 샘플 간 변화 크기 (튀는 값에 흔들리지 않는 중앙값 기준)
+    d1, d2, d3 = v[1:-1] - v[:-2], v[1:-1] - v[2:], v[2:] - v[:-2]
+    k = C.SPIKE_K * s
+    hit = (np.abs(d1) > k) & (np.abs(d2) > k) & (np.sign(d1) == np.sign(d2)) & (np.abs(d3) < 0.25 * np.minimum(np.abs(d1), np.abs(d2)))
+    out[1:-1] = hit
+    return out
+
+
 def _standardize(df, fname, data):
     """기록 스케치마다 다른 단위·형식을 표준(초, g, °/s, A, V)으로 맞춘다. 바꾼 것은 모두 '확인할 점'으로 알린다.
     - t_us·t_ms 같은 열 → time[s] (micros() 한 바퀴 돌기도 이어 붙임)
@@ -250,6 +266,15 @@ def _windows(df, fname, data, fs_arg):
     if missing:
         raise DataError(f"{fname}: {', '.join(f'{ch}({C.CHANNEL_KO.get(ch, ch)})' for ch in missing)} 열이 없습니다. "
                         f"MPU6050의 {', '.join(C.VIB_CHANNELS)} 열이 모두 필요합니다. 파일의 열: {list(df.columns)}")
+    n_spk = 0
+    for ch in C.VIB_CHANNELS:                             # 센서 읽기 오류로 보이는 '샘플 하나만 튀는 값'은 빈칸으로 (그 샘플만 빠짐)
+        spk = _spikes(vib[ch])
+        if spk.any():
+            vib[ch] = vib[ch].copy()
+            vib[ch][spk] = np.nan
+            n_spk += int(spk.sum())
+    if n_spk:
+        data.warn(f"{fname}: 센서 읽기 오류로 보이는 '샘플 하나만 튀는 값' {n_spk}개를 뺐습니다 (config.SPIKE_K).")
     base = vib[C.VIB_CHANNELS[0]]                          # 샘플 간격은 첫 번째 축(ax) 값이 있는 줄로 잰다
     # ② 샘플링 주파수 = 1 / (진동 샘플 사이 시간 간격의 중앙값). time 열이 없으면 --fs로 알려 줘야 한다 (임의로 가정하지 않음)
     n = len(df)

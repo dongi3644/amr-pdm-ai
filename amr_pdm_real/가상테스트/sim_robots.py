@@ -223,6 +223,13 @@ def make_table(spec):
         "fault_kind": np.where(faulty, spec["kind"], "normal"),
         "fault_wheel": np.where(faulty, spec["wheel"], ""),
         "fault_severity": np.round(sev, 3)})
+    if spec.get("glitch"):                                 # 센서 읽기 오류: 1초에 glitch번꼴로 아무 축 하나의 샘플 하나가 엉뚱한 값
+        grng = np.random.default_rng(spec["seed"] + 2)       # (실측 첫 주행 기록에서 본 것: Z축 샘플 하나가 -258 원래값으로 떨어짐)
+        idx = np.flatnonzero(grng.random(n) < spec["glitch"] / FS)
+        axes = ["ax", "ay", "az", "gx", "gy", "gz"]
+        for i in idx:
+            ch = axes[grng.integers(6)]
+            df.at[i, ch] = -258 / 8192 if ch[0] == "a" else -258 / 65.5
     if spec.get("encoders"):                               # 엔코더 4개 + 모터 명령 (다른 난수를 써서, 끄면 예전과 똑같은 기록)
         enc = _encoders(spec, tt, pwm, fw, pw, sev, shown)
         for w in WHEELS:

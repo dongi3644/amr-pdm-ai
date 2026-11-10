@@ -147,13 +147,17 @@ class AEDetector:
         self.sc = z_scaler(Z)                              # 신경망은 입력 크기가 고를 때 잘 배우므로 한 번 더 표준화
         X = self.sc.transform(Z)
         # 특징수 → 24 → 6(병목) → 24 → 특징수. 입력과 정답이 같은 X (자기 자신을 복원), 검증 오차가 멈추면 학습 중단
-        self.m = MLPRegressor(hidden_layer_sizes=(24, 6, 24), activation="tanh", max_iter=400,
-                              early_stopping=True, random_state=C.SEED).fit(X, X)
+        # 시작값(random_state)만 다른 신경망 AE_ENSEMBLE개 → 복원 오차를 평균 (하나가 우연히 잘못 배워도 덜 흔들림, 크기는 그대로)
+        self.ms = [MLPRegressor(hidden_layer_sizes=(24, 6, 24), activation="tanh", max_iter=400,
+                                early_stopping=True, random_state=C.SEED + i).fit(X, X) for i in range(max(1, int(C.AE_ENSEMBLE)))]
+        self.m = self.ms[0]
         return self
 
     def raw(self, Z):
         X = self.sc.transform(Z)
-        return np.sqrt(np.mean((self.m.predict(X) - X) ** 2, axis=1))   # 복원한 값(predict)과 원래 값의 차이(RMSE)
+        ms = getattr(self, "ms", [self.m])                # 예전 모델 파일은 신경망 하나
+        # 복원한 값(predict)과 원래 값의 차이(RMSE)를 신경망마다 구해 평균
+        return np.mean([np.sqrt(np.mean((m.predict(X) - X) ** 2, axis=1)) for m in ms], axis=0)
 
 
 class WheelMaxDetector:
