@@ -113,14 +113,13 @@ def cmd_train(a, hb=None):
         if pipe.bundle["cause"] is not None:
             report.fig_importance(pipe.bundle["cause"].importance(), C.REPORT_DIR / "fig_importance.png")
         report.summary_md(metrics, notes, C.REPORT_DIR / "summary.md")
-        brief = {k: metrics[k] for k in ("protocol", "detectors", "units", "forecast", "health_indicator")}
-        brief["cause"] = {k: metrics["cause"][k] for k in ("window_accuracy", "unit_accuracy", "unseen_units")}
-        print("\n평가 요약:", json.dumps(brief, ensure_ascii=False, indent=1))
+        # 최종 결과: 판정 정답률·고장 감지율·오경보율 등 %와 로봇별 판정표 (같은 내용이 summary.md 맨 위에도 들어감)
+        print("\n".join(report.final_text(metrics)))
         if metrics["skipped"]:                             # 평가하지 못한 로봇과 이유 (빠진 로봇은 위 수치에 들어가지 않음)
             print("평가에서 빠진 항목:")
             for s in metrics["skipped"]:
                 print(" -", s)
-        print("보고서:", C.REPORT_DIR)
+        print("보고서 (그래프·summary.md·metrics.json):", C.REPORT_DIR)
 
 
 def cmd_diagnose(a, hb=None):

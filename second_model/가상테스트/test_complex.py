@@ -209,7 +209,19 @@ def run(a, out, train_specs, test_specs, t0, log):
     report.fig_auc(m, out / "fig_auc.png")
     report.fig_confusion(m, out / "fig_confusion.png")
     write_md(res, df, out / "README.md", a, train_specs)
-    print(json.dumps({k: res[k] for k in ("all", "groups", "train", "test_minutes")}, ensure_ascii=False, indent=1))
+    # 최종 결과를 %로 (run.py train 끝 출력과 같은 용어). 자세한 표는 README.md, 모든 수치는 metrics.json
+    show = lambda v: "-" if v is None else f"{v}%"
+    al = res["all"]
+    print("\n" + "=" * 72)
+    print(f"  가상 시험 최종 결과 (처음 보는 가상 로봇 {al['robots']}대: 고장 {al['fault']} · 정상 {al['normal']}, 코드 점검용 · 성능 아님)")
+    print("=" * 72)
+    for name, s in [("전체", al)] + list(res["groups"].items()):
+        print(f"  [{name} {s['robots']}대] 판정 정답률 {show(s['accuracy_pct'])} · 고장 감지율 {show(s['detect_pct'])}"
+              f" · 오경보율 {show(s['false_alarm_pct'])} · 고장 종류 정확도 {show(s['kind_ok_pct'])}"
+              f" · 정지 위험 전 경고 {show(s['warned_before_fail_pct'])}")
+    print("  이상 감지 (1초 창): " + " / ".join(f"{k} AUC {v['auc']}" for k, v in res["windows"].items()))
+    print(f"  학습 로봇 {res['train']['robots']}대 · 학습 {res['train']['minutes']}분 · 시험 {res['test_minutes']}분")
+    print("=" * 72)
     log(f"저장: {out}")
 
 

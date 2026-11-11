@@ -5,7 +5,8 @@
                              reports/fig_units.png    평가 로봇별 시간에 따른 점수 (각자 자신이 빠진 모델로 진단)
                              reports/fig_confusion.png 원인 분류 혼동행렬
                              reports/fig_importance.png 원인 분류에 크게 쓰인 특징
-                             reports/summary.md       위 수치를 표로 정리
+                             reports/summary.md       위 수치를 표로 정리 (맨 위 '한눈에 보기' %와 로봇별 판정표)
+                             터미널 '최종 결과'        final_text: 판정 정답률·고장 감지율·오경보율 등 %와 로봇별 판정표
               (run.py diagnose) reports/diagnose/<로봇>.png  로봇 1대 시간에 따른 건강 점수 (+ 전류, 배터리 전압)
 """
 import glob
@@ -149,6 +150,90 @@ def fig_importance(importance, path, top=12):
     plt.close(fig)
 
 
+def _pct(a, b):
+    """a/b → '76.9% (10/13)'. b가 0이면 '-'"""
+    return f"{a / b * 100:.1f}% ({a}/{b})" if b else "-"
+
+
+def _rate(v):
+    """0~1 비율 → '49.0%' (없으면 '-')"""
+    return "-" if v is None else f"{v * 100:.1f}%"
+
+
+def unit_rows(m):
+    """로봇별 판정 → 표의 줄 목록 (고장 로봇은 '주의' 이상이 뜨면 맞음, 정상 로봇은 경보가 없으면 맞음)"""
+    from pipeline.models import NORMAL_LABEL
+    rows = []
+    for u in sorted(m["unit_results"], key=lambda u: (u["label"] == NORMAL_LABEL, u["robot"])):   # 고장 로봇 먼저
+        fault = u["label"] != NORMAL_LABEL
+        alarm = u["caution"] is not None
+        if fault:
+            verdict = "맞음 (경고)" if u["warning"] is not None else "맞음 (주의)" if alarm else "놓침"
+            cause = ("배운 적 없는 원인" if u["cause_unseen"] else "-") if not u["cause_pred"] else \
+                f"{u['cause_pred']} ({'맞음' if u['cause_ok'] else '틀림' if u['cause_ok'] is False else '-'})"
+        else:
+            verdict, cause = ("오경보" if alarm else "맞음 (정상)"), "-"
+        rows.append({"로봇": u["robot"], "실제": u["label_ko"], "최고 점수": u["max_score"],
+                     "처음 주의": f"{C.minutes(u['caution'] + 1):g}분째" if alarm else "-",
+                     "판정": verdict, "원인 예측": cause})
+    return rows
+
+
+def headline(m):
+    """한눈에 보는 % 요약 → [(항목, 값, 설명), ...]. 터미널 출력과 summary.md가 같은 숫자를 쓴다"""
+    from pipeline.models import NORMAL_LABEL
+    us = m["unit_results"]
+    F = [u for u in us if u["label"] != NORMAL_LABEL]
+    N = [u for u in us if u["label"] == NORMAL_LABEL]
+    hit = sum(u["caution"] is not None for u in F)       # 고장 로봇 중 '주의' 이상이 뜬 수
+    quiet = sum(u["caution"] is None for u in N)         # 정상 로봇 중 경보가 없던 수
+    c, f, un = m["cause"], m["forecast"]["kalman"], m["units"]
+    ae = m["detectors"].get("ae", {})
+    cause_u = [u for u in F if u["cause_ok"] is not None]
+    fail_n = sum(u["fail"] is not None for u in F)
+    warned = int(un["warned_before_fail"].split("/")[0]) if un.get("warned_before_fail") else 0
+    return [
+        ("판정 정답률", _pct(hit + quiet, len(F) + len(N)), "고장 로봇은 '주의' 이상, 정상 로봇은 경보 없음이면 맞음"),
+        ("고장 로봇 감지율", _pct(hit, len(F)), "고장 로봇 중 '주의' 이상이 뜬 비율"),
+        ("정상 로봇 오경보율", _pct(len(N) - quiet, len(N)), "정상 로봇인데 '주의' 이상이 뜬 비율"),
+        ("원인 분류 정확도", f"{_rate(c['window_accuracy'])} (1초 창)" + (f" · 로봇 {c['unit_accuracy']}" if c["unit_accuracy"] else ""),
+         "원인을 낸 고장 로봇 중 맞힌 수 (배운 적 없는 원인은 뺌)" if cause_u else "원인을 낸 고장 로봇이 없음"),
+        ("이상 감지 AUC (오토인코더)", "-" if ae.get("auc") is None else f"{ae['auc']:.3f}", "1에 가까울수록 고장 창과 정상 창을 잘 가름 (0.5 = 찍기)"),
+        ("고장 창 감지율 / 정상 창 오경보율", f"{_rate(ae.get('recall'))} / {_rate(ae.get('false_positive'))}", "1초 창 기준, 건강 점수 3 이상을 '이상'으로 셈"),
+        ("정지 위험 전 경고", _pct(warned, fail_n) + (f", 평균 {un['mean_lead_min']}분 전" if un.get("mean_lead_min") is not None else ""),
+         f"고장 정도 {C.FAILURE_SEVERITY:g}에 이르기 전에 '경고'가 뜬 로봇"),
+        ("남은 시간 예측 (칼만)", f"평균 오차 {f['mae_min']}분 ({f['n']}회)" if f["n"] else "예측 없음",
+         "점수가 경고 쪽으로 오르는 고장에서만 예측함"),
+    ]
+
+
+def final_text(m):
+    """train 끝에 터미널에 보여 줄 최종 결과 (% 요약 + 로봇별 판정표 + 놓침·오경보 로봇)"""
+    import pandas as pd
+    p, w = m["protocol"], m["windows"]
+    bar = "=" * 72
+    lines = ["", bar, f"  최종 결과 (로봇 단위 교차검증 {p['folds']}겹, 평가 로봇은 학습에 쓰지 않음)", bar]
+    import unicodedata
+    cols = lambda s: sum(2 if unicodedata.east_asian_width(ch) in "WF" else 1 for ch in s)   # 화면 칸 수 (한글 = 2칸)
+    rows = headline(m)
+    width = max(cols(k) for k, _, _ in rows) + 2
+    for k, v, note in rows:
+        lines.append(f"  {k}{' ' * (width - cols(k))}{v}")
+        lines.append(f"  {' ' * width}└ {note}")
+    lines += ["", f"  평가 창 {w['n']:,}개 (고장 {w['fault']:,}개) · 정상 기준 {p['baseline']} · 판정 주기 {p['period_s']:g}초", "",
+              "  이상 감지 방법 비교 (1초 창):"]
+    det = pd.DataFrame([{"방법": v["name"], "AUC": v["auc"], "고장 창 감지율": _rate(v["recall"]),
+                         "정상 창 오경보율": _rate(v["false_positive"])} for v in m["detectors"].values()])
+    with pd.option_context("display.unicode.east_asian_width", True):   # 한글 폭을 2칸으로 세어 줄을 맞춤
+        lines += ["  " + s for s in det.to_string(index=False).splitlines()]
+        ur = unit_rows(m)
+        lines += ["", "  로봇별 판정:"] + ["  " + s for s in pd.DataFrame(ur).to_string(index=False).splitlines()]
+    miss = [r["로봇"] for r in ur if r["판정"] == "놓침"]
+    alarms = [r["로봇"] for r in ur if r["판정"] == "오경보"]
+    lines += ["", f"  놓친 고장 로봇: {', '.join(miss) or '없음'}", f"  오경보 난 정상 로봇: {', '.join(alarms) or '없음'}", bar]
+    return lines
+
+
 def summary_md(m, notes, path):
     """교차검증 수치와 학습 메모를 reports/summary.md 문서로 (발표 자료에 옮겨 쓰기 쉬운 표 형식)"""
     p, u, f, c = m["protocol"], m["units"], m["forecast"], m["cause"]   # 평가 방식, 로봇 단위, 예측, 원인
@@ -156,9 +241,14 @@ def summary_md(m, notes, path):
              "> 발표 성능으로 쓰는 것은 실측 CSV로 돌린 이 표뿐입니다. 학습 메모와 '건너뛴 항목'도 함께 확인하세요.", "",
              f"- 평가 방식: {p['split']} 교차검증 {p['folds']}겹, 정상 기준 {p['baseline']}, 판정 주기 {p['period_s']:g}초. {p['note']}",
              f"- 평가 창: {m['windows']['n']:,}개 (고장 {m['windows']['fault']:,}개)", "",
-             "## 이상 감지", "", "| 방법 | AUC | 고장 창 감지율 (3점 이상) | 정상 창 오경보율 |", "|---|---|---|---|"]
+             "## 한눈에 보기", "", "| 항목 | 결과 | 뜻 |", "|---|---|---|"]
+    lines += [f"| {k} | {v} | {note} |" for k, v, note in headline(m)]
+    ur = unit_rows(m)
+    lines += ["", "## 로봇별 판정", "", "| " + " | ".join(ur[0]) + " |", "|" + "---|" * len(ur[0])] if ur else []
+    lines += ["| " + " | ".join(str(v) for v in r.values()) + " |" for r in ur]
+    lines += ["", "## 이상 감지", "", "| 방법 | AUC | 고장 창 감지율 (3점 이상) | 정상 창 오경보율 |", "|---|---|---|---|"]
     for v in m["detectors"].values():
-        lines.append(f"| {v['name']} | {v['auc']} | {v['recall']} | {v['false_positive']} |")
+        lines.append(f"| {v['name']} | {v['auc']} | {_rate(v['recall'])} | {_rate(v['false_positive'])} |")
     lines += ["", "## 로봇 단위", "",
               f"- 고장 로봇 감지: {u['fault_detected']} · 정상 로봇 오경보: {u['false_alarm']}"
               + (f" (그중 라벨 없이 정상으로 간주한 로봇 {u['normal_assumed']}대)" if u["normal_assumed"] else ""),
