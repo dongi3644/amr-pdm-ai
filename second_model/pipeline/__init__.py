@@ -4,9 +4,9 @@
 
     dataio.py    CSV 파일 → 1초 창(dict) 목록          "데이터를 읽어 자르는 곳"
         ↓
-    features.py  1초 창 → 숫자 특징 (MPU6050 6축 36개)      "신호를 숫자로 요약하는 곳"
+    features.py  1초 창 → 숫자 특징 (진동 36개 + 바퀴 11개)  "신호를 숫자로 요약하는 곳"
         ↓
-    models.py    AI 모델 부품 8종                      "각 모델의 정의"
+    models.py    AI 모델 부품 (기준·이상 감지·원인·남은 시간) "각 모델의 정의"
         ↓
     system.py    부품을 하나로 묶어 학습·저장           "모델 묶음(AMRPipeline)"
         ↓
@@ -16,10 +16,12 @@
     workflow.py  학습 / 진단 / 로봇 단위 교차검증 절차   "실행 순서를 짜는 곳"
         ↓
     report.py    평가 결과 → 그래프·요약 문서           "결과를 보여 주는 곳"
+    heartbeat.py 실행 중 '학습 중/평가 중'을 처음 한 번 + 5분마다 출력
 
 [바깥에서 부르는 곳]
     run.py               명령줄 입구 (check / train / diagnose)
-    실행/*.py             VS Code·Visual Studio에서 버튼으로 run.py를 부르는 스크립트
+    실행/*.py             VS Code에서 버튼으로 run.py를 부르는 스크립트
+    가상테스트/*.py        코드 점검용 가상 로봇 시험 (성능 아님)
 
 [학습할 때]  dataio → features → system.fit(모델 학습) → artifacts/model_bundle.joblib 저장
 [진단할 때]  dataio → infer.Predictor.update(창마다) → 주기별 상태·원인·남은 시간

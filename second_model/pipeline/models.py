@@ -1,4 +1,4 @@
-"""AI 모델 모음 (진동만 사용)
+"""AI 모델 모음 (진동 + 엔코더 바퀴 특징)
 
 [역할] 파이프라인에 들어가는 모델 부품을 하나씩 정의한다. 학습 순서와 연결은 system.py가, 실시간 사용은 infer.py가 맡는다.
 [흐름에서 위치] 특징 47개(진동 36 + 바퀴 11) → 1(z-score) → 2~5(이상 점수) → health()(건강 점수 0~) → 7(원인) / 8(남은 시간)
@@ -10,7 +10,7 @@ calibrate()가 모델별로 눈금을 맞추고 health()가 0~ 건강 점수로 
 1) SegmentBaseline : 구간별 정상 기준(평균·표준편차) → z-score  (복도 지문)
 2) ZScoreDetector  : 비교 기준선 — |z| 평균
 3) ECODDetector    : ECOD (Li et al., TKDE 2022) — 경험적 분포 꼬리 확률. PyOD가 기본 추천하는 비교 기준
-   (Isolation Forest는 2026-11-11에 비교 대상에서 뺐다: 가상 시험 7번 모두 ECOD보다 낮음. 예전 모델 파일을 읽기 위한 껍데기만 남김)
+   (Isolation Forest는 2026-11-11에 뺐다: 가상 시험 7번 모두 ECOD보다 낮음)
 5) PCADetector     : PCA 복원 오차 — 오토인코더의 선형 비교 대상
 6) AEDetector      : 오토인코더(MLP 특징수-24-6-24-특징수) — 정상 패턴 복원 오차 = 이상 점수, 건강 점수의 기본 모델
    WheelMaxDetector · CombinedDetector : 바퀴 이상 점수, 오토인코더와 큰 값 (엔코더 4개가 있을 때 주 모델)
@@ -58,7 +58,7 @@ class SegmentBaseline:
         return self
 
     def z(self, rows):
-        feats = getattr(self, "feats", FEATS)             # 예전 모델 파일에는 목록이 없음 → 진동 36개
+        feats = getattr(self, "feats", FEATS)             # 특징 목록 (진동 36개 + 엔코더가 있으면 바퀴 11개)
         out = np.empty((len(rows), len(feats)))
         for i, r in enumerate(rows):
             mu, sd = self.stats.get(r["segment"], self.overall)   # 이 창의 구간 기준 (학습 때 없던 구간이면 전체 기준)
@@ -75,7 +75,7 @@ class ZScoreDetector:
         return self                                        # 배울 것이 없음 (z 자체가 이미 '평소 대비' 값)
 
     def raw(self, Z):
-        return np.abs(Z).mean(1)                           # 창마다 36개 |z|의 평균
+        return np.abs(Z).mean(1)                           # 창마다 모든 특징 |z|의 평균
 
 
 class ECODDetector:
@@ -102,16 +102,6 @@ class ECODDetector:
         return np.maximum.reduce([tail_l.sum(1), tail_r.sum(1), auto.sum(1)])
 
 
-class IForestDetector:
-    """[더 이상 학습하지 않음] Isolation Forest 비교 모델 (2026-11-11 제외: 가상 시험에서 늘 가장 낮고 ECOD와 역할이 겹침)
-    예전에 학습한 모델 파일(model_bundle.joblib)에 이 객체가 들어 있어서, 그 파일을 열 수 있도록 이름만 남겨 둔다.
-    진단에는 원래부터 쓰지 않았으므로 예전 모델로 진단해도 결과는 같다."""
-    name = "Isolation Forest"
-
-    def raw(self, Z):
-        return -self.m.score_samples(Z)                    # 예전 모델 파일 안의 학습된 Isolation Forest를 그대로 씀
-
-
 def z_scaler(Z, floor=0.1):
     """z를 다시 표준화하는 StandardScaler. 학습 데이터에서 거의 변하지 않은 특징은 표준편차가 1e-15처럼 잡혀
     새 로봇에서 조금만 달라도 값이 1e14배로 부풀려진다 (교차검증에서 점수 폭발로 확인). z는 이미 '평소 대비 몇 배'
@@ -133,12 +123,12 @@ class PCADetector:
 
     def raw(self, Z):
         X = self.sc.transform(Z)
-        # transform: 6개 방향으로 압축 → inverse_transform: 다시 36개로 펼침 → 원래 값과의 차이(RMSE)
+        # transform: 6개 방향으로 압축 → inverse_transform: 다시 원래 개수로 펼침 → 원래 값과의 차이(RMSE)
         return np.sqrt(np.mean((self.m.inverse_transform(self.m.transform(X)) - X) ** 2, axis=1))
 
 
 class AEDetector:
-    """주 모델. 신경망이 진동 특징 36개를 6개로 압축했다가 다시 원래 개수로 복원하도록 '정상 데이터로만' 학습한다.
+    """주 모델. 신경망이 특징(진동 36개 + 바퀴 11개)을 6개로 압축했다가 다시 원래 개수로 복원하도록 '정상 데이터로만' 학습한다.
     정상 패턴만 배웠으므로 고장 창은 잘 복원하지 못하고, 복원 오차(RMSE)가 곧 이상 점수가 된다.
     PCA와 달리 특징 사이의 곡선 관계(tanh)도 배울 수 있다. 라벨 없는 정상 데이터만 있어도 학습된다는 것이 장점."""
     name = "오토인코더 (AI)"
@@ -205,7 +195,7 @@ class CombinedDetector:
 
 
 # 교차검증 결과 표에 쓰는 모델 이름 (엔코더가 있을 때만 생기는 두 모델 포함)
-DETECTOR_NAMES = {"zscore": "기준선 (z-score)", "ecod": "ECOD", "iforest": "Isolation Forest", "pca": "PCA",   # iforest: 예전 모델용
+DETECTOR_NAMES = {"zscore": "기준선 (z-score)", "ecod": "ECOD", "pca": "PCA",
                   "ae": "오토인코더 (AI)", "wheel": WheelMaxDetector.name, "ae_wheel": CombinedDetector.name}
 
 

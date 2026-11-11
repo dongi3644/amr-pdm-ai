@@ -152,7 +152,8 @@ def fig_importance(importance, path, top=12):
 def summary_md(m, notes, path):
     """교차검증 수치와 학습 메모를 reports/summary.md 문서로 (발표 자료에 옮겨 쓰기 쉬운 표 형식)"""
     p, u, f, c = m["protocol"], m["units"], m["forecast"], m["cause"]   # 평가 방식, 로봇 단위, 예측, 원인
-    lines = ["# AMR 고장예지 파이프라인 평가 요약 (실측 데이터)", "",
+    lines = ["# AMR 고장예지 평가 요약 (로봇 단위 교차검증)", "",
+             "> 발표 성능으로 쓰는 것은 실측 CSV로 돌린 이 표뿐입니다. 학습 메모와 '건너뛴 항목'도 함께 확인하세요.", "",
              f"- 평가 방식: {p['split']} 교차검증 {p['folds']}겹, 정상 기준 {p['baseline']}, 판정 주기 {p['period_s']:g}초. {p['note']}",
              f"- 평가 창: {m['windows']['n']:,}개 (고장 {m['windows']['fault']:,}개)", "",
              "## 이상 감지", "", "| 방법 | AUC | 고장 창 감지율 (3점 이상) | 정상 창 오경보율 |", "|---|---|---|---|"]

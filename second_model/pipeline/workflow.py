@@ -155,6 +155,7 @@ def diagnose(pipe, recs, detector=None):
     mon, power, rows, truth = pipe.monitor(detector), PowerMonitor(), [], {}
     aux = {}                                              # 주기 번호 → {엔코더·모터 명령 열: 그 주기 창 값들} (표에 보여 주기만 함)
     aux_ko = {**{k: f"바퀴 속도 {C.WHEEL_KO[k[-2:]]}(펄스/초)" for k in C.ENCODER_CHANNELS}, "motor_cmd": "모터 명령"}
+    # 바퀴 속도는 방향(전진 +, 후진 -)을 빼고 크기로 평균 (섞어 달리면 1분 평균이 0에 가까워져 헷갈리므로)
 
     def aux_cols(period):
         """그 주기의 모터 명령·바퀴 속도 평균 (열이 없는 데이터면 아무것도 붙지 않음)"""
@@ -177,7 +178,7 @@ def diagnose(pipe, recs, detector=None):
         for k in aux_ko:                                  # 엔코더·모터 명령 값 모으기 (nan은 뺌)
             v = rec.get(k, float("nan"))
             if not np.isnan(v):
-                aux.setdefault(rec["period"], {}).setdefault(k, []).append(v)
+                aux.setdefault(rec["period"], {}).setdefault(k, []).append(abs(v) if k in C.ENCODER_CHANNELS else v)
         mon.update(rec)
         if rec["labeled"]:                                # 비교용으로 파일에 적힌 라벨도 표에 남김 (예: '베어링 결함 0.62')
             kind = C.KIND_KO.get(rec["true_kind"], rec["true_kind"])

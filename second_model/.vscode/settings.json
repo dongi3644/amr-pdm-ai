@@ -4,7 +4,7 @@
   "python.analysis.extraPaths": ["${workspaceFolder}"],
   "terminal.integrated.env.windows": { "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8" },
   "files.exclude": { "**/__pycache__": true, ".venv": true },
-  "search.exclude": { ".venv": true, "data": true, "raw": true },
+  "search.exclude": { ".venv": true, "data": true },
   "editor.unicodeHighlight.ambiguousCharacters": false,
   "editor.unicodeHighlight.invisibleCharacters": false,
   "editor.unicodeHighlight.nonBasicASCII": false
