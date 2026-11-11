@@ -24,7 +24,7 @@
  5) 라벨: fault_kind = 주축 불평형 / 피니언축 불평형 / 기어 결함, fault_severity = 단계별 고장 정도
       3단계 고장: 0.4 → 0.8 → 1.0,  2단계 고장(피니언): 0.4 → 0.8   (원본에는 '정도' 값이 없어 단계 순서로 정한 값)
 
-[실행] python 외부데이터_시험/만들기.py [--src 원본폴더] [--out 출력폴더] [--fs 1000] [--seed 7]
+[실행] python 외부데이터_시험/만들기.py [--src 원본폴더] [--out 출력폴더] [--fs 1000] [--seed 7] [--normal-first 6]
        → 외부데이터_시험/data/ 에 로봇마다 .csv.gz 하나 (압축된 CSV, 모델이 그대로 읽음)
 """
 import argparse
@@ -85,8 +85,9 @@ def to_robot_format(m, p, stretch, gain, fs_out):
     return dict(ax=lm, ay=lp, az=1.0 + (lm + lp) / 2, gx=em, gy=ep, gz=(lm - lp) / 2)
 
 
-def build_plan(rng):
-    """로봇 이름 → [(원본 폴더, 파일 이름 앞부분, 라벨, 고장 정도), ...]"""
+def build_plan(rng, normal_first=NORMAL_FIRST):
+    """로봇 이름 → [(원본 폴더, 파일 이름 앞부분, 라벨, 고장 정도), ...]
+    normal_first: 고장 로봇의 처음 정상 기록 수. 줄여도 같은 기록·같은 배율에서 앞쪽만 쓰도록 무작위 뽑기는 늘 6개로 함"""
     normals = [("Normal", f"Normal{i}") for i in range(1, 11)]
     plan = {}
     for i in range(NORMAL_ROBOTS):
@@ -95,7 +96,7 @@ def build_plan(rng):
     for code, (folder, prefix, levels, kind) in FAULTS.items():
         for r in range(ROBOTS_PER_FAULT):
             pick = rng.choice(len(normals), NORMAL_FIRST, replace=False)
-            segs = [(*normals[j], "normal", 0.0) for j in pick]
+            segs = [(*normals[j], "normal", 0.0) for j in pick[:normal_first]]
             for lv in range(1, levels + 1):
                 for k in (2 * r + 1, 2 * r + 2):                  # 로봇 r은 단계마다 기록 2r+1, 2r+2번
                     segs.append((f"{folder}{lv}", f"{prefix}{lv}_{k}", kind, SEVERITY[levels][lv - 1]))
@@ -109,12 +110,14 @@ def main():
     ap.add_argument("--out", type=Path, default=HERE / "data", help="만든 로봇 CSV를 둘 폴더")
     ap.add_argument("--fs", type=int, default=1000, help="만들 샘플링 [Hz] (기본 1000)")
     ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--normal-first", type=int, default=NORMAL_FIRST,
+                    help="고장 로봇의 처음 정상 주행 기록 수 (기록 하나 약 1분, 기본 6). 3·4로 줄이면 기준 시간 비교용")
     a = ap.parse_args()
     if not a.src.is_dir():
         sys.exit(f"원본 폴더가 없습니다: {a.src}  (--src 로 알려 주세요)")
     a.out.mkdir(parents=True, exist_ok=True)
     rng = np.random.default_rng(a.seed)
-    plan = build_plan(rng)
+    plan = build_plan(rng, a.normal_first)
     cache = {}
     rows = []
     for robot, segs in plan.items():

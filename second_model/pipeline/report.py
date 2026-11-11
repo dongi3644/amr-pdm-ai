@@ -246,21 +246,53 @@ def summary_md(m, notes, path):
     ur = unit_rows(m)
     lines += ["", "## 로봇별 판정", "", "| " + " | ".join(ur[0]) + " |", "|" + "---|" * len(ur[0])] if ur else []
     lines += ["| " + " | ".join(str(v) for v in r.values()) + " |" for r in ur]
-    lines += ["", "## 이상 감지", "", "| 방법 | AUC | 고장 창 감지율 (3점 이상) | 정상 창 오경보율 |", "|---|---|---|---|"]
+    if u["normal_assumed"]:
+        lines += ["", f"> 정상 로봇 중 {u['normal_assumed']}대는 라벨이 없어 정상으로 간주했습니다."]
+    lines += ["", "## 이상 감지 방법 비교 (1초 창)", "",
+              "| 방법 | AUC | 고장 창 감지율 (3점 이상) | 정상 창 오경보율 |", "|---|---|---|---|"]
     for v in m["detectors"].values():
-        lines.append(f"| {v['name']} | {v['auc']} | {_rate(v['recall'])} | {_rate(v['false_positive'])} |")
-    lines += ["", "## 로봇 단위", "",
-              f"- 고장 로봇 감지: {u['fault_detected']} · 정상 로봇 오경보: {u['false_alarm']}"
-              + (f" (그중 라벨 없이 정상으로 간주한 로봇 {u['normal_assumed']}대)" if u["normal_assumed"] else ""),
-              f"- 정지 위험 전 경고: {u['warned_before_fail']} · 평균 여유: {u['mean_lead_min']}분", "",
-              "## 원인 분류", "", f"- 창 단위 정확도 {c['window_accuracy']} · 로봇 단위 {c['unit_accuracy']}"
-              + (f" (학습 겹에 같은 원인이 없어 맞힐 수 없던 고장 로봇 {c['unseen_units']}대는 정확도에서 뺌. 혼동행렬에는 포함)"
-                 if c.get("unseen_units") else ""), "",
-              "## 정지 위험 시점 예측", "", "| 방법 | 평균 오차(분) | 예측 횟수 |", "|---|---|---|",
-              f"| 칼만 필터 | {f['kalman']['mae_min']} | {f['kalman']['n']} |", f"| 추세선 | {f['trend']['mae_min']} | {f['trend']['n']} |", "",
-              f"칼만 필터 90% 범위 적중: {f['kalman']['coverage']}", "",
-              f"## 건강 지표 품질 (진행형 고장 로봇): {m['health_indicator']}", "",
-              "## 최종 모델 학습 메모", ""] + [f"- {n}" for n in notes]
+        lines.append(f"| {v['name']} | {'-' if v['auc'] is None else v['auc']} | {_rate(v['recall'])} | {_rate(v['false_positive'])} |")
+    lines += ["", "판정에 쓰는 것은 오토인코더(엔코더가 있으면 + 바퀴)입니다. 나머지는 비교용입니다."]
+
+    # 원인 분류: 혼동표 (행 = 실제, 열 = 예측)
+    lines += ["", "## 원인 분류", "",
+              f"- 1초 창 정확도 {_rate(c['window_accuracy'])} · 원인을 낸 고장 로봇 중 맞힘 {c['unit_accuracy'] or '-'}"]
+    if c.get("unseen_units"):
+        lines.append(f"- 평가할 때 학습 쪽에 같은 원인이 없어 맞힐 수 없던 고장 로봇 {c['unseen_units']}대는 정확도에서 뺐습니다 (아래 표에는 포함)")
+    if c.get("confusion"):
+        names = [label_ko(l) for l in c["labels"]]
+        lines += ["", "| 실제 \\ 예측 | " + " | ".join(names) + " | 맞힌 비율 |", "|---|" + "---|" * (len(names) + 1)]
+        for i, (nm, row) in enumerate(zip(names, c["confusion"])):
+            tot = sum(row)
+            lines.append(f"| {nm} | " + " | ".join(f"**{v:,}**" if j == i else f"{v:,}" for j, v in enumerate(row))
+                         + f" | {_rate(row[i] / tot) if tot else '-'} |")
+        lines.append("\n굵은 숫자(대각선)가 맞힌 1초 창입니다. 원인은 '주의' 이상으로 판정된 뒤에만 화면에 나옵니다.")
+
+    # 남은 시간 예측: 한 번도 안 했으면 이유만
+    k, t = f["kalman"], f["trend"]
+    lines += ["", "## 정지 위험까지 남은 시간 예측", ""]
+    if not k["n"] and not t["n"]:
+        lines.append("예측 없음: 점수가 '경고' 쪽으로 꾸준히 오른 고장 기록이 없어 남은 시간을 한 번도 예측하지 않았습니다.")
+    else:
+        err = lambda d: "-" if d["mae_min"] is None else f"{d['mae_min']}분"
+        lines += ["| 방법 | 평균 오차 | 예측 횟수 | 실제 시점이 90% 범위 안에 든 비율 |", "|---|---|---|---|",
+                  f"| 칼만 필터 (판정에 씀) | {err(k)} | {k['n']} | {_rate(k['coverage'])} |",
+                  f"| 추세선 (비교용) | {err(t)} | {t['n']} | - |"]
+
+    # 건강 지표 품질: 점수가 고장 진행을 얼마나 잘 따라가나
+    hi = m.get("health_indicator")
+    lines += ["", "## 건강 점수가 고장 진행을 따라가는 정도", ""]
+    if not hi:
+        lines.append("계산 안 함: 고장 정도가 0.3 이상 변한(서서히 나빠지는) 고장 로봇이 없습니다.")
+    else:
+        val = lambda key: "-" if hi.get(key) is None else f"{hi[key]:.2f}"
+        lines += [f"대상: 고장 정도가 0.3 이상 변한 고장 로봇 {hi['units']}대 (0~1, 1에 가까울수록 좋음)", "",
+                  "| 항목 | 값 | 뜻 |", "|---|---|---|",
+                  f"| 단조성 | {val('monotonicity')} | 점수가 오르내리지 않고 한 방향으로 꾸준히 변하나 |",
+                  f"| 추세 일치도 | {val('trendability')} | 로봇마다 점수가 비슷한 모양으로 변하나 (가장 다른 두 대 기준) |",
+                  f"| 고장 시점 일관성 | {val('prognosability')} | 고장 끝 무렵 점수가 로봇끼리 비슷한가 (남은 시간 예측에 중요) |"]
+
+    lines += ["", "## 최종 모델 학습 메모", ""] + [f"- {n}" for n in notes]
     if m["skipped"]:
         lines += ["", "## 평가에서 빠진 항목", ""] + [f"- {s}" for s in m["skipped"]]
     path.write_text("\n".join(lines), encoding="utf-8")
