@@ -94,6 +94,57 @@
       }
     },
     {
+      "name": "외부 데이터 시험 1: 검사 (check)",
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/second_model/.venv/Scripts/python.exe",
+      "program": "${workspaceFolder}/second_model/run.py",
+      "args": [
+        "check",
+        "--path",
+        "외부데이터_시험/data"
+      ],
+      "cwd": "${workspaceFolder}/second_model",
+      "console": "integratedTerminal",
+      "env": {
+        "PYTHONUTF8": "1"
+      }
+    },
+    {
+      "name": "외부 데이터 시험 2: 학습 + 교차검증 (train)",
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/second_model/.venv/Scripts/python.exe",
+      "program": "${workspaceFolder}/second_model/run.py",
+      "args": [
+        "train",
+        "--path",
+        "외부데이터_시험/data"
+      ],
+      "cwd": "${workspaceFolder}/second_model",
+      "console": "integratedTerminal",
+      "env": {
+        "PYTHONUTF8": "1"
+      }
+    },
+    {
+      "name": "외부 데이터 시험 3: 진단 (diagnose)",
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/second_model/.venv/Scripts/python.exe",
+      "program": "${workspaceFolder}/second_model/run.py",
+      "args": [
+        "diagnose",
+        "--path",
+        "외부데이터_시험/data"
+      ],
+      "cwd": "${workspaceFolder}/second_model",
+      "console": "integratedTerminal",
+      "env": {
+        "PYTHONUTF8": "1"
+      }
+    },
+    {
       "name": "0. 아두이노 기록 (저장소 스케치를 쓸 때만, USB 연결 후)",
       "type": "debugpy",
       "request": "launch",
