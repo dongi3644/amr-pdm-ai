@@ -1,24 +1,26 @@
 """AI 모델 모음 (진동만 사용)
 
 [역할] 파이프라인에 들어가는 모델 부품을 하나씩 정의한다. 학습 순서와 연결은 system.py가, 실시간 사용은 infer.py가 맡는다.
-[흐름에서 위치] 진동 특징 36개 → 1(z-score) → 2~6(이상 점수) → health()(건강 점수 0~) → 7(원인) / 8(남은 시간)
+[흐름에서 위치] 특징 47개(진동 36 + 바퀴 11) → 1(z-score) → 2~5(이상 점수) → health()(건강 점수 0~) → 7(원인) / 8(남은 시간)
 
 [이상 감지 모델의 공통 약속] fit(Z): 정상 z로 학습, raw(Z): 클수록 이상한 점수. 점수 단위가 모델마다 달라서
-calibrate()가 모델별로 눈금을 맞추고 health()가 0~ 건강 점수로 바꾼다. 그래서 5개 모델을 같은 기준으로 비교할 수 있다.
+calibrate()가 모델별로 눈금을 맞추고 health()가 0~ 건강 점수로 바꾼다. 그래서 여러 모델을 같은 기준으로 비교할 수 있다.
+진단(판정)에 쓰는 것은 오토인코더(+ 엔코더가 있으면 바퀴 이상 점수)뿐이고, z-score·ECOD·PCA는 교차검증 비교표용이다.
 
 1) SegmentBaseline : 구간별 정상 기준(평균·표준편차) → z-score  (복도 지문)
 2) ZScoreDetector  : 비교 기준선 — |z| 평균
 3) ECODDetector    : ECOD (Li et al., TKDE 2022) — 경험적 분포 꼬리 확률. PyOD가 기본 추천하는 비교 기준
-4) IForestDetector : Isolation Forest — PyOD가 기본 추천하는 비교 기준
+   (Isolation Forest는 2026-11-11에 비교 대상에서 뺐다: 가상 시험 7번 모두 ECOD보다 낮음. 예전 모델 파일을 읽기 위한 껍데기만 남김)
 5) PCADetector     : PCA 복원 오차 — 오토인코더의 선형 비교 대상
-6) AEDetector      : 오토인코더(MLP 36-24-6-24-36) — 정상 패턴 복원 오차 = 이상 점수, 건강 점수의 기본 모델
+6) AEDetector      : 오토인코더(MLP 특징수-24-6-24-특징수) — 정상 패턴 복원 오차 = 이상 점수, 건강 점수의 기본 모델
+   WheelMaxDetector · CombinedDetector : 바퀴 이상 점수, 오토인코더와 큰 값 (엔코더 4개가 있을 때 주 모델)
 7) CauseClassifier : 랜덤포레스트 + SHAP — 정상/고장 종류(+바퀴) 분류와 판단 근거
 8) kalman_forecast : 칼만 필터(수준·기울기) — 정지 위험(9점)까지 남은 시간(주기 수)과 90% 범위
    trend_forecast  : 최근 주기 점수 직선 맞춤 — 칼만 필터의 비교 대상
 """
 import numpy as np
 from sklearn.decomposition import PCA
-from sklearn.ensemble import IsolationForest, RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.neural_network import MLPRegressor
 from sklearn.preprocessing import StandardScaler
 
@@ -101,15 +103,13 @@ class ECODDetector:
 
 
 class IForestDetector:
-    """무작위로 자르는 나무 100그루에서 적은 횟수로 떨어져 나오는 점일수록 이상. 정상 데이터만으로 학습"""
+    """[더 이상 학습하지 않음] Isolation Forest 비교 모델 (2026-11-11 제외: 가상 시험에서 늘 가장 낮고 ECOD와 역할이 겹침)
+    예전에 학습한 모델 파일(model_bundle.joblib)에 이 객체가 들어 있어서, 그 파일을 열 수 있도록 이름만 남겨 둔다.
+    진단에는 원래부터 쓰지 않았으므로 예전 모델로 진단해도 결과는 같다."""
     name = "Isolation Forest"
 
-    def fit(self, Z):
-        self.m = IsolationForest(n_estimators=100, random_state=C.SEED).fit(Z)
-        return self
-
     def raw(self, Z):
-        return -self.m.score_samples(Z)                    # scikit-learn은 '정상다울수록 큰 값'을 주므로 부호를 뒤집음
+        return -self.m.score_samples(Z)                    # 예전 모델 파일 안의 학습된 Isolation Forest를 그대로 씀
 
 
 def z_scaler(Z, floor=0.1):
@@ -205,13 +205,13 @@ class CombinedDetector:
 
 
 # 교차검증 결과 표에 쓰는 모델 이름 (엔코더가 있을 때만 생기는 두 모델 포함)
-DETECTOR_NAMES = {"zscore": "기준선 (z-score)", "ecod": "ECOD", "iforest": "Isolation Forest", "pca": "PCA",
+DETECTOR_NAMES = {"zscore": "기준선 (z-score)", "ecod": "ECOD", "iforest": "Isolation Forest", "pca": "PCA",   # iforest: 예전 모델용
                   "ae": "오토인코더 (AI)", "wheel": WheelMaxDetector.name, "ae_wheel": CombinedDetector.name}
 
 
 def make_detectors():
-    """학습할 이상 감지 모델 5종. 진단은 'ae'(오토인코더)를 쓰고 나머지는 교차검증에서 비교용으로만 쓴다."""
-    return {"zscore": ZScoreDetector(), "ecod": ECODDetector(), "iforest": IForestDetector(), "pca": PCADetector(), "ae": AEDetector()}
+    """학습할 이상 감지 모델 4종 (z-score·ECOD·PCA·오토인코더). 진단은 오토인코더(+ 엔코더가 있으면 바퀴 이상 점수)를 쓰고 나머지는 교차검증 비교용."""
+    return {"zscore": ZScoreDetector(), "ecod": ECODDetector(), "pca": PCADetector(), "ae": AEDetector()}
 
 
 def calibrate(det, Z_normal, Z_fail):

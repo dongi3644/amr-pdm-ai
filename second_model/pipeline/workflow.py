@@ -255,7 +255,7 @@ def cross_validate(data, baseline=None, progress=print):
             except DataError as e:
                 skipped.append(f"{name}: {e}")
                 continue
-            # 창 단위: 이 겹의 모델로 평가 로봇의 z를 구해 모델 5종의 건강 점수를 모두 계산 (AUC 비교용)
+            # 창 단위: 이 겹의 모델로 평가 로봇의 z를 구해 모든 이상 감지 모델의 건강 점수를 계산 (AUC 비교용)
             rows = rows_of(recs, name)
             zrows, Z = pipe.unit_z(rows)
             label, assumed = data.label_of(name), False
@@ -265,7 +265,7 @@ def cross_validate(data, baseline=None, progress=print):
             if len(Z) and lab.any():
                 y = np.array([r["true_sev"] > 0 for r in zrows])[lab]       # 창마다 정답: 고장(True) / 정상(False)
                 win["y"].append(y)
-                for k, d in b["detectors"].items():       # 같은 창에 5개 모델의 건강 점수를 모두 매겨 비교
+                for k, d in b["detectors"].items():       # 같은 창에 모든 모델의 건강 점수를 매겨 비교
                     det_scores.setdefault(k, []).append(health(d, Z[lab]))
                 if b["cause"] is not None:                # 원인 분류: 고장 초반(정도 0.25 미만) 창은 학습 때처럼 뺌
                     keep = np.array([r["true_sev"] == 0 or r["true_sev"] >= C.CAUSE_MIN_SEVERITY for r in zrows]) & lab

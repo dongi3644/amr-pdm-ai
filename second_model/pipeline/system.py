@@ -4,7 +4,7 @@
 [흐름에서 위치] workflow.train이 특징 dict 목록을 넘김 → (여기) fit → bundle → infer.Predictor가 이 bundle로 진단
 
 [bundle에 들어 있는 것]
-    detectors  이상 감지 5종 (각자 건강 점수 눈금 r0·r995·rfail 포함)
+    detectors  이상 감지 모델들: z-score·ECOD·PCA·오토인코더 (+ 엔코더가 있으면 바퀴 이상·오토인코더+바퀴). 각자 건강 점수 눈금 r0·r995·rfail 포함)
     cause      원인 분류 (CauseClassifier, 고장 라벨이 없으면 None)
     baseline   'per_unit' 또는 'reference',  reference  공통 정상 기준 (reference일 때만)
     scale      9점 눈금을 무엇으로 맞췄나 ('band' 고장 정도 0.75~0.85 / 'all_fault' 고장 창 전체 / 'normal_only' 고장 없음)
@@ -101,7 +101,7 @@ class AMRPipeline:
             cut = int(len(Zfit) * 0.7)
             Zfit, Zcal = Zfit[:cut], Zfit[cut:]
 
-        # 2) 이상 감지 5종을 정상 z로 학습하고, 건강 점수 눈금을 맞춘다 (3점 = 정상 99.5%, 9점 = 고장 기준 창의 중앙값)
+        # 2) 이상 감지 모델들을 정상 z로 학습하고, 건강 점수 눈금을 맞춘다 (3점 = 정상 99.5%, 9점 = 고장 기준 창의 중앙값)
         sev = np.array([r["true_sev"] for r in frows], float)        # 고장 로봇 창마다 라벨의 고장 정도
         Zfail, scale = Zf[(sev >= C.FAIL_CAL_BAND[0]) & (sev <= C.FAIL_CAL_BAND[1])], "band"   # 고장 정도 0.75~0.85 창
         if not len(Zfail):                                 # 고장 정도가 없거나 그 구간에 창이 없으면 고장 창 전체로 맞춤
@@ -135,7 +135,7 @@ class AMRPipeline:
         return self
 
     def save(self, path=C.BUNDLE_PATH):
-        """bundle 전체(모델 5종 + 원인 모델 + 기준 + 설정)를 파일 하나로 저장"""
+        """bundle 전체(이상 감지 모델들 + 원인 모델 + 기준 + 설정)를 파일 하나로 저장"""
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         joblib.dump(self.bundle, path)
         return path
