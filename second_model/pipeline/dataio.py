@@ -180,6 +180,37 @@ def _to_counter(v, t, name, fname, data):
     return v
 
 
+def _yaw_from_encoders(aux, t, fname, data):
+    """좌우 엔코더 → Z축 각속도 gz [°/s] 배열 (각속도 열이 없을 때만 씀). 계산할 수 없으면 None
+    왼쪽 = enc_fl·enc_rl 중 살아 있는 것의 평균, 오른쪽 = enc_fr·enc_rr 평균. 속도는 앞뒤 YAW_SMOOTH_S초 사이 펄스 변화로 잼."""
+    L = [k for k in ("enc_fl", "enc_rl") if aux.get(k) is not None]
+    R = [k for k in ("enc_fr", "enc_rr") if aux.get(k) is not None]
+    if not L or not R:
+        return None
+    h = C.YAW_SMOOTH_S / 2
+
+    def speed(k):                                        # 누적 펄스 → 펄스/초 (샘플마다, 앞뒤 h초 사이 변화)
+        v = aux[k]
+        ok = ~np.isnan(v)
+        if ok.sum() < 2:
+            return None
+        return (np.interp(t + h, t[ok], v[ok]) - np.interp(t - h, t[ok], v[ok])) / (2 * h)
+
+    sl = [s for s in map(speed, L) if s is not None]
+    sr = [s for s in map(speed, R) if s is not None]
+    if not sl or not sr:
+        return None
+    vl, vr = np.mean(sl, axis=0), np.mean(sr, axis=0)
+    sign = C.ENCODER_RIGHT_SIGN
+    if sign == "auto":                                   # 부호가 맞으면 직진 때 좌우 속도가 같은 쪽 → |왼+오|가 |왼-오|보다 큼
+        sign = 1 if np.sum(np.abs(vl + vr)) >= np.sum(np.abs(vl - vr)) else -1
+        if sign == -1:
+            data.warn(f"{fname}: 오른쪽 엔코더가 왼쪽과 반대 부호로 보여(좌우 모터가 거울처럼 달림) 뒤집어서 각속도를 계산했습니다. "
+                      "틀리면 config.ENCODER_RIGHT_SIGN을 1로 정하세요.")
+    m_per_pulse = np.pi * C.WHEEL_DIAMETER_M / C.ENCODER_PPR       # 펄스 1개에 바퀴가 굴러가는 거리 [m]
+    return np.degrees((sign * vr - vl) * m_per_pulse / C.TRACK_WIDTH_M)
+
+
 def _spikes(x):
     """센서 읽기 오류로 보이는 '샘플 하나만 튀는 값'의 위치 (True = 뺄 샘플). 값을 고치지 않고 빼기만 한다.
     조건: 앞·뒤 샘플과 모두 같은 방향으로 크게(평소 샘플 간 변화의 SPIKE_K배 넘게) 다르고, 앞·뒤 샘플끼리는 서로 비슷함.
@@ -259,6 +290,8 @@ class Dataset:
         self.robots, self.warnings, self.fs = {}, [], {}
         self.enc_state = {}                                # 로봇 이름 → {엔코더: 상태 dict} (encoder_state가 만듦)
         self._last_enc = {}                                # 방금 읽은 파일의 엔코더 상태 (load가 로봇 이름에 붙임)
+        self.gyro = {}                                     # 로봇 이름 → 각속도 출처 ('측정' / 'gz만 엔코더로 계산')
+        self._last_gyro = "측정"
 
     def warn(self, text):
         """경고 문구를 모아 둔다. 같은 문구는 한 번만 (파일이 여러 개여도 같은 경고가 반복되지 않게)"""
@@ -284,7 +317,8 @@ class Dataset:
             n_enc = sum(has(k) == "있음" for k in C.ENCODER_CHANNELS)   # 살아 있어 쓰이는 엔코더 수
             n_rec = sum(1 for s in self.enc_state.get(name, {}).values() if s["state"] != "없음")   # 기록된 엔코더 수
             rows.append({"로봇": name, "기록(분)": round(C.minutes(recs[-1]["period"] + 1), 1) if recs else 0, "1초 창": len(recs),
-                         "진동 샘플링(Hz)": round(self.fs.get(name, 0), 1), "구간": len({r["segment"] for r in recs}),
+                         "진동 샘플링(Hz)": round(self.fs.get(name, 0), 1), "각속도": self.gyro.get(name, "측정"),
+                         "구간": len({r["segment"] for r in recs}),
                          "전류": has("current"), "전압": has("voltage"), "엔코더": (f"{n_enc}/4 동작" + (f" ({n_rec - n_enc}개 이상)" if n_rec > n_enc else "")) if n_rec else "없음",
                          "모터 명령": has("motor_cmd"), "라벨": kind})
         return pd.DataFrame(rows)
@@ -372,18 +406,22 @@ def _labels(col, names):
 def _windows(df, fname, data, fs_arg):
     """로봇 1대의 표 → 1초 창 목록 (판정 주기 번호 = 기록 시작부터 몇 번째 PERIOD_S초인가)
 
-    순서: ① MPU6050 6축 열 확인(하나라도 없으면 오류) ② time으로 샘플링 주파수 계산
-          ③ 선택 열(전류·전압·구간·문턱·라벨) 준비 ④ time을 1초 단위로 잘라 창마다 진동 파형과 전류·전압 평균을 담음
+    순서: ① MPU6050 열 확인(가속도 3축은 필수, 각속도는 없으면 ③에서 엔코더로) ② time으로 샘플링 주파수 계산
+          ③ 선택 열(전류·전압·구간·문턱·라벨) 준비, 각속도 열이 없으면 엔코더로 gz 계산 ④ time을 1초 단위로 잘라 창마다 진동 파형과 전류·전압 평균을 담음
           ⑤ 진동 샘플이 모자란 창은 버림"""
     df = _standardize(df, fname, data)                    # 스케치마다 다른 단위(µs, 원래 정수값, mV·mA)를 표준으로
-    # ① 진동: MPU6050의 6축(가속도 3 + 각속도 3)이 모두 있어야 한다. 빈 축을 다른 값으로 채우지 않는다
+    # ① 진동: 가속도 3축은 꼭 있어야 한다. 각속도(gx·gy·gz) 열이 없으면 아래 ③에서 엔코더로 gz만 계산한다 (config.GYRO_FROM_ENCODERS)
+    #    빈 축을 지어낸 값으로 채우지 않는다: 계산할 수 없는 축(gx·gy)은 그 기록에서 빠지고, 학습 때 모든 기록에 있는 축만 쓴다
     vib = {ch: _numeric(df, ch, data, fname) for ch in C.VIB_CHANNELS}
     missing = [ch for ch in C.VIB_CHANNELS if vib[ch] is None]
-    if missing:
+    gyro = [ch for ch in C.VIB_CHANNELS if ch.startswith("g")]
+    if [ch for ch in missing if ch not in gyro] or (missing and not C.GYRO_FROM_ENCODERS):
         raise DataError(f"{fname}: {', '.join(f'{ch}({C.CHANNEL_KO.get(ch, ch)})' for ch in missing)} 열이 없습니다. "
-                        f"MPU6050의 {', '.join(C.VIB_CHANNELS)} 열이 모두 필요합니다. 파일의 열: {list(df.columns)}")
+                        f"MPU6050의 {', '.join(C.VIB_CHANNELS)} 열이 필요합니다"
+                        + (" (각속도는 없으면 엔코더로 계산: config.GYRO_FROM_ENCODERS)" if C.GYRO_FROM_ENCODERS else "")
+                        + f". 파일의 열: {list(df.columns)}")
     n_spk = 0
-    for ch in C.VIB_CHANNELS:                             # 센서 읽기 오류로 보이는 '샘플 하나만 튀는 값'은 빈칸으로 (그 샘플만 빠짐)
+    for ch in [c for c in C.VIB_CHANNELS if vib[c] is not None]:   # 센서 읽기 오류로 보이는 '샘플 하나만 튀는 값'은 빈칸으로 (그 샘플만 빠짐)
         spk = _spikes(vib[ch])
         if spk.any():
             vib[ch] = vib[ch].copy()
@@ -436,6 +474,21 @@ def _windows(df, fname, data, fs_arg):
     for k, s in data._last_enc.items():
         if s["state"] in ("죽음", "움직임 없음"):
             aux[k] = None
+    # 각속도 열이 없으면 좌우 엔코더로 gz를 계산 (죽은 엔코더는 위에서 빠졌으므로 살아 있는 것만 씀)
+    data._last_gyro = "측정"
+    if missing:
+        yaw = _yaw_from_encoders(aux, t, fname, data) if "gz" in missing else None
+        if yaw is None and all(vib[ch] is None for ch in gyro):
+            raise DataError(f"{fname}: 각속도(gx·gy·gz) 열이 없고, 각속도를 계산할 엔코더도 부족합니다. "
+                            "왼쪽(enc1 또는 enc3)과 오른쪽(enc2 또는 enc4)에 살아 있는 엔코더가 하나씩 필요합니다.")
+        if yaw is not None:
+            vib["gz"] = yaw
+            data._last_gyro = "gz만 엔코더로 계산"
+        left = [ch for ch in C.VIB_CHANNELS if vib[ch] is None]
+        data.warn(f"{fname}: 각속도 열({', '.join(missing)})이 없어 "
+                  + ("좌우 엔코더로 gz(제자리·곡선 회전 속도)를 계산했습니다. " if yaw is not None else "")
+                  + (f"{', '.join(left)}는 엔코더로 알 수 없어 빼고 학습·진단합니다 (모든 기록에 있는 축만 모델에 들어감)." if left else ""))
+    chans = [ch for ch in C.VIB_CHANNELS if vib[ch] is not None]   # 이 기록에서 쓰는 진동 축
     # 엔코더 4개가 모두 있으면 바퀴 특징(features.enc_features)을 낼 수 있게 누적 펄스 표(샘플 × 바퀴 4)를 만든다
     enc = None
     if all(aux[k] is not None for k in C.ENCODER_CHANNELS):
@@ -458,7 +511,7 @@ def _windows(df, fname, data, fs_arg):
     bounds = np.flatnonzero(np.diff(idx)) + 1                     # 그 번호가 바뀌는 줄 = 다음 창이 시작하는 줄
     need, dropped, recs = C.MIN_WINDOW_FILL * fs * C.WINDOW_S, 0, []   # need: 창 하나에 있어야 할 최소 샘플 수 (1000 Hz면 800개)
     for a, b in zip(np.r_[0, bounds], np.r_[bounds, n]):          # a:b = 이번 1초 창에 속한 줄 범위
-        waves = {ch: vib[ch][a:b][~np.isnan(vib[ch][a:b])] for ch in C.VIB_CHANNELS}   # 축별 이 1초의 파형 (빈칸은 빼고)
+        waves = {ch: vib[ch][a:b][~np.isnan(vib[ch][a:b])] for ch in chans}   # 축별 이 1초의 파형 (빈칸은 빼고)
         if min(len(x) for x in waves.values()) < need:               # ⑤ 기록이 끊겨 샘플이 80% 미만이면 버림
             dropped += 1
             continue
@@ -466,7 +519,7 @@ def _windows(df, fname, data, fs_arg):
                    segment=seg[a] if seg is not None else C.DEFAULT_SEGMENT,
                    bump=bool(bump[a:b].any()) if bump is not None else False, vib_fs=fs, t=float(t[a]),
                    labeled=False, true_kind="normal", true_side="", true_sev=0.0)
-        for ch in C.VIB_CHANNELS:                                    # 축마다 진동 파형
+        for ch in chans:                                             # 축마다 진동 파형 (없는 축은 창에 넣지 않음)
             rec[ch] = waves[ch].astype(np.float32)
         for k, col in power.items():                                 # 전류·전압: 이 1초에 기록된 값들의 평균 (없으면 nan)
             v = col[a:b][~np.isnan(col[a:b])] if col is not None else ()
@@ -529,6 +582,8 @@ def load(path=C.DATA_DIR, fs=None):
                 r["t"] += shift                            # 시각이 앞 파일보다 뒤로 가지 않게
             have += recs
             data.fs[str(robot)] = rate
+            if data.gyro.get(str(robot)) != "gz만 엔코더로 계산":   # 같은 로봇의 파일 중 하나라도 계산했으면 계산으로 표시
+                data.gyro[str(robot)] = data._last_gyro
             if data._last_enc:                             # 이 파일의 엔코더 상태 (같은 로봇의 파일이 여럿이면 나쁜 쪽을 남김)
                 prev = data.enc_state.setdefault(str(robot), {})
                 rank = {"정상": 0, "움직임 없음": 1, "도중에 멈춤": 2, "죽음": 3, "없음": -1}

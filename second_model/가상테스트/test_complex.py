@@ -48,7 +48,10 @@ TEST_GENERAL = 100
 
 def add_robot(data, spec):
     """가상 로봇 1대의 표 → 1초 창으로 잘라 Dataset에 넣음 (dataio.load가 CSV 한 파일을 읽을 때와 같은 함수)"""
-    recs, fs = D._windows(S.make_table(spec), spec["name"], data, None)
+    table = S.make_table(spec)
+    if spec.get("no_gyro"):                                # 각속도 열 없이 기록한 경우 (gz는 dataio가 엔코더로 계산)
+        table = table.drop(columns=["gx", "gy", "gz"])
+    recs, fs = D._windows(table, spec["name"], data, None)
     data.robots[spec["name"]], data.fs[spec["name"]] = recs, fs
 
 
@@ -61,6 +64,8 @@ def main():
     p.add_argument("--out", default=str(PROJ / "가상테스트_결과"))
     p.add_argument("--model-out", default=None, help="학습한 모델을 저장할 곳 (기본: 저장 안 함. artifacts/에는 쓰지 않음)")
     p.add_argument("--encoders", action="store_true", help="모든 가상 로봇에 엔코더 4개·모터 명령을 넣음 (바퀴 특징까지 학습)")
+    p.add_argument("--no-gyro", dest="no_gyro", action="store_true",
+                   help="가상 로봇에서 각속도(gx·gy·gz) 열을 빼고 기록 (--encoders와 함께: gz를 엔코더로 계산하는 경우 시험)")
     p.add_argument("--glitches", action="store_true", help="모든 가상 로봇에 센서 읽기 오류(샘플 하나만 튀는 값, 1초에 0.2번꼴)를 넣음")
     p.add_argument("--set", action="append", default=[], metavar="이름=값",
                    help="config 값을 이번 실행에서만 바꿈 (예: --set PERIOD_QUANTILE=0.75 --set AE_ENSEMBLE=1)")
@@ -76,6 +81,7 @@ def main():
     for s in train_specs + test_specs:                    # 같은 로봇들에 엔코더·읽기 오류만 더함 (진동 신호는 그대로)
         s["encoders"] = a.encoders
         s["glitch"] = 0.2 if a.glitches else 0
+        s["no_gyro"] = a.no_gyro
     for kv in a.set:                                      # 설정 바꾸기 (숫자면 숫자로, 아니면 글자로)
         k, v = kv.split("=", 1)
         try:

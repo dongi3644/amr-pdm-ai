@@ -151,6 +151,11 @@ def diagnose(pipe, recs, detector=None):
     if any(f in ENC_FEATS for f in pipe.bundle.get("feats", [])) and not any("enc_cnt" in r for r in recs):
         raise DataError("이 모델은 엔코더 특징까지 학습했는데, 이 기록에는 엔코더 4개 열이 없습니다. "
                         "엔코더를 함께 기록하거나, config.ENCODER_FEATURES = False로 다시 학습하세요.")
+    need = {f.split("_")[0] for f in pipe.bundle.get("feats", []) if f.split("_")[0] in C.VIB_CHANNELS}
+    lack = sorted(ch for ch in need if ch not in recs[0])   # 모델이 쓰는 진동 축 중 이 기록에 없는 것 (예: 각속도 gx·gy)
+    if lack:
+        raise DataError(f"이 모델은 {', '.join(lack)} 축으로 학습했는데, 이 기록에는 그 축이 없습니다 (각속도 열 없이 기록). "
+                        "같은 방식(각속도 없이 엔코더)으로 기록한 데이터로 다시 학습하세요.")
     # mon: 진동 진단기, power: 전류·배터리 감시기, rows: 표의 줄(주기마다 1줄), truth: 주기별 파일 라벨
     mon, power, rows, truth = pipe.monitor(detector), PowerMonitor(), [], {}
     aux = {}                                              # 주기 번호 → {엔코더·모터 명령 열: 그 주기 창 값들} (표에 보여 주기만 함)

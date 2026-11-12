@@ -91,6 +91,9 @@ def extract(rec):
     진동 36개는 항상, 엔코더 11개는 값을 계산해 두되 실제로 모델에 넣을지는 학습 때 choose_feats가 정한다."""
     row = dict(period=rec["period"], segment=rec["segment"], bump=rec["bump"])
     for ch in CHANNELS:                                    # 축마다 6개 → ax_rms, ax_kurt, ..., gz_high (36개)
+        if ch not in rec:                                  # 이 기록에 없는 축(각속도 없이 엔코더로 gz만 계산한 경우의 gx·gy) → nan
+            row.update({f"{ch}_{k}": float("nan") for k in VIB_KEYS})
+            continue
         for k, v in vib_features(rec[ch], rec["vib_fs"]).items():
             row[f"{ch}_{k}"] = v
     row.update(enc_features(rec))                          # 바퀴 특징 11개 (엔코더가 없으면 nan)
@@ -113,12 +116,18 @@ def choose_feats(rows):
     (일부 로봇에만 엔코더가 있으면 넣지 않음: 진단할 로봇에 엔코더가 없으면 판정할 수 없게 되므로)"""
     mode = C.ENCODER_FEATURES
     has = lambda f: bool(rows) and np.mean([np.isfinite(r.get(f, np.nan)) for r in rows]) >= 0.9
+    # 진동 축: 모든 학습 창에 있는 축만 (각속도 없이 기록한 로봇이 하나라도 있으면 gx·gy는 모두 뺌 → 그 로봇 창이 통째로 빠지지 않게)
+    vib = [f for f in FEATS if rows and all(np.isfinite(r.get(f, np.nan)) for r in rows)]
+    if not vib:
+        raise ValueError("모든 학습 기록에 공통으로 있는 진동 축이 없습니다 (가속도 ax·ay·az 열을 확인하세요).")
+    gone = list(dict.fromkeys(f.split("_")[0] for f in FEATS if f not in vib))
+    vib_txt = f"진동 {len(vib)}개" + (f" ({', '.join(gone)} 없는 기록이 있어 뺌)" if gone else "")
     if mode is False:
-        return list(FEATS), "특징: 진동 36개 (엔코더 특징은 config.ENCODER_FEATURES = False로 끔)"
+        return vib, f"특징: {vib_txt} (엔코더 특징은 config.ENCODER_FEATURES = False로 끔)"
     if all(has(f) for f in ENC_BASE):
         extra = ENC_BASE + (["cmd_eff"] if has("cmd_eff") else [])
-        return list(FEATS) + extra, f"특징: 진동 36개 + 엔코더 {len(extra)}개 (바퀴 상대 속도·속도 흔들림·앞뒤 바퀴 차이" + \
+        return vib + extra, f"특징: {vib_txt} + 엔코더 {len(extra)}개 (바퀴 상대 속도·속도 흔들림·앞뒤 바퀴 차이" + \
             (", 모터 명령 대비 속도)" if "cmd_eff" in extra else ")")
     if mode is True:
         raise ValueError("config.ENCODER_FEATURES = True인데 학습 데이터의 엔코더 값이 부족합니다 (창의 90% 미만).")
-    return list(FEATS), "특징: 진동 36개 (엔코더 4개가 모든 학습 기록에 있지 않아 엔코더 특징은 넣지 않음)"
+    return vib, f"특징: {vib_txt} (엔코더 4개가 모든 학습 기록에 있지 않아 엔코더 특징은 넣지 않음)"
