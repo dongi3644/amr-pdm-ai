@@ -1,7 +1,7 @@
-// 팀 기록 스케치 (최종, 2026-11-15) — MPU6050 6축 + INA219 + 모터 실드 v2 + 엔코더 1개, 500 Hz
-// 예전 버전(가속도만 · 250000 baud)과 달라진 곳에 [수정] 표시. 출력 형식은 second_model의 Python 코드가 그대로 읽는다.
-//   한 줄: t_us,ax,ay,az,gx,gy,gz,mV,mA,spd,enc1   (센서 원래 정수값. Python이 ÷8192 → g, ÷65.5 → °/s로 바꿈)
-//   '#'로 시작하는 줄 = 상태 문구 (Python이 건너뜀)
+// 팀 기록 스케치 (최종, 2026-11-15) — MPU6050 6축 + INA219 + 모터 실드 v2 + 엔코더 4개, 500 Hz
+// 예전 버전(가속도만 · 250000 baud · 엔코더 1개)과 달라진 곳에 [수정] 표시. 출력은 second_model의 Python 코드가 그대로 읽는다.
+//   한 줄: t_us,ax,ay,az,gx,gy,gz,mV,mA,spd,enc1,enc2,enc3,enc4   (센서 원래 정수값. Python이 ÷8192 → g, ÷65.5 → °/s로 바꿈)
+//   enc1~4 = 바퀴 위치 순서(앞왼·앞오른·뒤왼·뒤오른)로 지난 2 ms 동안 센 펄스 수. '#'로 시작하는 줄 = 상태 문구 (Python이 건너뜀)
 #include <Wire.h>
 #include <Adafruit_INA219.h>
 #include <Adafruit_MotorShield.h>
@@ -11,35 +11,53 @@ Adafruit_DCMotor *mt[4];
 Adafruit_INA219 ina;
 bool shieldOk, inaOk;
 
-// [수정] 엔코더가 달린 바퀴의 열 이름 (Python: enc1 앞왼 · enc2 앞오른 · enc3 뒤왼 · enc4 뒤오른)
-// M1·M4가 오른쪽 바퀴이므로 M2는 왼쪽 바퀴. M2가 앞 왼쪽이면 "enc1", 뒤 왼쪽이면 "enc3"으로 바꿀 것
-#define ENC_COL "enc1"
+// ---- 엔코더 4개 ---- [수정] 1개(M2) → 4개 모두. 모터 실드·INA219·MPU6050은 I2C(A4·A5)만 쓰므로 아래 핀과 겹치지 않음
+//   모터 M1: A=D2, B=D4    M2: A=D3, B=D5 (기존 배선 그대로)    M3: A=D6, B=D7    M4: A=D8, B=D9
+//   D2~D7 = 핀 변화 인터럽트 PCINT2(포트 D), D8·D9 = PCINT0(포트 B)
+// [수정] 바퀴 위치 → 모터 번호. Python 열 순서: enc1 앞 왼쪽 · enc2 앞 오른쪽 · enc3 뒤 왼쪽 · enc4 뒤 오른쪽
+//   M1·M4가 오른쪽, M2·M3가 왼쪽 (setSpeed 참고). 앞뒤가 다르면 배선에 맞게 이 줄만 고칠 것
+//   (확인: 바퀴 하나만 손으로 돌리고 시리얼 모니터에서 어느 enc 칸의 숫자가 바뀌는지 봄)
+const uint8_t WHEEL_MOTOR[4] = {2, 1, 3, 4};   // {앞 왼쪽, 앞 오른쪽, 뒤 왼쪽, 뒤 오른쪽}의 모터 번호
 
-// ---- 엔코더 (M2: A=D3, B=D5) ----
-volatile long encCount = 0;
-volatile uint8_t encPrev = 0;
-const int8_t QTAB[16] = {0,-1,1,0, 1,0,0,-1, -1,0,0,1, 0,1,-1,0};
+volatile long encCount[4] = {0, 0, 0, 0};       // 모터 M1~M4 순서 (지난 encTakeAll 이후 센 펄스)
+volatile uint8_t encPrev[4] = {0, 0, 0, 0};     // 모터마다 직전 A·B 상태
+const int8_t QTAB[16] = {0,-1,1,0, 1,0,0,-1, -1,0,0,1, 0,1,-1,0};   // (직전 상태, 지금 상태) → +1 / -1 / 0
 
-ISR(PCINT2_vect) {
-  uint8_t s = (((PIND >> 3) & 1) << 1) | ((PIND >> 5) & 1);
-  encCount += QTAB[(encPrev << 2) | s];
-  encPrev = s;
+static inline void encStep(uint8_t m, uint8_t a, uint8_t b) {   // 모터 m의 A·B 상태로 펄스 한 칸 세기
+  uint8_t s = (a << 1) | b;
+  encCount[m] += QTAB[(encPrev[m] << 2) | s];
+  encPrev[m] = s;
+}
+
+ISR(PCINT2_vect) {                        // D2~D7 중 하나라도 바뀌면 (M1·M2·M3)
+  uint8_t d = PIND;
+  encStep(0, (d >> 2) & 1, (d >> 4) & 1);   // M1: D2, D4
+  encStep(1, (d >> 3) & 1, (d >> 5) & 1);   // M2: D3, D5
+  encStep(2, (d >> 6) & 1, (d >> 7) & 1);   // M3: D6, D7
+}
+
+ISR(PCINT0_vect) {                        // D8·D9가 바뀌면 (M4)
+  uint8_t p = PINB;
+  encStep(3, p & 1, (p >> 1) & 1);          // M4: D8, D9
 }
 
 void encSetup() {
-  pinMode(3, INPUT_PULLUP);
-  pinMode(5, INPUT_PULLUP);
-  encPrev = (((PIND >> 3) & 1) << 1) | ((PIND >> 5) & 1);
-  PCMSK2 |= (1 << PCINT19) | (1 << PCINT21);
-  PCICR  |= (1 << PCIE2);
+  const uint8_t pins[8] = {2, 4, 3, 5, 6, 7, 8, 9};
+  for (uint8_t i = 0; i < 8; i++) pinMode(pins[i], INPUT_PULLUP);
+  uint8_t d = PIND, p = PINB;
+  encPrev[0] = (((d >> 2) & 1) << 1) | ((d >> 4) & 1);
+  encPrev[1] = (((d >> 3) & 1) << 1) | ((d >> 5) & 1);
+  encPrev[2] = (((d >> 6) & 1) << 1) | ((d >> 7) & 1);
+  encPrev[3] = ((p & 1) << 1) | ((p >> 1) & 1);
+  PCMSK2 |= (1 << PCINT18) | (1 << PCINT19) | (1 << PCINT20) | (1 << PCINT21) | (1 << PCINT22) | (1 << PCINT23);
+  PCMSK0 |= (1 << PCINT0) | (1 << PCINT1);
+  PCICR  |= (1 << PCIE2) | (1 << PCIE0);
 }
 
-long encTake() {                          // 지난 샘플 이후 센 펄스 수 (2 ms마다 0으로 다시 셈)
+void encTakeAll(long out[4]) {            // 4개를 같은 순간에 읽고 0으로 (바퀴끼리 같은 2 ms를 비교하도록)
   noInterrupts();
-  long v = encCount;
-  encCount = 0;
+  for (uint8_t m = 0; m < 4; m++) { out[m] = encCount[m]; encCount[m] = 0; }
   interrupts();
-  return v;
 }
 
 // ---- 모터 ----
@@ -111,7 +129,7 @@ void setup() {
   if (inaOk) inaRead();                   // [수정] 첫 줄부터 전압·전류가 0이 아니게 미리 한 번 읽음
   Serial.println(shieldOk ? F("# shield ok") : F("# shield FAIL"));   // [수정] 상태 문구 앞에 '#'
   Serial.println(inaOk ? F("# ina ok") : F("# ina FAIL"));
-  Serial.println(F("t_us,ax,ay,az,gx,gy,gz,mV,mA,spd," ENC_COL));   // [수정] gx,gy,gz 추가 · 엔코더 열 이름을 바퀴 위치에 맞춤
+  Serial.println(F("t_us,ax,ay,az,gx,gy,gz,mV,mA,spd,enc1,enc2,enc3,enc4"));   // [수정] gx,gy,gz 추가 · 엔코더 4개 (바퀴 위치 순서)
 }
 
 void loop() {
@@ -138,6 +156,9 @@ void loop() {
   Serial.print(gz); Serial.print(',');
   Serial.print(mV); Serial.print(',');
   Serial.print(mA); Serial.print(',');
-  Serial.print(spd); Serial.print(',');
-  Serial.println(encTake());
+  Serial.print(spd);
+  long enc[4];
+  encTakeAll(enc);                        // [수정] 엔코더 4개를 바퀴 위치 순서(앞왼·앞오른·뒤왼·뒤오른)로
+  for (uint8_t w = 0; w < 4; w++) { Serial.print(','); Serial.print(enc[WHEEL_MOTOR[w] - 1]); }
+  Serial.println();
 }

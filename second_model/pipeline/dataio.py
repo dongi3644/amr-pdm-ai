@@ -161,7 +161,8 @@ def _encoder_kind(v):
     flips = float(np.mean(np.sign(nz[1:]) != np.sign(nz[:-1])))
     if flips < 0.3:
         return "counter"
-    small_int = np.all(np.abs(x - np.round(x)) < 1e-9) and np.nanmax(np.abs(x)) <= 255
+    # 작은 정수인가: 시리얼 줄이 깨져 몇 개만 튀는 값이 섞여도 판단이 바뀌지 않게, 최댓값 대신 99.9% 지점을 봄
+    small_int = np.all(np.abs(x - np.round(x)) < 1e-9) and np.percentile(np.abs(x), 99.9) <= 255
     return "increment" if small_int else "speed"
 
 
