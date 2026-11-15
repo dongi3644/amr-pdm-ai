@@ -152,7 +152,10 @@ def cmd_diagnose(a, hb=None):
             print(f"{name}: 건너뜀 ({e})")
             continue
         table.to_csv(out / f"{safe(name)}.csv", index=False, encoding="utf-8-sig")   # utf-8-sig: 엑셀에서 열어도 한글이 안 깨짐
-        report.fig_robot(table, name, "학습에 쓰인 로봇" if name in trained else "처음 보는 로봇", out / f"{safe(name)}.png", mon.calibrated)
+        try:                                                 # 그림 파일이 다른 프로그램에 잠겨 저장이 안 돼도 진단은 계속 (표·화면 결과는 그대로)
+            report.fig_robot(table, name, "학습에 쓰인 로봇" if name in trained else "처음 보는 로봇", out / f"{safe(name)}.png", mon.calibrated)
+        except OSError as e:
+            print(f"{name}: 그림 저장 실패 ({e}). 그 파일을 연 프로그램을 닫고 다시 실행하세요. 진단은 계속합니다.")
         score_at = dict(mon.period_scores)                 # 주기 번호 → 그 주기 건강 점수
         # 알림: 상태가 바뀐 시각마다 '15분 주의 (위험도 41%)'처럼
         events = [f"{at_min(p)} {stage(s, score_at.get(p))[0]} (위험도 {risk_pct(score_at.get(p)):.0f}%)" for p, s in mon.events] or ["없음"]
