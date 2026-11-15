@@ -6,6 +6,8 @@ CSV를 data 폴더에 넣고 아래 순서로 실행한다. 형식은 README.md
     python run.py check                 # 1) 파일 형식 검사          dataio.load → 표·경고 출력
     python run.py train                 # 2) 평가 + 최종 학습         workflow.cross_validate → workflow.train → reports/, artifacts/
     python run.py diagnose              # 3) 로봇별 진단 (분 단위)    저장된 모델 → workflow.diagnose → reports/diagnose/
+    python run.py live                  # 4) 실시간 알림 (아두이노 USB → 노트북 알림 창, 받은 데이터는 실시간_기록/에 저장)
+    python run.py live --demo           #    로봇 없이 시연 (가상 고장 로봇) · --replay 파일.csv 로 기록 재생
 
 공통 옵션
     --path 경로          파일 또는 폴더 (기본: data)
@@ -18,6 +20,8 @@ import argparse
 import json
 import re
 import sys
+import threading
+from pathlib import Path
 
 import config as C
 from pipeline import dataio as D, report, workflow as W
@@ -176,9 +180,55 @@ def cmd_diagnose(a, hb=None):
     print("저장 위치:", out)
 
 
+def cmd_live(a, hb=None):
+    """실시간 알림: 아두이노(USB)나 기록 파일을 1초씩 받아 저장된 모델로 판정하고, 노트북에 알림 창을 띄운다 (pipeline/live.py)
+    아두이노에서 받은 줄은 그대로 실시간_기록/에 저장되어, 나중에 data/에 넣고 train에 쓸 수 있다."""
+    from pipeline import live
+    if not C.BUNDLE_PATH.exists():
+        raise D.DataError("모델이 없습니다. 먼저 python run.py train 을 실행하세요.")
+    pipe = AMRPipeline.load()
+    C.PERIOD_S = pipe.bundle.get("period_s", C.PERIOD_S)    # 학습 때와 같은 판정 주기
+    labels = {k: v for k, v in (("robot", a.robot), ("fault_kind", a.kind), ("fault_wheel", a.wheel),
+                                ("fault_severity", a.severity)) if v not in (None, "")}
+    if a.demo:
+        lines, source, pace, save = live.demo_lines(), "시연용 가상 로봇", 1.0 / a.speed, a.save
+    elif a.replay:
+        lines, source, pace, save = live.file_lines(a.replay), f"재생: {Path(a.replay).name}", 1.0 / a.speed, a.save
+    else:
+        port = a.port
+        if not port:
+            port, ports = live.find_port()
+            if not port:
+                raise D.DataError("아두이노 포트를 찾지 못했습니다. --port COM9 처럼 정해 주세요. 보이는 포트: "
+                                  + (", ".join(ports) or "없음 (USB 선 확인)"))
+        save = None if a.no_save else (a.save or live.save_path(a.robot or "로봇"))
+        lines, source, pace = live.serial_lines(port, a.baud, threading.Event()), f"아두이노 {port}", None
+    print(f"실시간 알림 시작: {source} · 모델 {C.BUNDLE_PATH.name} (창을 닫으면 끝)" + (f" · 저장 {save}" if save else ""))
+    hb.set("실시간 알림 중")
+    s = live.run(lines, source, pipe, window=not a.no_window, pace=pace, save=save, labels=labels,
+                 max_seconds=a.minutes * 60 if a.minutes else None)
+    last = s["last"] or {}
+    print(f"끝: 판정한 1초 창 {s['states']}개 · 알림 {len(s['alerts'])}개 · 마지막 단계 {last.get('stage', '-')}"
+          + (f" · 저장 {save}" if save else ""))
+
+
 def main():
     p = argparse.ArgumentParser(description="AMR 고장예지 (실측 데이터 전용)")
-    sub = p.add_subparsers(dest="cmd", required=True)    # 첫 번째 단어가 명령 (check / train / diagnose)
+    sub = p.add_subparsers(dest="cmd", required=True)    # 첫 번째 단어가 명령 (check / train / diagnose / live)
+    lv = sub.add_parser("live", help="실시간 알림 (아두이노 USB · 기록 재생 · 시연)")
+    lv.add_argument("--port", help="아두이노 포트 (예: COM9). 없으면 자동으로 찾음")
+    lv.add_argument("--baud", type=int, default=500000, help="시리얼 속도 (팀 스케치 = 500000)")
+    lv.add_argument("--replay", help="기록 파일(.csv · .csv.gz)을 실시간처럼 재생")
+    lv.add_argument("--demo", action="store_true", help="로봇 없이 시연: 가상 고장 로봇을 실시간처럼 보냄 (성능 아님)")
+    lv.add_argument("--speed", type=float, default=10.0, help="재생·시연 속도 배수 (기본 10배: 1분 기록을 6초에)")
+    lv.add_argument("--save", help="받은 데이터를 저장할 파일 (아두이노 연결 때 기본: 실시간_기록/<로봇>_<날짜>.csv)")
+    lv.add_argument("--no-save", action="store_true", help="아두이노 데이터를 저장하지 않음")
+    lv.add_argument("--robot", help="저장 파일에 붙일 로봇 이름 (robot 열)")
+    lv.add_argument("--kind", help="저장 파일에 붙일 고장 라벨 (normal · unbalance · looseness · bearing)")
+    lv.add_argument("--wheel", help="고장 바퀴 (fl · fr · rl · rr)")
+    lv.add_argument("--severity", help="고장 정도 (0~1)")
+    lv.add_argument("--minutes", type=float, help="이 만큼(기록 시간, 분) 처리하면 멈춤")
+    lv.add_argument("--no-window", action="store_true", help="알림 창 없이 터미널에만 출력")
     for name in ("check", "train", "diagnose"):           # 세 명령이 공통으로 받는 옵션
         s = sub.add_parser(name)
         s.add_argument("--path", default=str(C.DATA_DIR))
@@ -193,7 +243,7 @@ def main():
         C.PERIOD_S = a.period_s                            # 이번 실행에서만 판정 주기를 바꿈
     try:
         # 지금 하는 작업을 시작할 때 한 번, 그 뒤 5분마다 화면에 알림 (config.HEARTBEAT_S)
-        start = {"check": "데이터 검사 중", "train": "데이터 읽는 중", "diagnose": "모델·데이터 읽는 중"}[a.cmd]
+        start = {"check": "데이터 검사 중", "train": "데이터 읽는 중", "diagnose": "모델·데이터 읽는 중", "live": "실시간 알림 준비 중"}[a.cmd]
         with Heartbeat(start) as hb:
             globals()[f"cmd_{a.cmd}"](a, hb)                # 명령 이름 그대로 cmd_check / cmd_train ... 함수를 부름
     except D.DataError as e:                               # 데이터 문제는 긴 오류 대신 고칠 방법만 보여 줌

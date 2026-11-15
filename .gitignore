@@ -45,3 +45,5 @@ second_model/외부데이터_시험/data*/
 
 # 팀 아두이노 기록 스케치: 이 컴퓨터에만 보관 (2026-11-15 요청)
 second_model/arduino/team_logger/
+# 실시간 알림이 저장한 아두이노 기록 (실측 데이터)
+second_model/실시간_기록/

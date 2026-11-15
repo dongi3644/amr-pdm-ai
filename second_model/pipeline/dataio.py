@@ -413,9 +413,18 @@ def read_table(path):
     if n_junk:
         skipped.append(f"데이터가 아닌 줄 {n_junk}개를 건너뛰었습니다 (예: {', '.join(repr(e) for e in ex)}). "
                        "센서 읽기 실패가 잦으면 배선·전원을 확인하세요.")
-    df.columns = [str(c).strip().lower() for c in df.columns]    # 열 이름의 앞뒤 공백 제거 + 소문자 (Time, TIME → time)
-    # 열 이름 끝의 단위 표기를 떼고 값을 표준 단위로: '시간(ms)' → 시간 × 0.001, '전류 [mA]' → 전류 × 0.001, 'gx(raw)' → gx
-    notes, strip = list(skipped), {}
+    df = normalize_columns(df)
+    df.attrs["notes"] = skipped + df.attrs["notes"]       # load()가 '확인할 점'으로 옮김
+    return df
+
+
+def normalize_columns(df):
+    """표의 열 이름을 표준 이름으로 (read_table과 실시간 알림 live.py가 함께 씀). 바꾼 내용은 df.attrs['notes']
+    - 앞뒤 공백 제거 + 소문자 (Time, TIME → time)
+    - 열 이름 끝의 단위 표기를 떼고 값을 표준 단위로: '시간(ms)' → 시간 × 0.001, '전류 [mA]' → 전류 × 0.001, 'gx(raw)' → gx
+    - 별칭 → 표준 이름 (config.COLUMN_ALIASES + CHANNEL_ALIASES, 예: enc1 → enc_fl, spd → motor_cmd)"""
+    df.columns = [str(c).strip().lower() for c in df.columns]
+    notes, strip = [], {}
     for c in df.columns:
         m = re.match(r"^(.+?)\s*[\(\[]\s*(.+?)\s*[\)\]]$", c)
         if not m:
@@ -467,7 +476,7 @@ def _labels(col, names):
     return col.fillna("").astype(str).str.strip().str.lower().map(lambda s: names.get(s, s)).to_numpy()
 
 
-def _windows(df, fname, data, fs_arg):
+def _windows(df, fname, data, fs_arg, enc_check=True):
     """로봇 1대의 표 → 1초 창 목록 (판정 주기 번호 = 기록 시작부터 몇 번째 PERIOD_S초인가)
 
     순서: ① MPU6050 열 확인(가속도 3축은 필수, 각속도는 없으면 ③에서 엔코더로) ② time으로 샘플링 주파수 계산
@@ -534,7 +543,8 @@ def _windows(df, fname, data, fs_arg):
         if aux[k] is not None:
             aux[k] = _to_counter(aux[k], t, k, fname, data)
     # 엔코더 상태: 죽은 엔코더는 없는 것으로 (값이 0인 바퀴를 '안 도는 바퀴'로 오해하지 않게)
-    data._last_enc = encoder_state(aux, t, fname, data) if any(aux[k] is not None for k in C.ENCODER_CHANNELS) else {}
+    # enc_check=False: 실시간 알림(live.py)처럼 1초씩 들어올 때는 '죽은 엔코더' 판단을 하지 않음 (기록 전체를 봐야 알 수 있으므로)
+    data._last_enc = encoder_state(aux, t, fname, data) if enc_check and any(aux[k] is not None for k in C.ENCODER_CHANNELS) else {}
     for k, s in data._last_enc.items():
         if s["state"] in ("죽음", "움직임 없음"):
             aux[k] = None

@@ -58,6 +58,39 @@
       }
     },
     {
+      "name": "5. 실시간 알림 (아두이노 USB 연결, 받은 데이터 저장)",
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/second_model/.venv/Scripts/python.exe",
+      "program": "${workspaceFolder}/second_model/run.py",
+      "args": [
+        "live"
+      ],
+      "cwd": "${workspaceFolder}/second_model",
+      "console": "integratedTerminal",
+      "env": {
+        "PYTHONUTF8": "1"
+      }
+    },
+    {
+      "name": "실시간 알림 시연 (가상 고장 로봇, 10배 빠르게)",
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/second_model/.venv/Scripts/python.exe",
+      "program": "${workspaceFolder}/second_model/run.py",
+      "args": [
+        "live",
+        "--demo",
+        "--speed",
+        "10"
+      ],
+      "cwd": "${workspaceFolder}/second_model",
+      "console": "integratedTerminal",
+      "env": {
+        "PYTHONUTF8": "1"
+      }
+    },
+    {
       "name": "가상 시험: 학습 약 10분 + 시험 약 10분 (코드 점검용)",
       "type": "debugpy",
       "request": "launch",
