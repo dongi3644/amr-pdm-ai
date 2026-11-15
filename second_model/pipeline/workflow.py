@@ -88,7 +88,8 @@ def train(data, units=None, baseline=None, tune=True):
                  f"{f'로봇마다 처음 {C.minutes(C.BASELINE_PERIODS):g}분' if baseline == 'per_unit' else '정상 로봇들의 공통 기준'}"
                  f" · 학습 로봇 {len(b['trained_units'])}대 · 정상 창 {n_use:,}개 · 고장 창 {sum(r['true_sev'] > 0 for r in fault):,}개")
     if b["scale"] == "normal_only":
-        notes.append("고장 데이터가 없어 건강 점수는 정상 범위만 기준으로 삼습니다. 정지 위험 판정과 남은 시간 예측은 하지 않습니다.")
+        notes.append("고장 데이터가 없어 건강 점수는 정상 범위만 기준으로 삼습니다 (3점 = 처음 보는 정상 기록의 "
+                     f"{C.NORMAL_ONLY_BLOCK}초 중앙값 최댓값 × {C.NORMAL_ONLY_MARGIN:g}). 정지 위험 판정과 남은 시간 예측은 하지 않습니다.")
     elif b["scale"] == "all_fault":
         notes.append(f"고장 정도 {C.FAIL_CAL_BAND[0]}~{C.FAIL_CAL_BAND[1]} 구간의 창이 없어 고장 창 전체의 중앙값을 9점으로 맞췄습니다.")
     ae = b["detectors"]["ae"]

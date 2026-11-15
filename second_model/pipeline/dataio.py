@@ -511,8 +511,19 @@ def _windows(df, fname, data, fs_arg, enc_check=True):
             raise DataError(f"{fname}: time 열에 빈칸이 있습니다.")
         t = _unwrap_counter(t) if np.nanmax(np.abs(t)) > 2 ** 31 else t   # time 열에 micros() 값을 그대로 적은 경우
         if (np.diff(t) < 0).any():
-            raise DataError(f"{fname}: time이 줄어드는 곳이 {int((np.diff(t) < 0).sum())}군데 있습니다. "
-                            "기록이 다시 시작됐다면 파일을 나눠 주세요.")
+            # 시리얼로 받다가 샘플 몇 개의 순서가 뒤바뀐 경우(시각이 앞 샘플보다 조금 이른 줄)는 그 샘플만 빼고 계속.
+            # 많으면(기록이 다시 시작된 경우 등) 파일을 나누라고 알림
+            keep = t >= np.maximum.accumulate(t)
+            n_bad = int((~keep).sum())
+            if n_bad <= max(5, 0.002 * len(t)):
+                df = df.loc[keep].reset_index(drop=True)
+                t = t[keep]
+                vib = {ch: (v[keep] if v is not None else None) for ch, v in vib.items()}
+                base, n = vib[C.VIB_CHANNELS[0]], len(df)
+                data.warn(f"{fname}: 시각 순서가 뒤바뀐 샘플 {n_bad}개를 뺐습니다 (시리얼 전송 중 순서 꼬임으로 보임).")
+            else:
+                raise DataError(f"{fname}: time이 줄어드는 곳이 {int((np.diff(t) < 0).sum())}군데 있습니다. "
+                                "기록이 다시 시작됐다면 파일을 나눠 주세요.")
         steps = np.diff(t[~np.isnan(base)])
         steps = steps[steps > 0]
         if not len(steps):
@@ -553,15 +564,18 @@ def _windows(df, fname, data, fs_arg, enc_check=True):
     if missing:
         yaw = _yaw_from_encoders(aux, t, fname, data) if "gz" in missing else None
         if yaw is None and all(vib[ch] is None for ch in gyro):
-            raise DataError(f"{fname}: 각속도(gx·gy·gz) 열이 없고, 각속도를 계산할 엔코더도 부족합니다. "
-                            "왼쪽(enc1 또는 enc3)과 오른쪽(enc2 또는 enc4)에 살아 있는 엔코더가 하나씩 필요합니다.")
-        if yaw is not None:
-            vib["gz"] = yaw
-            data._last_gyro = "gz만 엔코더로 계산"
-        left = [ch for ch in C.VIB_CHANNELS if vib[ch] is None]
-        data.warn(f"{fname}: 각속도 열({', '.join(missing)})이 없어 "
-                  + ("좌우 엔코더로 gz(제자리·곡선 회전 속도)를 계산했습니다. " if yaw is not None else "")
-                  + (f"{', '.join(left)}는 엔코더로 알 수 없어 빼고 학습·진단합니다 (모든 기록에 있는 축만 모델에 들어감)." if left else ""))
+            # 각속도도, gz를 계산할 좌우 엔코더도 없음 → 가속도 3축만으로 (가상 시험: 가속도만 = 6축과 로봇 단위 결과 같음)
+            data._last_gyro = "없음 (가속도만)"
+            data.warn(f"{fname}: 각속도 열(gx·gy·gz)이 없고, gz를 계산할 좌우 엔코더(왼쪽 enc1·enc3 중 하나 + 오른쪽 enc2·enc4 중 하나)도 없어 "
+                      "가속도 3축만으로 학습·진단합니다. 기록 스케치에 각속도를 넣으면 더 좋습니다.")
+        else:
+            if yaw is not None:
+                vib["gz"] = yaw
+                data._last_gyro = "gz만 엔코더로 계산"
+            left = [ch for ch in C.VIB_CHANNELS if vib[ch] is None]
+            data.warn(f"{fname}: 각속도 열({', '.join(missing)})이 없어 "
+                      + ("좌우 엔코더로 gz(제자리·곡선 회전 속도)를 계산했습니다. " if yaw is not None else "")
+                      + (f"{', '.join(left)}는 엔코더로 알 수 없어 빼고 학습·진단합니다 (모든 기록에 있는 축만 모델에 들어감)." if left else ""))
     chans = [ch for ch in C.VIB_CHANNELS if vib[ch] is not None]   # 이 기록에서 쓰는 진동 축
     # 엔코더 4개가 모두 있으면 바퀴 특징(features.enc_features)을 낼 수 있게 누적 펄스 표(샘플 × 바퀴 4)를 만든다
     enc = None
@@ -571,6 +585,15 @@ def _windows(df, fname, data, fs_arg, enc_check=True):
         data.warn(f"{fname}: current·voltage 열이 없어 전류·배터리 감시는 하지 않습니다 (진동만으로 진단).")
     # 구간이 없으면 전체를 한 구간으로 본다 (값을 만들어 넣는 게 아니라 구간 구분을 하지 않는 것)
     seg =df["segment"].fillna(C.DEFAULT_SEGMENT).astype(str).str.strip().to_numpy() if "segment" in df.columns else None
+    if seg is None and C.SEGMENT_FROM_MOTOR_CMD and aux.get("motor_cmd") is not None:
+        # segment 열이 없고 모터 명령이 몇 단계(속도 0~9 등)뿐이면 → 속도 단계마다 따로 정상 기준 (빠를수록 진동이 커서, 섞으면 둔해짐)
+        cmd = aux["motor_cmd"]
+        levels = np.unique(cmd[~np.isnan(cmd)])
+        if 0 < len(levels) <= 12 and np.all(levels == np.round(levels)):
+            filled = pd.Series(cmd).ffill().bfill().to_numpy()
+            seg = np.array([f"속도 {int(v)}" for v in filled], dtype=object)
+            data.warn("segment 열이 없어 모터 명령(속도 단계)마다 정상 기준을 따로 만듭니다 (config.SEGMENT_FROM_MOTOR_CMD). "
+                      "학습 때 없던 속도 단계는 전체 기준과 비교합니다.")
     if seg is None:                                        # 기록기는 SEGMENT를 비우면 이 열을 만들지 않으므로 흔한 경우 → 파일 이름 없이 한 번만 알림
         data.warn("segment 열이 없는 파일은 전체를 한 구간으로 보고 기준을 만듭니다. 장소별 노면 차이는 걸러지지 않습니다.")
     # 문턱: 1/true/yes 등이면 문턱을 넘는 순간 (판정에서 뺄 창)

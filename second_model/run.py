@@ -203,10 +203,11 @@ def cmd_live(a, hb=None):
                                   + (", ".join(ports) or "없음 (USB 선 확인)"))
         save = None if a.no_save else (a.save or live.save_path(a.robot or "로봇"))
         lines, source, pace = live.serial_lines(port, a.baud, threading.Event()), f"아두이노 {port}", None
-    print(f"실시간 알림 시작: {source} · 모델 {C.BUNDLE_PATH.name} (창을 닫으면 끝)" + (f" · 저장 {save}" if save else ""))
+    print(f"실시간 알림 시작: {source} · 모델 {C.BUNDLE_PATH.name}" + (f" · 저장 {save}" if save else ""))
     hb.set("실시간 알림 중")
-    s = live.run(lines, source, pipe, window=not a.no_window, pace=pace, save=save, labels=labels,
-                 max_seconds=a.minutes * 60 if a.minutes else None)
+    view = "console" if a.no_window else a.view
+    s = live.run(lines, source, pipe, view=view, pace=pace, save=save, labels=labels,
+                 max_seconds=a.minutes * 60 if a.minutes else None, port=a.web_port, open_browser=not a.no_browser)
     last = s["last"] or {}
     print(f"끝: 판정한 1초 창 {s['states']}개 · 알림 {len(s['alerts'])}개 · 마지막 단계 {last.get('stage', '-')}"
           + (f" · 저장 {save}" if save else ""))
@@ -228,7 +229,11 @@ def main():
     lv.add_argument("--wheel", help="고장 바퀴 (fl · fr · rl · rr)")
     lv.add_argument("--severity", help="고장 정도 (0~1)")
     lv.add_argument("--minutes", type=float, help="이 만큼(기록 시간, 분) 처리하면 멈춤")
-    lv.add_argument("--no-window", action="store_true", help="알림 창 없이 터미널에만 출력")
+    lv.add_argument("--view", choices=["html", "window", "console"], default="html",
+                    help="알림 화면: html 브라우저(기본) · window 프로그램 창 · console 터미널")
+    lv.add_argument("--no-window", action="store_true", help="화면 없이 터미널에만 출력 (= --view console)")
+    lv.add_argument("--web-port", type=int, default=8765, help="브라우저 화면 주소의 포트 (http://127.0.0.1:8765/)")
+    lv.add_argument("--no-browser", action="store_true", help="브라우저를 자동으로 열지 않음 (주소만 출력)")
     for name in ("check", "train", "diagnose"):           # 세 명령이 공통으로 받는 옵션
         s = sub.add_parser(name)
         s.add_argument("--path", default=str(C.DATA_DIR))

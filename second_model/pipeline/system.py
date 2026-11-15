@@ -56,16 +56,35 @@ def reference_z(rows, ref):
     return use, (ref.z(use) if use else np.empty((0, len(feats))))
 
 
-def split_units(names, cal_share=1 / 3):
+def split_units(names, cal_share=1 / 3, mode=None):
     """정상 로봇을 모델 학습용과 눈금 보정용으로 나눈다 (로봇 단위로 나눠야 눈금이 새 로봇에도 맞음)"""
     names = sorted(names)                                  # 이름순으로 정렬해 매번 같은 로봇이 같은 쪽에 가게 함
     if len(names) < 2:                                     # 1대뿐이면 나눌 수 없음 (fit에서 그 로봇의 뒤 30%를 보정에 씀)
         return names, []
-    if C.CAL_SPLIT == "interleave":                       # 이름순으로 세 대마다 한 대 (3·6·9번째 ...) → 여러 조건의 정상 기록이 고루 들어감
+    if (mode or C.CAL_SPLIT) == "interleave":                       # 이름순으로 세 대마다 한 대 (3·6·9번째 ...) → 여러 조건의 정상 기록이 고루 들어감
         cal = names[2::3] or [names[-1]]
     else:                                                  # 예전 방식: 뒤쪽 1/3(최소 1대)
         cal = names[-max(1, round(len(names) * cal_share)):]
     return [n for n in names if n not in cal], cal
+
+
+def normal_only_anchor(det, Zcal, robots):
+    """정상 데이터만으로 학습할 때 3점(주의) 눈금 다시 맞추기.
+    기본 눈금(1초 창 99.5%)은 보정 창이 적으면 사실상 '가장 튄 1초'가 되어(바닥 턱 등) 너무 높아진다.
+    그런데 판정은 1분 동안의 1초 점수 '중앙값'으로 하므로, 처음 보는 정상 로봇의 NORMAL_ONLY_BLOCK초 묶음 중앙값 중
+    가장 큰 값 × NORMAL_ONLY_MARGIN을 3점으로 삼는다 (11/15, 정상 데이터 40개: 1초 99.5% 4.22 → 10초 중앙값 최댓값 0.91)"""
+    raw = det.raw(Zcal)
+    by = {}
+    for r, v in zip(robots, raw):                          # 로봇마다 창 순서대로
+        by.setdefault(r, []).append(v)
+    meds = [float(np.median(v[i:i + C.NORMAL_ONLY_BLOCK])) for v in by.values()
+            for i in range(0, len(v), C.NORMAL_ONLY_BLOCK) if len(v[i:i + C.NORMAL_ONLY_BLOCK]) >= C.NORMAL_ONLY_BLOCK // 2]
+    if meds:
+        anchor = max(meds) * C.NORMAL_ONLY_MARGIN
+        if det.r0 < anchor < det.r995:                     # 더 낮아질 때만 (정상 가운데 값보다는 커야 함)
+            det.r995_window = det.r995                     # 예전 눈금은 기록으로 남김
+            det.r995 = anchor
+    return det
 
 
 class AMRPipeline:
@@ -84,22 +103,30 @@ class AMRPipeline:
         # 1) 정상 로봇을 나눔: 모델 학습용(fit) / 눈금 보정용(cal). 보정을 학습에 안 쓴 로봇으로 해야
         #    '처음 보는 정상 로봇의 99.5%가 3점 아래'라는 눈금이 실제로 성립한다
         units = sorted({r["robot"] for r in normal})
-        fit_units, cal_units = split_units(units)
+        # 공통 기준(reference)은 학습용 로봇만으로 만들므로, 보정용을 이름순 뒤쪽에서 떼면 그 조건(예: 파일 이름이 속도순이면 빠른 속도)이
+        # 기준에서 통째로 빠진다 → reference일 때는 세 대마다 한 대씩 고르게 뗌 (11/15, 정상 데이터 40개에서 속도 8·9가 빠졌던 문제)
+        fit_units, cal_units = split_units(units, mode="interleave" if baseline == "reference" else None)
         fit_rows = [r for r in normal if r["robot"] in fit_units]   # 모델 학습에 쓸 정상 창
         cal_rows = [r for r in normal if r["robot"] in cal_units]   # 눈금(3점 기준) 보정에 쓸 정상 창
         ref = None                                         # 공통 기준 (reference 방식일 때만 만듦)
         if baseline == "reference":
             ref = SegmentBaseline().fit(usable(fit_rows, feats), feats)          # 보정용 로봇은 기준에 넣지 않아야 '처음 보는 로봇' 눈금이 됨
+            if len(ref.stats) > 1:                         # 구간(속도 단계)별 기준이 있으면: 기준에 없는 구간의 보정 창은 눈금 보정에서 뺌
+                # (예: 속도 8 기록이 1개뿐이라 보정용으로 가면, 전체 기준과 비교돼 정상인데도 크게 벗어나 보여 3점 눈금을 부풀림)
+                seen = [r for r in cal_rows if r["segment"] in ref.stats]
+                if len(seen) >= 30:
+                    cal_rows = seen
             _, Zfit = reference_z(fit_rows, ref)
-            _, Zcal = reference_z(cal_rows, ref)
+            cal_used, Zcal = reference_z(cal_rows, ref)
             frows, Zf = reference_z(fault, ref)
         else:
             _, Zfit = per_unit_z(fit_rows, feats)
-            _, Zcal = per_unit_z(cal_rows, feats)
+            cal_used, Zcal = per_unit_z(cal_rows, feats)
             frows, Zf = per_unit_z(fault, feats)
         if not len(Zcal):                                  # 정상 로봇이 1대뿐이면 그 로봇의 뒤쪽 30%를 보정에 씀
             cut = int(len(Zfit) * 0.7)
             Zfit, Zcal = Zfit[:cut], Zfit[cut:]
+            cal_used = [dict(robot="보정")] * len(Zcal)
 
         # 2) 이상 감지 모델들을 정상 z로 학습하고, 건강 점수 눈금을 맞춘다 (3점 = 정상 99.5%, 9점 = 고장 기준 창의 중앙값)
         sev = np.array([r["true_sev"] for r in frows], float)        # 고장 로봇 창마다 라벨의 고장 정도
@@ -118,6 +145,9 @@ class AMRPipeline:
             dets["wheel"] = calibrate(WheelMaxDetector(feats).fit(Zfit), Zcal, Zfail)
             dets["ae_wheel"] = calibrate(CombinedDetector(dets["ae"], dets["wheel"]).fit(Zfit), Zcal, Zfail)
             main = "ae_wheel"
+        if scale == "normal_only":                         # 고장 데이터 없이 정상만으로 학습한 경우: 3점 눈금을 '몇 초 중앙값' 기준으로
+            for d in dets.values():
+                normal_only_anchor(d, Zcal, [r["robot"] for r in cal_used])
 
         # 3) 원인 분류: 고장 창(라벨 = 종류|바퀴) + 보정용 정상 창(라벨 = 정상)으로 랜덤포레스트 학습
         cause = None

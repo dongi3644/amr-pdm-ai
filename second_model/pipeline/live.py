@@ -361,9 +361,171 @@ class AlertWindow:
             self.big.configure(fg=self.color[1])
 
 
+# ---------------------------------------------------------------- 화면: 브라우저(HTML)
+def verdict(st):
+    """화면 맨 위 큰 글자: 정상 / 고장 / 고장 의심 / 배우는 중 / 오류 → (글자, 색 이름)
+    고장 = 2분 연속 규칙을 거친 단계가 주의 이상. 고장 의심 = 단계는 아직 정상이지만 지금 1초 위험도가 33% 이상 (확인 중)"""
+    if st.get("stage") == "오류":
+        return "오류", "오류"
+    if st.get("stage") == "배우는 중":
+        return "배우는 중", "배우는 중"
+    if st.get("stage") in ("주의", "경고", "정지 위험"):
+        return "고장", st["stage"]
+    if (st.get("risk_now") or 0) >= 100 * C.THRESH["caution"] / C.THRESH["danger"]:
+        return "고장 의심", "주의"
+    return "정상", "정상"
+
+
+class WebView:
+    """브라우저 알림 화면. 이 컴퓨터 안에서만 열리는 작은 웹 서버(127.0.0.1)가 페이지와 최신 상태(JSON)를 보내고,
+    페이지는 0.5초마다 상태를 받아 다시 그린다. 외부 인터넷·라이브러리를 쓰지 않음"""
+
+    def __init__(self, source, port, stop):
+        import json
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        self.lock = threading.Lock()
+        self.data = dict(source=source, state=None, verdict=["연결 중", "연결 중"], alerts=[], history=[], seq=0,
+                         colors={k: v[0] for k, v in COLORS.items()})
+        view = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *args):                 # 요청마다 터미널에 찍지 않음
+                pass
+
+            def _send(self, body, ctype):
+                self.send_response(200)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_GET(self):
+                if self.path.startswith("/state"):
+                    with view.lock:
+                        body = json.dumps(view.data, ensure_ascii=False, default=float).encode("utf-8")
+                    self._send(body, "application/json; charset=utf-8")
+                else:
+                    self._send(HTML_PAGE.encode("utf-8"), "text/html; charset=utf-8")
+
+            def do_POST(self):
+                if self.path.startswith("/stop"):         # 화면의 '끝내기' 버튼
+                    stop.set()
+                self._send(b"ok", "text/plain")
+
+        for p in range(port, port + 20):                   # 포트가 쓰이고 있으면 다음 번호
+            try:
+                self.server = ThreadingHTTPServer(("127.0.0.1", p), Handler)
+                break
+            except OSError:
+                continue
+        else:
+            raise OSError(f"알림 화면용 포트 {port}~{port + 19}가 모두 쓰이고 있습니다.")
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}/"
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def push_state(self, st):
+        clean = {k: (None if isinstance(v, float) and not np.isfinite(v) else v) for k, v in st.items()}
+        with self.lock:
+            self.data["state"] = clean
+            self.data["verdict"] = list(verdict(st))
+            if "elapsed" in st:
+                self.data["history"].append([round(st["elapsed"], 1), None if st.get("risk_now") is None else round(st["risk_now"], 1)])
+                self.data["history"] = self.data["history"][-1800:]   # 최근 30분
+            self.data["seq"] += 1
+
+    def push_alert(self, level, text):
+        with self.lock:
+            self.data["alerts"].insert(0, [datetime.now().strftime("%H:%M:%S"), int(level), text])
+            del self.data["alerts"][200:]
+            self.data["seq"] += 1
+
+    def close(self):
+        self.server.shutdown()
+
+
+HTML_PAGE = r"""<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AMR 실시간 고장 알림</title>
+<style>
+:root{--ink:#1c2630;--muted:#5b6876;--line:#d8dee4;--paper:#fff;--bg:#f3f5f7}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:"Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif}
+#band{padding:22px 24px 18px;color:#fff;transition:background .3s}
+#band .top{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+#verdict{font-size:56px;font-weight:800;letter-spacing:-.02em;line-height:1.1}
+#sub{font-size:18px;margin-top:6px;opacity:.95}
+#src{font-size:13px;opacity:.85}
+#band.flash{animation:flash .5s step-end 6}@keyframes flash{50%{filter:brightness(1.6)}}
+main{max-width:1000px;margin:0 auto;padding:18px 16px 28px;display:grid;gap:16px}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:16px 18px}
+h2{font-size:14px;margin:0 0 10px;color:var(--muted);font-weight:700}
+#bar{position:relative;height:26px;background:#e7ebef;border-radius:6px;overflow:hidden}
+#fill{height:100%;width:0;transition:width .3s,background .3s}
+.mark{position:absolute;top:0;bottom:0;border-left:2px dashed #7b8794}
+.scale{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:4px;font-variant-numeric:tabular-nums}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+dl{margin:0;display:grid;grid-template-columns:110px 1fr;gap:8px 12px;font-size:15px}dt{color:var(--muted);font-weight:700}dd{margin:0}
+svg{width:100%;height:180px;display:block}
+#alerts{list-style:none;margin:0;padding:0;max-height:320px;overflow:auto;font-size:14px}
+#alerts li{padding:7px 4px;border-bottom:1px solid var(--line);display:flex;gap:10px}
+#alerts .t{color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+#alerts .l1{color:#c25e00;font-weight:700}#alerts .l2{color:#b3261e;font-weight:700}
+button{font:inherit;padding:6px 14px;border-radius:8px;border:1px solid rgba(255,255,255,.7);background:rgba(255,255,255,.15);color:#fff;cursor:pointer}
+.note{font-size:12px;color:var(--muted);margin-top:8px}
+</style></head><body>
+<div id="band"><div class="top"><div><div id="verdict">연결 중</div><div id="sub">데이터를 기다리는 중</div></div>
+<div style="text-align:right"><div id="src"></div><div style="margin-top:8px"><button onclick="stopIt()">끝내기</button></div></div></div></div>
+<main>
+<section class="card"><h2>고장 위험도 (1초마다, 9점 = 100%)</h2>
+<div id="bar"><div id="fill"></div><div class="mark" style="left:33.3%"></div><div class="mark" style="left:66.7%"></div></div>
+<div class="scale"><span>0% 정상</span><span>33% 주의</span><span>67% 경고</span><span>100% 정지 위험</span></div></section>
+<div class="grid">
+<section class="card"><h2>지금</h2><dl>
+<dt>지금 상황</dt><dd id="situation">-</dd><dt>할 일</dt><dd id="todo">-</dd><dt>추정 원인</dt><dd id="cause">-</dd>
+<dt>정지 위험까지</dt><dd id="forecast">-</dd><dt>전압 · 전류</dt><dd id="power">-</dd><dt>기록 시간</dt><dd id="elapsed">-</dd></dl>
+<div class="note" id="note"></div></section>
+<section class="card"><h2>위험도 변화</h2><svg id="chart" viewBox="0 0 600 180" preserveAspectRatio="none"></svg></section>
+</div>
+<section class="card"><h2>알림 (최근이 위)</h2><ul id="alerts"></ul></section>
+</main>
+<script>
+let lastSeq=-1,lastVerdict="",colors={};
+const $=id=>document.getElementById(id);
+function stopIt(){fetch("/stop",{method:"POST"});$("sub").textContent="끝냈습니다. 이 탭을 닫아도 됩니다.";}
+function fmtTime(s){s=Math.floor(s||0);return Math.floor(s/60)+"분 "+String(s%60).padStart(2,"0")+"초";}
+function riskColor(p){return p<33.3?colors["정상"]:p<66.7?colors["주의"]:p<100?colors["경고"]:colors["정지 위험"];}
+function draw(h){const svg=$("chart");if(!h.length){svg.innerHTML="";return;}
+ const t0=h[0][0],t1=Math.max(h[h.length-1][0],t0+60),X=t=>(t-t0)/(t1-t0)*600,Y=v=>170-Math.min(v,100)/100*160;
+ let g=`<line x1="0" x2="600" y1="${Y(33.3)}" y2="${Y(33.3)}" stroke="#9aa5b1" stroke-dasharray="4 3"/>`+
+ `<line x1="0" x2="600" y1="${Y(66.7)}" y2="${Y(66.7)}" stroke="#9aa5b1" stroke-dasharray="4 3"/>`;
+ const pts=h.filter(p=>p[1]!==null).map(p=>X(p[0]).toFixed(1)+","+Y(p[1]).toFixed(1));
+ if(pts.length){g+=`<polyline fill="none" stroke="#1f6fd1" stroke-width="2" points="${pts.join(" ")}"/>`;
+  const last=h.filter(p=>p[1]!==null).slice(-1)[0];g+=`<circle cx="${X(last[0])}" cy="${Y(last[1])}" r="4" fill="${riskColor(last[1])}"/>`;}
+ svg.innerHTML=g;}
+async function tick(){try{const r=await fetch("/state",{cache:"no-store"});const d=await r.json();colors=d.colors;
+ if(d.seq===lastSeq)return;lastSeq=d.seq;$("src").textContent=d.source;
+ const [v,c]=d.verdict,st=d.state||{};$("band").style.background=colors[c]||"#37474f";$("verdict").textContent=v;
+ if(v!==lastVerdict&&(v==="고장"||v==="고장 의심")){const b=$("band");b.classList.remove("flash");void b.offsetWidth;b.classList.add("flash");}
+ lastVerdict=v;
+ if(st.stage==="오류"){$("sub").textContent="진행할 수 없음";$("situation").textContent=st.error||"";}
+ else if(st.stage==="배우는 중"){const [a,b]=st.learn||[0,300];$("sub").textContent=`이 로봇의 평소 상태를 배우는 중 ${fmtTime(a)} / ${fmtTime(b)}`;
+  $("situation").textContent="처음 5분은 판정하지 않고 평소 진동을 모읍니다. 주행·정지·회전을 섞어 주세요.";$("todo").textContent="계속 운행";}
+ else if(st.stage){const r=st.risk_now||0;$("sub").textContent=`${st.stage} 단계 · 고장 위험도 ${r.toFixed(0)}% (1분 판정 ${(st.risk_min||0).toFixed(0)}%)`;
+  $("fill").style.width=Math.min(r,100)+"%";$("fill").style.background=riskColor(r);$("situation").textContent=st.situation||"-";$("todo").textContent=st.todo||"-";}
+ $("cause").textContent=st.cause||"-";
+ $("forecast").textContent=st.stage==="정지 위험"?"이미 도달":(st.forecast?`약 ${st.forecast[1].toFixed(1)}분 (빠르면 ${st.forecast[0].toFixed(1)}분)`:"-");
+ const pw=[];if(st.voltage!=null)pw.push(st.voltage.toFixed(2)+" V");if(st.current!=null)pw.push(st.current.toFixed(2)+" A");$("power").textContent=pw.join(" · ")||"-";
+ $("elapsed").textContent=st.elapsed!=null?fmtTime(st.elapsed):"-";
+ $("note").textContent=st.calibrated===false?"정상 데이터만으로 학습한 모델: '평소와 다르다(고장)'는 확실하지만, 67%·100% 눈금과 원인·남은 시간은 고장 데이터가 있어야 나옵니다.":"";
+ draw(d.history);
+ $("alerts").innerHTML=d.alerts.map(a=>`<li class="l${a[1]}"><span class="t">${a[0]}</span><span>${a[2].replace(/[<&]/g,x=>x==="<"?"&lt;":"&amp;")}</span></li>`).join("");
+}catch(e){$("sub").textContent="프로그램과 연결이 끊겼습니다 (터미널을 확인하세요)";}}
+setInterval(tick,500);tick();
+</script></body></html>"""
+
+
 # ---------------------------------------------------------------- 실행
-def run(lines, source, pipe, window=True, pace=None, save=None, labels=None, stop=None, max_seconds=None):
-    """줄 공급기 lines → 판정 → 화면. pace: 1초 창마다 기다릴 시간[s] (재생 속도, None이면 기다리지 않음 = 실시간 입력)
+def run(lines, source, pipe, view="html", pace=None, save=None, labels=None, stop=None, max_seconds=None, port=8765, open_browser=True):
+    """줄 공급기 lines → 판정 → 화면(view: html 브라우저 · window tkinter 창 · console 터미널). pace: 1초 창마다 기다릴 시간[s] (재생 속도, None이면 기다리지 않음 = 실시간 입력)
     save: 받은 줄을 그대로 저장할 파일, labels: 저장할 때 데이터 줄 끝에 붙일 라벨 {열 이름: 값}
     max_seconds: 이 만큼(기록 시간) 처리하면 멈춤 (시험용)"""
     stop = stop or threading.Event()
@@ -454,7 +616,37 @@ def run(lines, source, pipe, window=True, pace=None, save=None, labels=None, sto
                 print(text, flush=True)
         return kind
 
-    if not window:
+    if view == "html":                                  # 브라우저 화면: 주 스레드는 큐를 비우며 화면 상태만 갱신
+        web = WebView(source, port, stop)
+        print(f"알림 화면: {web.url}  (브라우저가 안 열리면 이 주소를 직접 여세요. 끝내려면 화면의 '끝내기' 또는 Ctrl+C)", flush=True)
+        if open_browser:
+            import webbrowser
+            webbrowser.open(web.url)
+        try:
+            while not stop.is_set():
+                try:
+                    msg = q.get(timeout=0.2)
+                except queue.Empty:
+                    continue
+                kind = msg[0]
+                if kind == "state":
+                    summary["states"] += 1
+                    summary["last"] = msg[1]
+                    web.push_state(msg[1])
+                elif kind == "alert":
+                    summary["alerts"].append(msg[2])
+                    web.push_alert(msg[1], msg[2])
+                else:
+                    web.push_alert(2 if kind == "error" else 0, ("오류: " if kind == "error" else "") + msg[1])
+                    if kind in ("end", "error") and max_seconds:
+                        stop.set()
+        except KeyboardInterrupt:
+            pass
+        stop.set()
+        web.close()
+        return summary
+
+    if view == "console":
         while th.is_alive() or not q.empty():
             try:
                 if handle(q.get(timeout=0.2), None) in ("end", "error"):
