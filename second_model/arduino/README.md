@@ -13,7 +13,8 @@
 ## 팀 기록 스케치 (`team_logger/team_logger.ino`, 2026-11-15 최종본)
 
 예전 버전(가속도만·250000 baud·엔코더 1개)과 각속도 추가 버전을 비교해 아래를 모두 고친 최종본입니다 (`[수정]` 주석).
-Arduino Uno로 컴파일 확인: 오류·경고 없음, 저장 공간 19%·메모리 23% (Adafruit 라이브러리 대신 같은 함수 모양의 시험용 헤더로 컴파일. 실제 라이브러리는 메모리를 조금 더 씀).
+Arduino Uno로 실제 라이브러리(Adafruit INA219 1.2.3, Adafruit Motor Shield V2 Library 1.1.4)와 컴파일 확인: 오류·경고 없음, 저장 공간 35%·메모리 28%.
+라이브러리가 없으면 `Adafruit_INA219.h: No such file or directory` 오류 → IDE 라이브러리 관리자에서 위 두 개를 설치 (함께 필요한 라이브러리는 INSTALL ALL).
 출력 `t_us,ax,ay,az,gx,gy,gz,mV,mA,spd,enc1,enc2,enc3,enc4`(한 줄 최대 약 85바이트, 500000 baud면 2 ms에 100바이트까지)는 Python `check`로 읽히고 엔코더 4개 → 바퀴 특징이 켜지는 것까지 확인했습니다.
 
 ### 엔코더 4개 배선
