@@ -24,7 +24,10 @@ CSV 한 줄 = 샘플 하나 (아두이노가 한 번 읽은 값). 파일 하나 
     _windows()        로봇 1대의 표를 1초 창으로 자르는 핵심 부분
     choose_baseline() 정상 기준 방식(per_unit / reference) 자동 결정
 """
+import gzip
+import io
 import re
+import zipfile
 from pathlib import Path
 
 import numpy as np
@@ -337,21 +340,81 @@ def list_files(path=C.DATA_DIR):
     return files
 
 
+def _first_lines(path, enc, n=40):
+    """파일 앞부분 n줄 (압축 파일 .gz·.zip도). 머리줄 위치를 찾는 데만 씀"""
+    name = str(path).lower()
+    if name.endswith(".gz"):
+        f = gzip.open(path, "rt", encoding=enc, newline="")
+    elif name.endswith(".zip"):
+        z = zipfile.ZipFile(path)
+        f = io.TextIOWrapper(z.open(z.namelist()[0]), encoding=enc, newline="")
+    else:
+        f = open(path, encoding=enc, newline="")
+    with f:
+        return [line for _, line in zip(range(n), f)]
+
+
+def _known_names():
+    """머리줄을 알아보는 데 쓰는 열 이름들 (표준 이름 + 별칭 + 단위가 붙은 이름)"""
+    names = set(C.VIB_CHANNELS) | {"label", "t_us", "t_ms"}
+    for k, v in {**C.COLUMN_ALIASES, **C.CHANNEL_ALIASES}.items():
+        names |= {k, *v}
+    for cands in UNIT_COLUMNS.values():
+        names |= {c for c, _ in cands}
+    return names
+
+
+def _header_index(lines):
+    """머리줄이 몇 번째 줄인가. 기록 스케치가 머리줄 앞에 찍은 상태 문구('shield ok', 'ina ok' 등)를 건너뛰기 위함.
+    쉼표로 나눈 칸 중 아는 열 이름이 2개 이상인 첫 줄 = 머리줄. 찾지 못하면 0 (첫 줄을 머리줄로)"""
+    known = _known_names()
+    for i, line in enumerate(lines):
+        cells = [re.sub(r"\s*[\(\[].*$", "", c.strip().lower()) for c in line.split(",")]   # 'gx(raw)' → 'gx'
+        if len(cells) >= 2 and sum(c in known for c in cells) >= 2:
+            return i
+    return 0
+
+
+def _drop_junk_rows(df):
+    """표 중간에 섞인 '데이터가 아닌 줄'을 뺀다 → (표, 뺀 줄 수, 예시)
+    - 상태 문구: 첫 칸에만 글자가 있고 나머지 칸은 빈 줄 ('MPU FAIL', 'MPU ZERO' 등)
+    - '#'로 시작하는 줄 (스케치에서 상태 문구 앞에 #을 붙인 경우)
+    - 기록기를 다시 켜서 중간에 한 번 더 찍힌 머리줄"""
+    first = df.columns[0]
+    txt = df[first].astype(str).str.strip()
+    lone = df.drop(columns=first).isna().all(axis=1) & df[first].notna() & pd.to_numeric(df[first], errors="coerce").isna()
+    junk = lone | txt.str.startswith("#") | (txt.str.lower() == str(first).strip().lower())
+    if not junk.any():
+        return df, 0, []
+    examples = list(dict.fromkeys(txt[junk]))[:3]
+    return df[~junk].reset_index(drop=True), int(junk.sum()), examples
+
+
 def read_table(path):
-    """CSV 하나를 표로 읽고, 열 이름을 소문자로 바꾼 뒤 표준 이름(time, fl_vib ...)에 맞춘다 (config.COLUMN_ALIASES + 바퀴 별칭)."""
+    """CSV 하나를 표로 읽고, 열 이름을 소문자로 바꾼 뒤 표준 이름(time, fl_vib ...)에 맞춘다 (config.COLUMN_ALIASES + 바퀴 별칭).
+    기록 스케치가 시리얼로 함께 보낸 상태 문구는 건너뛰고 '확인할 점'에 알린다:
+      머리줄 앞의 줄('shield ok' 등) · 중간의 상태 문구('MPU FAIL' 등)·'#' 줄·반복 머리줄 · 칸 수가 머리줄보다 많은 깨진 줄"""
+    skipped = []                                           # 건너뛴 줄 안내 (아래 notes 앞에 붙임)
     for enc in ("utf-8-sig", "cp949"):                     # 엑셀에서 저장한 한글 CSV는 cp949일 수 있음
         try:
-            df = pd.read_csv(path, encoding=enc, low_memory=False)
+            k = _header_index(_first_lines(path, enc))      # 머리줄 앞 상태 문구 줄 수
+            df = pd.read_csv(path, encoding=enc, low_memory=False, skiprows=k, on_bad_lines="skip")
+            if k:
+                skipped.append(f"머리줄 앞의 {k}줄(기록 스케치의 상태 문구로 보임)을 건너뛰었습니다.")
             break
         except UnicodeDecodeError:
             continue
-        except (pd.errors.EmptyDataError, pd.errors.ParserError, ValueError, OSError) as e:
+        except (pd.errors.EmptyDataError, pd.errors.ParserError, ValueError, OSError, zipfile.BadZipFile) as e:
             raise DataError(f"{Path(path).name}: CSV로 읽지 못했습니다 ({e})") from e
     else:
         raise DataError(f"{Path(path).name}: 글자 인코딩을 알 수 없습니다. UTF-8로 저장해 주세요.")
+    df, n_junk, ex = _drop_junk_rows(df)
+    if n_junk:
+        skipped.append(f"데이터가 아닌 줄 {n_junk}개를 건너뛰었습니다 (예: {', '.join(repr(e) for e in ex)}). "
+                       "센서 읽기 실패가 잦으면 배선·전원을 확인하세요.")
     df.columns = [str(c).strip().lower() for c in df.columns]    # 열 이름의 앞뒤 공백 제거 + 소문자 (Time, TIME → time)
     # 열 이름 끝의 단위 표기를 떼고 값을 표준 단위로: '시간(ms)' → 시간 × 0.001, '전류 [mA]' → 전류 × 0.001, 'gx(raw)' → gx
-    notes, strip = [], {}
+    notes, strip = list(skipped), {}
     for c in df.columns:
         m = re.match(r"^(.+?)\s*[\(\[]\s*(.+?)\s*[\)\]]$", c)
         if not m:
