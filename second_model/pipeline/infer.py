@@ -31,6 +31,59 @@ ENC_KO = {**{f"{w}_rel": f"{C.WHEEL_KO[w]} 바퀴 상대 속도" for w in C.WHEE
           "left_diff": "왼쪽 앞뒤 바퀴 속도 차이", "right_diff": "오른쪽 앞뒤 바퀴 속도 차이", "cmd_eff": "모터 명령 대비 속도"}
 
 
+# ---- 어디가 문제인가: 평소와 가장 다른 특징 → 축·떨림 종류·의심 고장 (11/15) ----
+# 축 방향은 센서를 붙인 방향을 따른다 (X 화살표를 로봇 앞쪽으로 붙였다고 보고 쓴 설명)
+AXIS_WHERE = {"ax": "X축(앞뒤)", "ay": "Y축(좌우)", "az": "Z축(위아래)",
+              "gx": "X축 회전(앞뒤로 끄덕임)", "gy": "Y축 회전(좌우로 기울어짐)", "gz": "Z축 회전(좌우로 돎)"}
+KIND_WHERE = {   # 특징 종류 → (무엇이 달라졌나, 의심되는 고장)
+    "rms": ("전체 진동 크기", "진동이 전반적으로 커짐 (불평형·풀림·베어링 모두 가능 → 아래 다른 항목과 함께 보기)"),
+    "low": ("느린 흔들림(1~20 Hz)", "바퀴가 한 바퀴 돌 때마다 흔들림 → 바퀴 불평형(무게 쏠림)·체결부(나사) 풀림 의심"),
+    "mid": ("중간 떨림(20~150 Hz)", "모터·기어 회전에 맞춘 떨림 → 모터·기어 이상, 바퀴 축 휨 의심"),
+    "high": ("빠른 떨림(150 Hz 이상)", "빠르고 잔 떨림 → 베어링 손상·마찰 증가 의심"),
+    "kurt": ("뾰족한 충격", "짧은 '딱' 충격이 반복 → 나사 풀림 덜컹임·기어 이 손상·베어링 흠 의심 (바닥 턱도 확인)"),
+    "crest": ("순간 충격 크기", "순간적으로 큰 충격 → 덜컹임·걸림 의심 (바닥 턱도 확인)"),
+}
+
+
+def locate(feats, z_mean, top=3, min_z=2.0):
+    """어디가 평소와 가장 다른가 → [{feat, name, z, what, hint}, ...] (|z|가 min_z 이상인 것 중 큰 순서로 top개)
+    z_mean: 최근 창들의 특징별 평균 z (평소 대비 몇 배 벗어났나, 표준편차 단위). +면 평소보다 큼, -면 작음.
+    진동 센서 하나로는 '어느 바퀴'까지는 모른다 → 축·떨림 종류로 고장 종류를 짐작. 엔코더 4개가 있으면 바퀴 특징이 바퀴를 가리킴"""
+    z_mean = np.asarray(z_mean, float)
+    out = []
+    for i in np.argsort(-np.abs(z_mean)):
+        if len(out) >= top or abs(z_mean[i]) < min_z:
+            break
+        f, z = feats[i], float(z_mean[i])
+        up = "평소보다 큼" if z > 0 else "평소보다 작음"
+        if f in ENC_KO:                                   # 엔코더 바퀴 특징: 바퀴를 직접 가리킴
+            w = f.split("_")[0]
+            if f.endswith("_rel"):
+                hint = f"{C.WHEEL_KO[w]} 바퀴가 다른 바퀴보다 {'빠름' if z > 0 else '느림'} → 그 바퀴 " + ("헛돎·미끄러짐" if z > 0 else "마찰(베어링)·걸림") + " 의심"
+            elif f.endswith("_rip"):
+                hint = f"{C.WHEEL_KO[w]} 바퀴만 덜컹이며 돎 → 그 바퀴 체결부 풀림·불평형 의심"
+            elif f == "cmd_eff":
+                hint = "같은 명령에 덜 달림 → 전체 저항 증가(베어링·바닥·짐) 의심"
+            else:
+                hint = f"{'왼쪽' if f.startswith('left') else '오른쪽'} 앞뒤 바퀴 속도가 달라짐 → 그쪽 바퀴 하나의 마찰·풀림 의심"
+            out.append(dict(feat=f, name=ENC_KO[f], z=z, what=up, hint=hint))
+            continue
+        ch, key = f.split("_")
+        what, hint = KIND_WHERE.get(key, (FEAT_KO.get(key, key), ""))
+        if z < 0:                                          # 평소보다 작아진 것은 고장보다 센서·주행 조건 변화일 때가 많음
+            hint = "평소보다 작아짐 → 센서 고정이 느슨해졌거나 주행 조건(속도·짐)이 바뀌었는지 확인"
+        out.append(dict(feat=f, name=f"{AXIS_WHERE.get(ch, ch)} {what}", z=z, what=up, hint=hint))
+    return out
+
+
+def where_text(items):
+    """locate() 결과 → 알림에 붙일 한 줄 (가장 다른 곳 하나)"""
+    if not items:
+        return ""
+    a = items[0]
+    return f"{a['name']} {abs(a['z']):.1f}배 벗어남 → {a['hint']}"
+
+
 def feat_ko(f):
     """특징 이름 → 화면에 보일 한국어 이름 (SHAP 판단 근거, 그래프 축에 씀)
     ax_rms → 'X축 가속도 진동 크기(RMS)', gz_high → 'Z축 각속도 고주파 진동'"""
@@ -102,6 +155,7 @@ class Predictor:
         self.period_z, self.reason = [], []              # 이번 주기 창들의 z (SHAP용), 판단 근거 문구
         self.trend_start = 0                             # 남은 시간 예측에 쓸 점수의 시작 위치 (정비 후 정상 복귀하면 새로 시작)
         self.events = []                                 # (주기, 상태) 변경 이력
+        self.recent_z = deque(maxlen=30)                 # 최근 30개 창의 z (어디가 평소와 다른가 = where())
         self.last_cause_label = None
 
     def _finish_period(self, period):
@@ -187,6 +241,7 @@ class Predictor:
         self.ewma = h if self.ewma is None else (1 - a) * self.ewma + a * h
         self.period_buf.append(h)                         # 주기가 끝날 때 주기 점수(기본: 중앙값)를 낼 창 점수
         self.period_z.append(z[0])
+        self.recent_z.append(z[0])
         # 원인 확률은 점수가 주의 근처(2.4점)까지 올랐거나 이미 주의 이상일 때부터 쌓는다 (정상일 땐 원인을 묻지 않음)
         if self.use_cause and (self.ewma >= 0.8 * C.THRESH["caution"] or self.status >= 1):
             self.cause_buf.append(self.b["cause"].proba(z)[0])
@@ -200,6 +255,12 @@ class Predictor:
             out["cause"] = "원인 미확정" if top == NORMAL_LABEL else label_ko(top)
             out["cause_label"] = self.last_cause_label = top
         return out
+
+    def where(self, top=3, min_z=2.0):
+        """최근 30초 동안 평소와 가장 다른 곳 → locate() 결과 (아직 판정 전이면 [])"""
+        if not self.recent_z:
+            return []
+        return locate(self.feats, np.mean(self.recent_z, axis=0), top, min_z)
 
     def finish(self):
         """기록이 끝났을 때 마지막 주기를 마무리 (주기 번호가 더 바뀌지 않으므로 직접 불러 줘야 함)"""

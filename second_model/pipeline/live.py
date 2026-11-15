@@ -22,7 +22,7 @@ import pandas as pd
 import config as C
 from pipeline import dataio as D
 from pipeline.features import ENC_FEATS
-from pipeline.infer import risk_pct, stage
+from pipeline.infer import risk_pct, stage, where_text
 from pipeline.power import PowerMonitor
 
 # 시간 열 이름 → 초로 바꾸는 배수 (아두이노 micros()·millis()는 2^32에서 0으로 돌아감)
@@ -218,7 +218,9 @@ class LiveDiagnoser:
         score_at = dict(mon.period_scores)
         for p, s in mon.events[self.n_events:]:            # 상태가 바뀐 때 (2분 연속 규칙, 9점 이상이면 바로)
             name, situation, todo = stage(s, score_at.get(p))
-            alerts.append((min(s, 2), f"{C.minutes(p + 1):g}분: {name} (위험도 {risk_pct(score_at.get(p)) or 0:.0f}%) - {todo}"))
+            spot = where_text(mon.where()) if s >= 1 else ""   # 고장 쪽으로 바뀌면: 어디가 평소와 가장 다른가
+            alerts.append((min(s, 2), f"{C.minutes(p + 1):g}분: {name} (위험도 {risk_pct(score_at.get(p)) or 0:.0f}%) - {todo}"
+                           + (f" · 의심: {spot}" if spot else "")))
             self.prev_stage = name
         self.n_events = len(mon.events)
         if len(mon.period_scores) != self.n_periods:       # 1분 판정이 새로 끝났을 때: 경고 안에서 '정지 위험'(100%)으로 올라가면 알림
@@ -226,7 +228,9 @@ class LiveDiagnoser:
             p, sc = mon.period_scores[-1]
             name = stage(mon.status, sc)[0]
             if name == "정지 위험" and self.prev_stage != "정지 위험":
-                alerts.append((2, f"{C.minutes(p + 1):g}분: 정지 위험 (위험도 100%) - {C.RISK_TEXT['정지 위험'][1]}"))
+                spot = where_text(mon.where())
+                alerts.append((2, f"{C.minutes(p + 1):g}분: 정지 위험 (위험도 100%) - {C.RISK_TEXT['정지 위험'][1]}"
+                               + (f" · 의심: {spot}" if spot else "")))
             self.prev_stage = name
         for p, e in self.power.events[self.n_power:]:      # 전류 높음·배터리 낮음
             alerts.append((1, f"{C.minutes(p + 1):g}분: {e}"))
@@ -237,7 +241,8 @@ class LiveDiagnoser:
         state = dict(elapsed=elapsed, phase=out["phase"], stage=name, situation=situation, todo=todo,
                      risk_now=risk_pct(out.get("score")), risk_min=risk_pct(last), cause=mon.current_cause(),
                      forecast=None, voltage=rec.get("voltage"), current=rec.get("current"),
-                     top=[n for n, _ in out.get("top_feats", [])], calibrated=mon.calibrated)
+                     top=[n for n, _ in out.get("top_feats", [])], calibrated=mon.calibrated,
+                     where=[{k: (round(v, 1) if k == "z" else v) for k, v in w.items()} for w in mon.where()])   # 어디가 문제인가 (최근 30초)
         if out["phase"] == "learning":                     # 처음 5분: 이 로봇의 평소 상태를 배우는 중
             state.update(stage="배우는 중", learn=(elapsed, C.minutes(C.BASELINE_PERIODS) * 60))
         if mon.forecast:
@@ -276,7 +281,7 @@ class AlertWindow:
         body = tk.Frame(self.root)
         body.pack(fill="x", padx=16)
         self.lines = {}
-        for key, label in [("situation", "지금 상황"), ("todo", "할 일"), ("cause", "추정 원인"),
+        for key, label in [("situation", "지금 상황"), ("todo", "할 일"), ("cause", "어디가 문제인가"),
                            ("forecast", "정지 위험까지"), ("power", "전압 · 전류"), ("source", "데이터")]:
             row = tk.Frame(body)
             row.pack(fill="x", pady=2)
@@ -335,12 +340,12 @@ class AlertWindow:
             self.lines["todo"].configure(text="계속 운행")
         else:
             risk = st["risk_now"]
-            self.set_stage(st["stage"], f"고장 위험도 {risk or 0:.0f}% (1분 판정 {st['risk_min'] or 0:.0f}%)"
-                           + ("" if st["calibrated"] else " · 고장 데이터 없이 학습한 모델이라 67% 이상은 참고용"))
+            self.set_stage(st["stage"], f"고장 위험도 {risk or 0:.0f}%")
             self.draw_bar(risk)
             self.lines["situation"].configure(text=st["situation"])
             self.lines["todo"].configure(text=st["todo"])
-        self.lines["cause"].configure(text=st["cause"] or ("-" if not st.get("top") else f"(정상) 가장 많이 벗어난 특징: {', '.join(st['top'][:2])}"))
+        spots = st.get("where") or []
+        self.lines["cause"].configure(text=st["cause"] or (chr(10).join(f"{w['name']} {abs(w['z']):.1f}배 → {w['hint']}" for w in spots[:2]) or "-"))
         fc = st.get("forecast")
         self.lines["forecast"].configure(text="이미 도달" if st["stage"] == "정지 위험"
                                          else f"약 {fc[1]:.1f}분 (빠르면 {fc[0]:.1f}분)" if fc else "-")
@@ -471,11 +476,15 @@ svg{width:100%;height:180px;display:block}
 #alerts .l1{color:#c25e00;font-weight:700}#alerts .l2{color:#b3261e;font-weight:700}
 button{font:inherit;padding:6px 14px;border-radius:8px;border:1px solid rgba(255,255,255,.7);background:rgba(255,255,255,.15);color:#fff;cursor:pointer}
 .note{font-size:12px;color:var(--muted);margin-top:8px}
+.spot{padding:8px 0;border-bottom:1px solid var(--line)}.spot:last-child{border-bottom:0}
+.spot .row{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}.spot b{font-size:15px}.spot .z{font-variant-numeric:tabular-nums;color:var(--muted);font-size:13px;white-space:nowrap}
+.spot .zb{height:6px;background:#e7ebef;border-radius:3px;margin:6px 0}.spot .zb i{display:block;height:100%;border-radius:3px}
+.spot .h{font-size:14px}#whereCard.hot{border-color:#ef6c00;box-shadow:0 0 0 2px rgba(239,108,0,.25)}
 </style></head><body>
 <div id="band"><div class="top"><div><div id="verdict">연결 중</div><div id="sub">데이터를 기다리는 중</div></div>
 <div style="text-align:right"><div id="src"></div><div style="margin-top:8px"><button onclick="stopIt()">끝내기</button></div></div></div></div>
 <main>
-<section class="card"><h2>고장 위험도 (1초마다, 9점 = 100%)</h2>
+<section class="card"><h2>고장 위험도</h2>
 <div id="bar"><div id="fill"></div><div class="mark" style="left:33.3%"></div><div class="mark" style="left:66.7%"></div></div>
 <div class="scale"><span>0% 정상</span><span>33% 주의</span><span>67% 경고</span><span>100% 정지 위험</span></div></section>
 <div class="grid">
@@ -483,6 +492,8 @@ button{font:inherit;padding:6px 14px;border-radius:8px;border:1px solid rgba(255
 <dt>지금 상황</dt><dd id="situation">-</dd><dt>할 일</dt><dd id="todo">-</dd><dt>추정 원인</dt><dd id="cause">-</dd>
 <dt>정지 위험까지</dt><dd id="forecast">-</dd><dt>전압 · 전류</dt><dd id="power">-</dd><dt>기록 시간</dt><dd id="elapsed">-</dd></dl>
 <div class="note" id="note"></div></section>
+<section class="card" id="whereCard"><h2>어디가 문제인가 (최근 30초, 평소와 가장 다른 곳)</h2><div id="where">-</div>
+<div class="note">축 방향은 센서를 붙인 방향 기준입니다 (X 화살표 = 로봇 앞쪽). 진동 센서 하나로는 어느 바퀴인지까지는 모르고, 엔코더 4개나 고장 학습 데이터가 있으면 바퀴·원인까지 나옵니다.</div></section>
 <section class="card"><h2>위험도 변화</h2><svg id="chart" viewBox="0 0 600 180" preserveAspectRatio="none"></svg></section>
 </div>
 <section class="card"><h2>알림 (최근이 위)</h2><ul id="alerts"></ul></section>
@@ -509,13 +520,17 @@ async function tick(){try{const r=await fetch("/state",{cache:"no-store"});const
  if(st.stage==="오류"){$("sub").textContent="진행할 수 없음";$("situation").textContent=st.error||"";}
  else if(st.stage==="배우는 중"){const [a,b]=st.learn||[0,300];$("sub").textContent=`이 로봇의 평소 상태를 배우는 중 ${fmtTime(a)} / ${fmtTime(b)}`;
   $("situation").textContent="처음 5분은 판정하지 않고 평소 진동을 모읍니다. 주행·정지·회전을 섞어 주세요.";$("todo").textContent="계속 운행";}
- else if(st.stage){const r=st.risk_now||0;$("sub").textContent=`${st.stage} 단계 · 고장 위험도 ${r.toFixed(0)}% (1분 판정 ${(st.risk_min||0).toFixed(0)}%)`;
+ else if(st.stage){const r=st.risk_now||0;$("sub").textContent=`${st.stage} 단계 · 고장 위험도 ${r.toFixed(0)}%`;
   $("fill").style.width=Math.min(r,100)+"%";$("fill").style.background=riskColor(r);$("situation").textContent=st.situation||"-";$("todo").textContent=st.todo||"-";}
  $("cause").textContent=st.cause||"-";
  $("forecast").textContent=st.stage==="정지 위험"?"이미 도달":(st.forecast?`약 ${st.forecast[1].toFixed(1)}분 (빠르면 ${st.forecast[0].toFixed(1)}분)`:"-");
  const pw=[];if(st.voltage!=null)pw.push(st.voltage.toFixed(2)+" V");if(st.current!=null)pw.push(st.current.toFixed(2)+" A");$("power").textContent=pw.join(" · ")||"-";
  $("elapsed").textContent=st.elapsed!=null?fmtTime(st.elapsed):"-";
  $("note").textContent=st.calibrated===false?"정상 데이터만으로 학습한 모델: '평소와 다르다(고장)'는 확실하지만, 67%·100% 눈금과 원인·남은 시간은 고장 데이터가 있어야 나옵니다.":"";
+ const ws=st.where||[],hot=(v==="고장"||v==="고장 의심");$("whereCard").classList.toggle("hot",hot&&ws.length>0);
+ $("where").innerHTML=ws.length?ws.map(w=>{const a=Math.abs(w.z),c=a>=6?colors["정지 위험"]:a>=4?colors["경고"]:colors["주의"];
+  return `<div class="spot"><div class="row"><b>${w.name}</b><span class="z">${w.what} · ${a.toFixed(1)}배</span></div><div class="zb"><i style="width:${Math.min(a/10,1)*100}%;background:${c}"></i></div><div class="h">→ ${w.hint}</div></div>`;}).join("")
+  :`<div class="h" style="color:var(--muted)">평소와 크게 다른 곳 없음 (모든 특징이 평소 범위의 2배 안)</div>`;
  draw(d.history);
  $("alerts").innerHTML=d.alerts.map(a=>`<li class="l${a[1]}"><span class="t">${a[0]}</span><span>${a[2].replace(/[<&]/g,x=>x==="<"?"&lt;":"&amp;")}</span></li>`).join("");
 }catch(e){$("sub").textContent="프로그램과 연결이 끊겼습니다 (터미널을 확인하세요)";}}

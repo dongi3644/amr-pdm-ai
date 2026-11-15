@@ -28,7 +28,7 @@ from sklearn.metrics import confusion_matrix, roc_auc_score
 import config as C
 from pipeline.dataio import DataError, choose_baseline
 from pipeline.features import ENC_FEATS, choose_feats, extract
-from pipeline.infer import risk_pct, stage
+from pipeline.infer import risk_pct, stage, where_text
 from pipeline.models import NORMAL_LABEL, health, kalman_forecast, label_ko, trend_forecast
 from pipeline.power import PowerMonitor
 from pipeline.system import AMRPipeline
@@ -178,6 +178,7 @@ def diagnose(pipe, recs, detector=None):
                          "정지 위험까지(분)": round(C.minutes(fc["periods"]), 1) if fc else None,
                          "빠르면(분)": round(C.minutes(fc["periods_lo"]), 1) if fc else None,
                          "추정 원인": mon.current_cause(), "판단 근거": ", ".join(n for n, _ in mon.reason),
+                         "의심 부위": where_text(mon.where()) if mon.status >= 1 else "",   # 주의 이상일 때: 평소와 가장 다른 곳과 의심 고장
                          **power.columns(period),         # 전류·배터리 칸 (열이 없는 데이터면 아무것도 붙지 않음)
                          **aux_cols(period),              # 모터 명령·바퀴 속도 칸 (엔코더·모터 명령 열이 있을 때만)
                          "파일 라벨": truth.get(period, "")})
