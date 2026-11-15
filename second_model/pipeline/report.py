@@ -45,11 +45,15 @@ def fig_robot(table, title, note, path, calibrated=True):
                              gridspec_kw={"height_ratios": [2] + [1] * len(extra)})
     ax = axes[0, 0]
     lines = [("주의", C.THRESH["caution"]), ("경고", C.THRESH["warning"])] + ([("정지 위험", C.THRESH["danger"])] if calibrated else [])
-    for name, v in lines:                                  # 기준선(점선)과 이름표
+    pct = lambda v: v / C.THRESH["danger"] * 100           # 건강 점수 → 고장 위험도 % (9점 = 100%)
+    for name, v in lines:                                  # 기준선(점선)과 이름표 (점수와 위험도 %)
         ax.axhline(v, color=GRAY, lw=1, ls="--")
-        ax.text(table["경과(분)"].min(), v + 0.12, f"{name} {v:.0f}", color="#52514e", fontsize=9)
+        ax.text(table["경과(분)"].min(), v + 0.12, f"{name} {v:.0f}점 = {pct(v):.0f}%", color="#52514e", fontsize=9)
     ax.plot(table["경과(분)"], table["건강 점수"], color=BLUE, lw=2, marker="o", ms=3)   # 주기별 건강 점수
     ax.set(ylabel="진동 건강 점수", ylim=(0, max(C.THRESH["danger"] + 1.5, table["건강 점수"].max() * 1.05)))
+    sec = ax.secondary_yaxis("right", functions=(pct, lambda p: p * C.THRESH["danger"] / 100))   # 오른쪽 눈금: 위험도 %
+    sec.set_yticks([0, 33, 67, 100])                      # 위험도는 100%에서 멈추므로 단계 경계만 표시 (9점 위는 모두 100%)
+    sec.set_ylabel("고장 위험도 (%, 9점 이상 = 100%)")
     ax.set_title(f"{title} · {note}", loc="left", color=INK)
     for a, col in zip(axes[1:, 0], extra):                 # 전류 / 배터리 전압
         a.plot(table["경과(분)"], table[col], color=INK, lw=1.4, marker="o", ms=2)
@@ -105,7 +109,7 @@ def fig_units(m, path):
     for ax in list(axes.flat)[len(us):]:                   # 남는 빈칸은 숨김
         ax.axis("off")
     fig.supxlabel("경과 시간 (분)")
-    fig.supylabel("건강 점수 (점선 3 = 주의)")
+    fig.supylabel(f"건강 점수 (점선 3점 = 위험도 {C.THRESH['caution'] / C.THRESH['danger'] * 100:.0f}% = 주의)")
     fig.suptitle("평가 로봇별 건강 점수 (각 로봇은 자신이 빠진 모델로 진단) · 주황 = 고장 라벨, 파랑 = 정상", fontsize=11, color=INK)
     fig.tight_layout()
     fig.savefig(path, dpi=120)
@@ -173,7 +177,9 @@ def unit_rows(m):
                 f"{u['cause_pred']} ({'맞음' if u['cause_ok'] else '틀림' if u['cause_ok'] is False else '-'})"
         else:
             verdict, cause = ("오경보" if alarm else "맞음 (정상)"), "-"
-        rows.append({"로봇": u["robot"], "실제": u["label_ko"], "최고 점수": u["max_score"],
+        top = u["max_score"]
+        rows.append({"로봇": u["robot"], "실제": u["label_ko"],
+                     "최고 위험도": "-" if top is None else f"{min(100.0, top / C.THRESH['danger'] * 100):.0f}% ({top:.1f}점)",
                      "처음 주의": f"{C.minutes(u['caution'] + 1):g}분째" if alarm else "-",
                      "판정": verdict, "원인 예측": cause})
     return rows

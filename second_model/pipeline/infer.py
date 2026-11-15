@@ -40,6 +40,37 @@ def feat_ko(f):
     return f"{C.CHANNEL_KO.get(ch, ch)} {FEAT_KO.get(key, key)}"
 
 
+def risk_pct(score):
+    """건강 점수 → 고장 위험도 [%] (9점 = 100%, 100에서 멈춤). 점수가 없으면 None"""
+    if score is None or not np.isfinite(score):
+        return None
+    return float(min(100.0, max(0.0, score / C.THRESH["danger"] * 100)))
+
+
+def stage(status, score):
+    """상태 번호(0 정상 · 1 주의 · 2 경고)와 점수 → (단계 이름, 지금 상황, 할 일). 경고이면서 9점 이상이면 '정지 위험'
+    단계는 '2분 연속' 규칙을 거쳐 바뀌므로, 이번 1분 점수가 단계와 다르면 상황 칸에 '확인 중'이라고 알려 준다."""
+    name = "정지 위험" if status >= 2 and score is not None and score >= C.THRESH["danger"] else C.STATUS_KO[status]
+    situation, todo = C.RISK_TEXT[name]
+    if score is not None and np.isfinite(score):
+        now = level(score)                               # 이번 1분 점수만 보면 어느 단계인가
+        if now > status:
+            up = "정지 위험" if score >= C.THRESH["danger"] else C.STATUS_KO[now]
+            situation = f"이번 1분은 {up} 수준. 다음 1분도 이어지면 {C.STATUS_KO[now]}{'으로' if C.STATUS_KO[now] == '정상' else '로'} 올라감 (확인 중)"
+            todo = f"{todo}. 다음 1분 지켜보기"
+        elif now < status:
+            situation = f"{situation} (이번 1분은 낮아졌지만 {C.CONFIRM_PERIODS}분 연속이어야 단계가 내려감)"
+    return name, situation, todo
+
+
+def stage_ranges():
+    """화면 안내용: 단계마다 위험도 % 범위 문구 → [(이름, '0~33%'), ...]"""
+    p = lambda v: round(v / C.THRESH["danger"] * 100)
+    t = C.THRESH
+    return [("정상", f"0~{p(t['caution'])}% 미만"), ("주의", f"{p(t['caution'])}~{p(t['warning'])}% 미만"),
+            ("경고", f"{p(t['warning'])}~100% 미만"), ("정지 위험", "100% (경고 상태에서 9점 이상)")]
+
+
 def level(score):
     """건강 점수 → 상태 번호. 3점 미만 0(정상), 6점 미만 1(주의), 그 이상 2(경고)"""
     return 0 if score < C.THRESH["caution"] else 1 if score < C.THRESH["warning"] else 2

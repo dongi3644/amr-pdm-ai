@@ -22,6 +22,7 @@ import sys
 import config as C
 from pipeline import dataio as D, report, workflow as W
 from pipeline.heartbeat import Heartbeat
+from pipeline.infer import risk_pct, stage, stage_ranges
 from pipeline.system import AMRPipeline
 
 
@@ -133,6 +134,13 @@ def cmd_diagnose(a, hb=None):
     print(f"모델 설정: 판정 주기 {C.PERIOD_S:g}초 · 주기 점수 {quantile_ko(pipe.bundle.get('period_quantile', 0.5))}"
           f" · 상태 변경 {pipe.bundle.get('confirm_periods', 2)}번 연속")
     data = D.load(a.path, a.fs)
+    # 위험도 % 안내 (건강 점수 3·6·9점을 %로: 9점 = 100%)
+    print("고장 위험도 = 건강 점수 ÷ 9 × 100 (정지 위험 기준까지 얼마나 왔나). 단계:")
+    for name, rng in stage_ranges():
+        print(f"  {name:<5} {rng:<24} {C.RISK_TEXT[name][0]} → {C.RISK_TEXT[name][1]}")
+    if pipe.bundle.get("scale") == "normal_only":
+        print("  (고장 데이터 없이 학습한 모델: 33% 이상은 '평소와 다르다'는 뜻만 확실하고, 67%·100% 눈금은 참고용)")
+    print()
     out = C.REPORT_DIR / "diagnose"
     out.mkdir(parents=True, exist_ok=True)
     trained = pipe.bundle.get("trained_units", [])
@@ -145,10 +153,16 @@ def cmd_diagnose(a, hb=None):
             continue
         table.to_csv(out / f"{safe(name)}.csv", index=False, encoding="utf-8-sig")   # utf-8-sig: 엑셀에서 열어도 한글이 안 깨짐
         report.fig_robot(table, name, "학습에 쓰인 로봇" if name in trained else "처음 보는 로봇", out / f"{safe(name)}.png", mon.calibrated)
-        events = [f"{at_min(p)} {C.STATUS_KO[s]}" for p, s in mon.events] or ["없음"]   # 예: '15분 주의', '20분 경고'
+        score_at = dict(mon.period_scores)                 # 주기 번호 → 그 주기 건강 점수
+        # 알림: 상태가 바뀐 시각마다 '15분 주의 (위험도 41%)'처럼
+        events = [f"{at_min(p)} {stage(s, score_at.get(p))[0]} (위험도 {risk_pct(score_at.get(p)):.0f}%)" for p, s in mon.events] or ["없음"]
         causes = table.loc[table["추정 원인"] != "", "추정 원인"]   # 원인이 적힌 주기들 (마지막 것을 요약에 씀)
-        print(f"{name}: 최고 점수 {table['건강 점수'].max():.1f}, 최종 상태 {C.STATUS_KO[mon.status]}, 상태 변경 {', '.join(events)}"
-              + (f", 추정 원인 {causes.iloc[-1]}" if len(causes) else "") + (" (학습에 쓰인 로봇)" if name in trained else ""))
+        last = mon.period_scores[-1][1] if mon.period_scores else None
+        now, situation, todo = stage(mon.status, last)
+        print(f"{name}: 지금 {now} (위험도 {risk_pct(last) or 0:.0f}%) · 가장 높았던 위험도 {risk_pct(table['건강 점수'].max()) or 0:.0f}%"
+              f" · 알림 {', '.join(events)}" + (f" · 추정 원인 {causes.iloc[-1]}" if len(causes) else "")
+              + (" (학습에 쓰인 로봇)" if name in trained else ""))
+        print(f"    → {situation}. 할 일: {todo}")
         pw = mon.power                                     # 전류·배터리 감시 요약 (current·voltage 열이 있을 때만)
         if pw.has_data:
             vs = [p["voltage"] for p in pw.periods.values() if p["voltage"] is not None]

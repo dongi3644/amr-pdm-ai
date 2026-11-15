@@ -28,6 +28,7 @@ from sklearn.metrics import confusion_matrix, roc_auc_score
 import config as C
 from pipeline.dataio import DataError, choose_baseline
 from pipeline.features import ENC_FEATS, choose_feats, extract
+from pipeline.infer import risk_pct, stage
 from pipeline.models import NORMAL_LABEL, health, kalman_forecast, label_ko, trend_forecast
 from pipeline.power import PowerMonitor
 from pipeline.system import AMRPipeline
@@ -170,7 +171,9 @@ def diagnose(pipe, recs, detector=None):
         """새로 끝난 주기가 있으면 표에 한 줄씩 추가"""
         for period, score in mon.period_scores[len(rows):]:
             fc = mon.forecast
-            rows.append({"경과(분)": round(C.minutes(period + 1), 2), "건강 점수": round(score, 2), "상태": C.STATUS_KO[mon.status],
+            name, situation, todo = stage(mon.status, score)   # 단계(정상·주의·경고·정지 위험)와 상황·할 일
+            rows.append({"경과(분)": round(C.minutes(period + 1), 2), "건강 점수": round(score, 2),
+                         "고장 위험도(%)": round(risk_pct(score)), "상태": name, "지금 상황": situation, "할 일": todo,
                          "정지 위험까지(분)": round(C.minutes(fc["periods"]), 1) if fc else None,
                          "빠르면(분)": round(C.minutes(fc["periods_lo"]), 1) if fc else None,
                          "추정 원인": mon.current_cause(), "판단 근거": ", ".join(n for n, _ in mon.reason),
