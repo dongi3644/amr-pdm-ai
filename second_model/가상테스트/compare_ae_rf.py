@@ -2,6 +2,7 @@
 
     python 가상테스트/compare_ae_rf.py                # 학습 72대 · 시험 51대 (--scale 0.3, 약 25분)
     python 가상테스트/compare_ae_rf.py --scale 0.1    # 빠른 확인
+    python 가상테스트/compare_ae_rf.py --holdout bearing   # 마찰 증가(베어링) 고장을 학습에서 빼고 시험 (고장 데이터가 없는 고장)
 
 비교하는 4가지 (원인 분류는 넷 다 같은 랜덤포레스트, 다른 것은 '이상을 알아채는 점수'뿐)
     ① 오토인코더 + 바퀴 점수 + 랜덤포레스트   지금 구조 (엔코더가 있을 때 주 모델)
@@ -83,6 +84,7 @@ def main():
     p.add_argument("--seed", type=int, default=2027)
     p.add_argument("--scale", type=float, default=0.3)
     p.add_argument("--out", default=str(PROJ / "가상테스트_결과" / "AE_RF_비교"))
+    p.add_argument("--holdout", choices=["unbalance", "looseness", "bearing"], help="이 고장 종류를 학습 로봇에서 모두 뺌 (시험에는 그대로)")
     a = p.parse_args()
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -90,6 +92,8 @@ def main():
     log = lambda s: print(f"[{(time.time() - t0) / 60:5.1f}분] {s}", flush=True)
 
     train_specs, test_specs = T.make_specs(a.seed, a.scale)
+    if a.holdout:                                          # 그 고장이 (두 번째 고장으로라도) 들어간 학습 로봇은 모두 뺌
+        train_specs = [s for s in train_specs if not (s["fault"] and (s["kind"] == a.holdout or (s.get("second") or {}).get("kind") == a.holdout))]
     for s in train_specs + test_specs:
         s.update(encoders=True, glitch=0, no_gyro=False)
     data = D.Dataset()
@@ -117,6 +121,7 @@ def main():
             first = next((pp for pp, st in mon.events if st >= 1), None)
             lbl = mon.last_cause_label
             rows[k].append(dict(cat=s["cat"], group=s["group"], fault=bool(s["fault"]), alarm=first is not None,
+                                held=bool(s["fault"] and a.holdout and a.holdout in kinds),
                                 delay=(C.minutes(first + 1) - s["onset"]) if (first is not None and s["fault"]) else None,
                                 kind_ok=(lbl.split("|")[0] in kinds) if (s["fault"] and lbl and lbl != NORMAL_LABEL) else None))
         log(f"시험: {s['name']}")
@@ -129,12 +134,14 @@ def main():
         F = [x for x in r if x["fault"]]
         N = [x for x in r if not x["fault"]]
         U = [x for x in F if x["cat"] in UNSEEN]
+        H = [x for x in F if x["held"]]
         cz = [x for x in F if x["kind_ok"] is not None]
         sc = np.concatenate(win_s[k])
         res[k] = dict(name=name, robots=len(r),
                       accuracy=pc(sum(x["alarm"] for x in F) + sum(not x["alarm"] for x in N), len(r)),
                       detect=pc(sum(x["alarm"] for x in F), len(F)), false_alarm=pc(sum(x["alarm"] for x in N), len(N)),
                       unseen_detect=pc(sum(x["alarm"] for x in U), len(U)), unseen_n=len(U),
+                      held_detect=pc(sum(x["alarm"] for x in H), len(H)), held_n=len(H),
                       delay=round(float(np.mean([x["delay"] for x in F if x["delay"] is not None])), 1) if any(x["alarm"] for x in F) else None,
                       kind_ok=pc(sum(x["kind_ok"] for x in cz), len(cz)), cause_n=len(cz),
                       auc=round(float(roc_auc_score(y, sc)), 3),
@@ -146,7 +153,7 @@ def main():
     f = lambda v, u="%": "-" if v is None else f"{v:g}{u}"
     nF = sum(x["fault"] for x in rows["ae"])
     lines = ["# 오토인코더 + 랜덤포레스트 vs 랜덤포레스트만 (가상 로봇, 코드 점검용 · 성능 아님)", "",
-             f"- 실행: `가상테스트/compare_ae_rf.py --seed {a.seed} --scale {a.scale:g}` · 학습 {len(train_specs)}대 · 시험 {len(test_specs)}대 (고장 {nF} · 정상 {len(test_specs) - nF})",
+             f"- 실행: `가상테스트/compare_ae_rf.py --seed {a.seed} --scale {a.scale:g}" + (f" --holdout {a.holdout}" if a.holdout else "") + f"` · 학습 {len(train_specs)}대 · 시험 {len(test_specs)}대 (고장 {nF} · 정상 {len(test_specs) - nF})",
              "- 원인 분류는 모두 같은 랜덤포레스트, 다른 것은 이상을 알아채는 점수뿐. 가상 로봇에는 엔코더 4개가 항상 있음", "",
              "| 방법 | 판정 정답률 | 고장 감지율 | 오경보율 | 처음 보는 고장 감지 | 고장 → 경미까지 | 고장 종류 정확도 | AUC (1초) | 1초 감지율 / 오경보율 |",
              "|---|---|---|---|---|---|---|---|---|"]
@@ -154,6 +161,10 @@ def main():
         v = res[k]
         lines.append(f"| {v['name']} | **{f(v['accuracy'])}** | {f(v['detect'])} | {f(v['false_alarm'])} | {f(v['unseen_detect'])} ({v['unseen_n']}대) | "
                      f"{f(v['delay'], '분')} | {f(v['kind_ok'])} ({v['cause_n']}대) | {v['auc']} | {f(v['win_detect'])} / {f(v['win_false'])} |")
+    if a.holdout:
+        lines += ["", f"학습에서 뺀 고장: **{C.KIND_KO[a.holdout]}** (학습 로봇 {len(train_specs)}대에 이 고장 없음)", "",
+                  "| 방법 | 학습에 없던 고장 로봇 감지율 |", "|---|---|"]
+        lines += [f"| {res[k]['name']} | **{f(res[k]['held_detect'])}** ({res[k]['held_n']}대) |" for k, _ in SETUPS]
     lines += ["", "| 방법 | 일반 | 복잡한 고장 | 어려운 정상 |", "|---|---|---|---|"]
     lines += [f"| {res[k]['name']} | " + " | ".join(f(res[k]['groups'][g]['acc']) for g in ["일반", "복잡한 고장", "어려운 정상"]) + " |" for k, _ in SETUPS]
     (out / "README.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
