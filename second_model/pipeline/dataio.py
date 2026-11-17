@@ -16,6 +16,7 @@ CSV 한 줄 = 샘플 하나 (아두이노가 한 번 읽은 값). 파일 하나 
     vib_fs                                  진동 샘플링 [Hz] (time 열에서 계산, 없으면 --fs로 직접 알려 줘야 함)
     ax, ay, az, gx, gy, gz                  MPU6050 축마다 그 1초 동안의 파형 (배열). 목록은 config.VIB_CHANNELS
     current, voltage                        그 1초 동안 INA219 값의 평균 [A], [V]. 열이 없거나 그 1초에 값이 없으면 nan
+    current_drops                           그 1초 동안 전류가 잠깐 끊긴 횟수 (배선 감시, current 열이 있을 때만. current_drops() 참고)
     t                                       창 시작 시각 [s]
     labeled, true_kind, true_side, true_sev 파일의 라벨 (평가용, 모델 입력에는 쓰지 않음)
 
@@ -40,7 +41,7 @@ EXTENSIONS = (".csv", ".csv.gz", ".zip")   # 이 확장자만 데이터로 읽�
 # 영어·한국어 어느 쪽으로 적어도 같은 고장으로 알아듣게 한다 (한국어 이름은 config.KIND_KO를 거꾸로 뒤집어 만듦)
 KIND_NAMES = {"healthy": "normal", "ok": "normal", "none": "normal", "정상": "normal",
               "idle": "normal", "stop": "normal", "stopped": "normal", "정지": "normal", "대기": "normal",   # 멈춰 있는 정상 상태
-              **{v: k for k, v in C.KIND_KO.items()}}
+              **{v: k for k, v in C.KIND_KO.items()}, **C.KIND_ALIASES}
 # fault_wheel 라벨에 적힌 이름 → config.WHEELS의 바퀴 이름 (예: '앞 오른쪽', 'front-right', 'fr' → 'fr')
 WHEEL_NAMES = {name: w for w in C.WHEELS
                for name in [w, C.WHEEL_KO.get(w, w), C.WHEEL_KO.get(w, w).replace(" ", "")] + C.WHEEL_ALIASES.get(w, [])}
@@ -471,6 +472,30 @@ def _seconds(col, fname):
     raise DataError(f"{fname}: time 열을 시간으로 읽지 못했습니다. 초 단위 숫자나 날짜·시각 형식이어야 합니다.")
 
 
+def current_drops(t, cur):
+    """1초 동안 전류가 '잠깐' 끊긴 횟수 (배선·커넥터 접촉 불량 감시, power.py가 1분씩 더함). 전류 샘플이 10개 미만이면 nan
+    모터가 도는 중(중앙값 > WIRING_MIN_A)일 때만 센다. 중앙값의 WIRING_DROP_RATIO배 아래로 떨어졌다가
+    WIRING_MAX_DROP_S초 안에 다시 올라오면 1번. 끝까지 안 올라오는 것(멈춤·감속)이나 너무 오래 낮은 것은 세지 않는다."""
+    if len(cur) < 10:
+        return float("nan")
+    med = float(np.median(cur))
+    if med <= C.WIRING_MIN_A:
+        return 0.0
+    low = cur < C.WIRING_DROP_RATIO * med
+    n, i = 0, 0
+    while i < len(low):
+        if low[i] and i > 0:                               # 높다가 낮아진 곳 = 끊김 시작
+            j = i
+            while j < len(low) and low[j]:
+                j += 1
+            if j < len(low) and t[j] - t[i] <= C.WIRING_MAX_DROP_S:   # 짧게 낮았다가 다시 올라옴
+                n += 1
+            i = j
+        else:
+            i += 1
+    return float(n)
+
+
 def _labels(col, names):
     """라벨 열의 글자 → 표준 이름 배열 (빈칸은 '', 공백·대소문자 무시, names에 없는 글자는 그대로 둠)"""
     return col.fillna("").astype(str).str.strip().str.lower().map(lambda s: names.get(s, s)).to_numpy()
@@ -621,6 +646,10 @@ def _windows(df, fname, data, fs_arg, enc_check=True):
         for k, col in power.items():                                 # 전류·전압: 이 1초에 기록된 값들의 평균 (없으면 nan)
             v = col[a:b][~np.isnan(col[a:b])] if col is not None else ()
             rec[k] = float(np.mean(v)) if len(v) else float("nan")
+        cur = power.get("current")                                   # 배선 감시용: 이 1초 동안 전류가 '잠깐' 끊긴 횟수
+        if cur is not None:
+            ok = ~np.isnan(cur[a:b])
+            rec["current_drops"] = current_drops(t[a:b][ok], cur[a:b][ok])
         for k, col in aux.items():                                   # 바퀴 속도[펄스/초]·모터 명령 (없으면 nan)
             rec[k] = float("nan")
             if col is None:

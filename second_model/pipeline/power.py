@@ -13,12 +13,15 @@
                   → 모터가 평소보다 힘들게 돈다는 뜻 (마찰·걸림·베어링 손상·과적 등). 정상으로 돌아올 때도 2주기 연속
     배터리 낮음   한 주기 전압의 중앙값이 BATTERY_LOW_V(7.0 V) 아래 (모터가 돌 때 전압이 잠깐 떨어지는 것은 중앙값으로 걸러짐)
     평소 대비(배) 이번 주기 평균 전류 ÷ 처음 5분 평균 전류 (1.3이면 30% 더 먹음 = 배터리가 그만큼 빨리 닳음)
+    배선 접촉 불량 의심 (11/17) 모터가 도는 중 전류가 잠깐 끊겼다 돌아오는 일(dataio.current_drops)이 1분에 WIRING_DROPS_PER_MIN번
+                  이상인 주기가 2주기 연속. 처음 5분과 비교하지 않으므로 처음부터 본다. 정상으로 돌아올 때도 2주기 연속
 """
 import numpy as np
 
 import config as C
 
 STATE_KO = ["정상", "높음"]
+WIRING_KO = ["정상", "접촉 불량 의심"]
 
 
 class PowerMonitor:
@@ -35,6 +38,9 @@ class PowerMonitor:
         self.periods = {}                 # 주기 번호 → 그 주기 결과 dict (표에 들어갈 값)
         self.events = []                  # (주기, 문구) 상태 변경 이력. 예: (12, '전류 높음')
         self.has_current = self.has_voltage = False
+        self.wiring, self.wiring_pending = 0, (0, 0)   # 배선 상태 (0 정상, 1 접촉 불량 의심), (목표 상태, 연속 주기 수)
+        self.drops = []                   # 이번 주기 창들의 전류 끊김 횟수
+        self.has_drops = False
 
     # ---------------------------------------------------------------- 창마다
     def update(self, rec):
@@ -59,6 +65,10 @@ class PowerMonitor:
             self.base_mean = float(np.mean(every))
         lim = self.limit.get(seg, self.limit["__전체__"]) if self.limit else None
         self.buf.append((cur, volt, lim, rec["bump"]))
+        d = rec.get("current_drops", float("nan"))
+        if not np.isnan(d):
+            self.has_drops = True
+            self.drops.append(d)
 
     # ---------------------------------------------------------------- 주기마다
     def _finish_period(self, period):
@@ -91,8 +101,22 @@ class PowerMonitor:
             if low and not any(e == "배터리 낮음" for _, e in self.events):
                 self.events.append((period, "배터리 낮음"))
             out["battery"] = "낮음" if low else "정상"
+        if self.drops:                                     # 배선: 1분당 끊김 횟수 → 2주기 연속 규칙
+            rate = float(np.sum(self.drops)) / (len(self.drops) * C.WINDOW_S / 60)
+            out["drops_per_min"] = rate
+            lv = int(rate >= C.WIRING_DROPS_PER_MIN)
+            if lv != self.wiring:
+                tgt, cnt = self.wiring_pending
+                cnt = cnt + 1 if tgt == lv else 1
+                self.wiring_pending = (lv, cnt)
+                if cnt >= 2:
+                    self.wiring, self.wiring_pending = lv, (lv, 0)
+                    self.events.append((period, "배선 접촉 불량 의심 (전류 순간 끊김)" if lv else "배선 정상으로 돌아옴"))
+            else:
+                self.wiring_pending = (lv, 0)
+            out["wiring"] = WIRING_KO[self.wiring]
         self.periods[period] = out
-        self.buf = []
+        self.buf, self.drops = [], []
 
     def finish(self):
         """기록이 끝났을 때 마지막 주기를 마무리"""
@@ -114,4 +138,6 @@ class PowerMonitor:
                          "용량 대비 사용(%)": r(p["used_mah"] / C.BATTERY_CAPACITY_MAH * 100, 1) if p.get("used_mah") is not None else None})
         if self.has_voltage:
             cols.update({"배터리 전압(V)": r(p.get("voltage"), 2), "배터리 상태": p.get("battery") or ""})
+        if self.has_drops:
+            cols.update({"전류 순간 끊김(회/분)": r(p.get("drops_per_min"), 1), "배선 상태": p.get("wiring") or ""})
         return cols

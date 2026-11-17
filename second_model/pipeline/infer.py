@@ -9,9 +9,9 @@
   (per_unit 기준) 처음 BASELINE_PERIODS주기(기본 5분) → 구간별 정상 기준 학습 (이 로봇만의 '복도 지문')
   (reference 기준) 학습 때 만든 공통 기준을 바로 사용
   이후 창마다 → 진동 특징 → z-score → 오토인코더 건강 점수
-  판정 주기가 끝날 때마다 → 주기 점수(기본: 중앙값) → 상태(정상/주의/경고, 기본 2번 연속일 때만 변경)
+  판정 주기가 끝날 때마다 → 주기 점수(기본: 중앙값) → 상태(정상/경미/심각, 기본 2번 연속일 때만 변경)
                       (주기 점수의 지점·연속 횟수는 config.PERIOD_QUANTILE·CONFIRM_PERIODS. 학습 때 값이 모델에 저장됨)
-  주의 이상인 동안 → 랜덤포레스트로 원인 확률 누적, 주기마다 SHAP으로 판단 근거 갱신
+  경미 이상인 동안 → 랜덤포레스트로 원인 확률 누적, 주기마다 SHAP으로 판단 근거 갱신
 """
 from collections import deque
 
@@ -35,10 +35,10 @@ ENC_KO = {**{f"{w}_rel": f"{C.WHEEL_KO[w]} 바퀴 상대 속도" for w in C.WHEE
 AXIS_WHERE = {"ax": "X축(앞뒤)", "ay": "Y축(좌우)", "az": "Z축(위아래)",
               "gx": "X축 회전(앞뒤로 끄덕임)", "gy": "Y축 회전(좌우로 기울어짐)", "gz": "Z축 회전(좌우로 돎)"}
 KIND_WHERE = {   # 특징 종류 → (무엇이 달라졌나, 의심되는 고장)
-    "rms": ("전체 진동 크기", "진동이 전반적으로 커짐 (불평형·풀림·베어링 모두 가능 → 아래 다른 항목과 함께 보기)"),
-    "low": ("느린 흔들림(1~20 Hz)", "바퀴가 한 바퀴 돌 때마다 흔들림 → 바퀴 불평형(무게 쏠림)·체결부(나사) 풀림 의심"),
+    "rms": ("전체 진동 크기", "진동이 전반적으로 커짐 (불균형·풀림·마찰 증가 모두 가능 → 아래 다른 항목과 함께 보기)"),
+    "low": ("느린 흔들림(1~20 Hz)", "바퀴가 한 바퀴 돌 때마다 흔들림 → 바퀴 불균형·변형(무게 쏠림)·체결 풀림(나사) 의심"),
     "mid": ("중간 떨림(20~150 Hz)", "모터·기어 회전에 맞춘 떨림 → 모터·기어 이상, 바퀴 축 휨 의심"),
-    "high": ("빠른 떨림(150 Hz 이상)", "빠르고 잔 떨림 → 베어링 손상·마찰 증가 의심"),
+    "high": ("빠른 떨림(150 Hz 이상)", "빠르고 잔 떨림 → 마찰 증가 (베어링 손상·걸림) 의심"),
     "kurt": ("뾰족한 충격", "짧은 '딱' 충격이 반복 → 나사 풀림 덜컹임·기어 이 손상·베어링 흠 의심 (바닥 턱도 확인)"),
     "crest": ("순간 충격 크기", "순간적으로 큰 충격 → 덜컹임·걸림 의심 (바닥 턱도 확인)"),
 }
@@ -60,7 +60,7 @@ def locate(feats, z_mean, top=3, min_z=2.0):
             if f.endswith("_rel"):
                 hint = f"{C.WHEEL_KO[w]} 바퀴가 다른 바퀴보다 {'빠름' if z > 0 else '느림'} → 그 바퀴 " + ("헛돎·미끄러짐" if z > 0 else "마찰(베어링)·걸림") + " 의심"
             elif f.endswith("_rip"):
-                hint = f"{C.WHEEL_KO[w]} 바퀴만 덜컹이며 돎 → 그 바퀴 체결부 풀림·불평형 의심"
+                hint = f"{C.WHEEL_KO[w]} 바퀴만 덜컹이며 돎 → 그 바퀴 체결 풀림·불균형 의심"
             elif f == "cmd_eff":
                 hint = "같은 명령에 덜 달림 → 전체 저항 증가(베어링·바닥·짐) 의심"
             else:
@@ -99,16 +99,22 @@ def risk_pct(score):
     return float(min(100.0, max(0.0, score / C.THRESH["danger"] * 100)))
 
 
-def stage(status, score):
-    """상태 번호(0 정상 · 1 주의 · 2 경고)와 점수 → (단계 이름, 지금 상황, 할 일). 경고이면서 9점 이상이면 '정지 위험'
-    단계는 '2분 연속' 규칙을 거쳐 바뀌므로, 이번 1분 점수가 단계와 다르면 상황 칸에 '확인 중'이라고 알려 준다."""
-    name = "정지 위험" if status >= 2 and score is not None and score >= C.THRESH["danger"] else C.STATUS_KO[status]
+def stage(status, score, cause_label=None):
+    """상태 번호(0 정상 · 1 경미 · 2 심각)와 점수 → (단계 이름, 지금 상황, 할 일)
+    단계는 '2분 연속' 규칙을 거쳐 바뀌므로, 이번 1분 점수가 단계와 다르면 상황 칸에 '확인 중'이라고 알려 준다.
+    cause_label(원인 분류 결과, 예: 'looseness|fr')을 알면 할 일에 그 고장의 조치(config.FAULT_TODO)를 앞에 붙인다.
+    심각이면서 9점(위험도 100%) 이상이면 '학습한 고장 기준 도달 → 운행 멈춤'으로 바꾼다."""
+    name = C.STATUS_KO[status]
     situation, todo = C.RISK_TEXT[name]
+    if status >= 2 and score is not None and score >= C.THRESH["danger"]:
+        situation, todo = "위험도 100%: 학습한 고장 기준(고장 정도 0.8)에 도달", "운행을 멈추고 바로 점검"
+    kind = cause_label.split("|")[0] if status >= 1 and cause_label and cause_label != NORMAL_LABEL else None
+    if kind in C.FAULT_TODO:
+        todo = f"{C.FAULT_TODO[kind]} ({todo})"
     if score is not None and np.isfinite(score):
         now = level(score)                               # 이번 1분 점수만 보면 어느 단계인가
         if now > status:
-            up = "정지 위험" if score >= C.THRESH["danger"] else C.STATUS_KO[now]
-            situation = f"이번 1분은 {up} 수준. 다음 1분도 이어지면 {C.STATUS_KO[now]}{'으로' if C.STATUS_KO[now] == '정상' else '로'} 올라감 (확인 중)"
+            situation = f"이번 1분은 {C.STATUS_KO[now]} 수준. 다음 1분도 이어지면 {C.STATUS_KO[now]}로 올라감 (확인 중)"
             todo = f"{todo}. 다음 1분 지켜보기"
         elif now < status:
             situation = f"{situation} (이번 1분은 낮아졌지만 {C.CONFIRM_PERIODS}분 연속이어야 단계가 내려감)"
@@ -119,12 +125,27 @@ def stage_ranges():
     """화면 안내용: 단계마다 위험도 % 범위 문구 → [(이름, '0~33%'), ...]"""
     p = lambda v: round(v / C.THRESH["danger"] * 100)
     t = C.THRESH
-    return [("정상", f"0~{p(t['caution'])}% 미만"), ("주의", f"{p(t['caution'])}~{p(t['warning'])}% 미만"),
-            ("경고", f"{p(t['warning'])}~100% 미만"), ("정지 위험", "100% (경고 상태에서 9점 이상)")]
+    return [("정상", f"0~{p(t['caution'])}% 미만"), ("경미", f"{p(t['caution'])}~{p(t['warning'])}% 미만"),
+            ("심각", f"{p(t['warning'])}% 이상 (100% = 학습한 고장 기준)")]
+
+
+def suspect_part(cause_label, where_items, n_enc):
+    """의심 부위 → (바퀴 'fl'·'fr'·'rl'·'rr' 또는 None, 화면 문구)
+    ① 원인 분류가 바퀴까지 냈으면 그 바퀴 ② 평소와 가장 다른 특징이 엔코더 바퀴 특징이면 그 바퀴
+    ③ 바퀴를 모르면: 엔코더가 4개보다 적으면 '구동계 (바퀴 4개 중 특정 불가)' (진동 센서 하나로는 어느 바퀴인지 모름)"""
+    if cause_label and cause_label != NORMAL_LABEL:
+        side = cause_label.split("|")[1] if "|" in cause_label else ""
+        if side in C.WHEEL_KO:
+            return side, f"{C.WHEEL_KO[side]} 바퀴·모터"
+    for w in where_items or []:
+        side = w["feat"].split("_")[0]
+        if w["feat"] in ENC_KO and side in C.WHEEL_KO:
+            return side, f"{C.WHEEL_KO[side]} 바퀴·모터"
+    return None, "구동계 (바퀴 4개 중 특정 불가)" if n_enc < 4 else "구동계 (한 바퀴만 다르게 도는 곳 없음)"
 
 
 def level(score):
-    """건강 점수 → 상태 번호. 3점 미만 0(정상), 6점 미만 1(주의), 그 이상 2(경고)"""
+    """건강 점수 → 상태 번호. 3점 미만 0(정상), 6점 미만 1(경미), 그 이상 2(심각)"""
     return 0 if score < C.THRESH["caution"] else 1 if score < C.THRESH["warning"] else 2
 
 
@@ -133,7 +154,7 @@ class Predictor:
         # 건강 점수를 낼 모델: 지정하지 않으면 학습 때 정한 주 모델 (엔코더가 있으면 오토인코더 + 바퀴 이상, 없으면 오토인코더)
         self.b, self.det = bundle, bundle["detectors"][detector or bundle.get("main", "ae")]    # 건강 점수를 낼 모델 (기본: 오토인코더)
         self.use_cause = use_cause and bundle["cause"] is not None   # 고장 라벨 없이 학습하면 원인 모델이 없음
-        self.calibrated = bundle["scale"] != "normal_only"           # 고장 데이터가 없으면 9점(정지 위험) 눈금이 없음
+        self.calibrated = bundle["scale"] != "normal_only"           # 고장 데이터가 없으면 9점(위험도 100%) 눈금이 없음
         # 주기 점수의 지점·상태 변경 연속 횟수: 학습 때 모델에 저장한 값 (이 값이 없는 예전 모델은 예전 방식 0.5·2번)
         self.quantile = float(bundle.get("period_quantile", 0.5))
         self.confirm = int(bundle.get("confirm_periods", 2))
@@ -190,8 +211,14 @@ class Predictor:
         cls = self.b["cause"].classes
         return cls[int(np.argmax(p))], p
 
+    def current_cause_label(self):
+        """지금 상태로 본 추정 원인 라벨 (예: 'looseness|fr'). 경미 이상이고 원인 확률이 쌓였을 때만, 아니면 None"""
+        if not (self.use_cause and self.status >= 1 and self.cause_buf):
+            return None
+        return self._top_cause()[0]
+
     def current_cause(self):
-        """지금 상태로 본 추정 원인 문구 (주의 이상이고 원인 확률이 쌓였을 때만, 아니면 '')
+        """지금 상태로 본 추정 원인 문구 (경미 이상이고 원인 확률이 쌓였을 때만, 아니면 '')
         주기 표는 주기가 끝난 직후(상태가 막 바뀐 직후)에 쓰므로, 마지막 창의 결과가 아니라 이 값을 써야 원인 칸이 한 주기 늦지 않다."""
         if not (self.use_cause and self.status >= 1 and self.cause_buf):
             return ""
@@ -231,19 +258,19 @@ class Predictor:
             return out
 
         z = self.baseline.z([row])                          # 특징마다 평소 대비 몇 배 벗어났나
-        h = float(health(self.det, z)[0])                   # 오토인코더 복원 오차 → 건강 점수 (3 주의 · 6 경고 · 9 정지 위험)
+        h = float(health(self.det, z)[0])                   # 오토인코더 복원 오차 → 건강 점수 (3 경미 · 6 심각 · 9 = 위험도 100%)
         a = 2 / (C.EWMA_SPAN + 1)                           # 화면 표시용 지수 이동 평균 (최근 약 20개 창)
         self.ewma = h if self.ewma is None else (1 - a) * self.ewma + a * h
         self.period_buf.append(h)                         # 주기가 끝날 때 주기 점수(기본: 중앙값)를 낼 창 점수
         self.period_z.append(z[0])
         self.recent_z.append(z[0])
-        # 원인 확률은 점수가 주의 근처(2.4점)까지 올랐거나 이미 주의 이상일 때부터 쌓는다 (정상일 땐 원인을 묻지 않음)
+        # 원인 확률은 점수가 경미 근처(2.4점)까지 올랐거나 이미 경미 이상일 때부터 쌓는다 (정상일 땐 원인을 묻지 않음)
         if self.use_cause and (self.ewma >= 0.8 * C.THRESH["caution"] or self.status >= 1):
             self.cause_buf.append(self.b["cause"].proba(z)[0])
         out.update(score=self.ewma, window_score=h, z=z[0])
         order = np.argsort(-np.abs(z[0]))[:3]             # 평소에서 가장 많이 벗어난 특징 3개
         out["top_feats"] = [(feat_ko(self.feats[i]), float(z[0][i])) for i in order]
-        if self.cause_buf and self.status >= 1:           # 주의 이상이면 원인 확률 순위와 추정 원인을 채움
+        if self.cause_buf and self.status >= 1:           # 경미 이상이면 원인 확률 순위와 추정 원인을 채움
             top, p = self._top_cause()
             cls = self.b["cause"].classes
             out["cause_probs"] = sorted(((label_ko(c), float(v)) for c, v in zip(cls, p)), key=lambda x: -x[1])

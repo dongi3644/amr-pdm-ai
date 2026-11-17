@@ -27,7 +27,7 @@ from sklearn.metrics import confusion_matrix, roc_auc_score
 import config as C
 from pipeline.dataio import DataError, choose_baseline
 from pipeline.features import ENC_FEATS, choose_feats, extract
-from pipeline.infer import risk_pct, stage, where_text
+from pipeline.infer import risk_pct, stage, suspect_part, where_text
 from pipeline.models import NORMAL_LABEL, health, label_ko
 from pipeline.power import PowerMonitor
 from pipeline.system import AMRPipeline
@@ -129,14 +129,18 @@ def diagnose(pipe, recs, detector=None):
         """그 주기의 모터 명령·바퀴 속도 평균 (열이 없는 데이터면 아무것도 붙지 않음)"""
         return {aux_ko[k]: round(float(np.mean(v)), 1) for k, v in aux.get(period, {}).items() if v}
 
+    n_enc = sum(any(np.isfinite(r.get(k, float("nan"))) for r in recs) for k in C.ENCODER_CHANNELS)   # 값이 있는 엔코더 수
+
     def flush():
         """새로 끝난 주기가 있으면 표에 한 줄씩 추가"""
         for period, score in mon.period_scores[len(rows):]:
-            name, situation, todo = stage(mon.status, score)   # 단계(정상·주의·경고·정지 위험)와 상황·할 일
+            cause = mon.current_cause_label()
+            name, situation, todo = stage(mon.status, score, cause)   # 단계(정상·경미·심각)와 상황·할 일 (원인을 알면 그 조치)
             rows.append({"경과(분)": round(C.minutes(period + 1), 2), "건강 점수": round(score, 2),
                          "고장 위험도(%)": round(risk_pct(score)), "상태": name, "지금 상황": situation, "할 일": todo,
                          "추정 원인": mon.current_cause(), "판단 근거": ", ".join(n for n, _ in mon.reason),
-                         "의심 부위": where_text(mon.where()) if mon.status >= 1 else "",   # 주의 이상일 때: 평소와 가장 다른 곳과 의심 고장
+                         "고장 부위": suspect_part(cause, mon.where(), n_enc)[1] if mon.status >= 1 else "",   # 경미 이상일 때: 어느 바퀴인가
+                         "의심 부위": where_text(mon.where()) if mon.status >= 1 else "",   # 경미 이상일 때: 평소와 가장 다른 곳과 의심 고장
                          **power.columns(period),         # 전류·배터리 칸 (열이 없는 데이터면 아무것도 붙지 않음)
                          **aux_cols(period),              # 모터 명령·바퀴 속도 칸 (엔코더·모터 명령 열이 있을 때만)
                          "파일 라벨": truth.get(period, "")})
