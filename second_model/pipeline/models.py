@@ -204,7 +204,7 @@ def make_detectors():
 
 
 def calibrate(det, Z_normal, Z_fail):
-    """건강 점수 눈금: 정상의 50% 지점 = 0, 99.5% 지점 = 3(주의), 고장 기준 창의 중앙값 = 9(정지 위험)
+    """건강 점수 눈금: 정상의 50% 지점 = 0, 99.5% 지점 = 3(경미 시작), 고장 기준 창의 중앙값 = 9(위험도 100%)
     고장 데이터가 없으면 rfail = 0이 되어 health()가 정상 눈금을 그대로 늘려 쓴다."""
     r = det.raw(Z_normal)                                  # 학습에 안 쓴 정상 로봇 창들의 이상 점수
     det.r0, det.r995 = float(np.median(r)), float(np.quantile(r, 0.995))   # 정상의 가운데 값, 정상의 상위 0.5% 경계

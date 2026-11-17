@@ -131,15 +131,16 @@ def stage_ranges():
 
 def suspect_part(cause_label, where_items, n_enc):
     """의심 부위 → (바퀴 'fl'·'fr'·'rl'·'rr' 또는 None, 화면 문구)
-    ① 원인 분류가 바퀴까지 냈으면 그 바퀴 ② 평소와 가장 다른 특징이 엔코더 바퀴 특징이면 그 바퀴
+    ① 평소와 가장 다른 곳(where_items 중 엔코더 바퀴 특징)이 가리키는 바퀴: 그 바퀴만 다르게 도는 것을 직접 잰 근거라 먼저 씀
+    ② 없으면 원인 분류가 낸 바퀴 (11/17 가상 시연: 원인 분류는 앞 왼쪽, 엔코더와 실제 고장은 뒤 오른쪽이었던 경우가 있어 순서를 바꿈)
     ③ 바퀴를 모르면: 엔코더가 4개보다 적으면 '구동계 (바퀴 4개 중 특정 불가)' (진동 센서 하나로는 어느 바퀴인지 모름)"""
-    if cause_label and cause_label != NORMAL_LABEL:
-        side = cause_label.split("|")[1] if "|" in cause_label else ""
-        if side in C.WHEEL_KO:
-            return side, f"{C.WHEEL_KO[side]} 바퀴·모터"
     for w in where_items or []:
         side = w["feat"].split("_")[0]
         if w["feat"] in ENC_KO and side in C.WHEEL_KO:
+            return side, f"{C.WHEEL_KO[side]} 바퀴·모터"
+    if cause_label and cause_label != NORMAL_LABEL:
+        side = cause_label.split("|")[1] if "|" in cause_label else ""
+        if side in C.WHEEL_KO:
             return side, f"{C.WHEEL_KO[side]} 바퀴·모터"
     return None, "구동계 (바퀴 4개 중 특정 불가)" if n_enc < 4 else "구동계 (한 바퀴만 다르게 도는 곳 없음)"
 

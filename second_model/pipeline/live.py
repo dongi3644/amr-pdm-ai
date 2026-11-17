@@ -24,6 +24,7 @@ import pandas as pd
 import config as C
 from pipeline import dataio as D
 from pipeline.features import ENC_FEATS
+from pipeline.models import NORMAL_LABEL
 from pipeline.infer import risk_pct, stage, suspect_part, where_text
 from pipeline.power import PowerMonitor
 
@@ -272,8 +273,10 @@ class LiveDiagnoser:
         name, situation, todo = stage(mon.status, last, cause)
         wiring = self.power.wiring == 1
         battery_low = any(e == "배터리 낮음" for _, e in self.power.events)
-        # 의심 원인: 원인 분류 결과. 원인 모델이 없으면(정상 데이터만으로 학습) 평소와 가장 다른 곳의 '의심' 문구
-        cause_text = mon.current_cause() or (where[0]["hint"].split("→")[-1].strip() if mon.status >= 1 and where else "")
+        # 의심 원인: 원인 분류가 낸 고장 종류 (바퀴는 '의심 부위' 칸이 따로 보여 줌).
+        # 원인 모델이 없거나(정상 데이터만으로 학습) 아직 모르면 평소와 가장 다른 곳의 '의심' 문구
+        kind = cause.split("|")[0] if cause and cause != NORMAL_LABEL else None
+        cause_text = (C.KIND_KO.get(kind, kind) if kind else "원인 미확정" if cause == NORMAL_LABEL else "")             or (where[0]["hint"].split("→")[-1].strip() if mon.status >= 1 and where else "")
         if wiring:                                         # 배선은 전류 규칙이 찾은 것 (진동 AI와 따로)
             cause_text = " / ".join(x for x in [cause_text, C.KIND_KO["wiring"]] if x)
             if mon.status == 0:
@@ -628,10 +631,10 @@ async function tick(){try{const r=await fetch("/state",{cache:"no-store"});const
  else if(st.stage==="배우는 중"){const [a,b]=st.learn||[0,300];$("sub").textContent=`이 로봇의 평소 상태를 배우는 중 ${fmtTime(a)} / ${fmtTime(b)}`;
   $("situation").textContent="처음 5분은 판정하지 않고 평소 진동을 모읍니다. 주행·정지·회전을 섞어 주세요.";$("todo").textContent="계속 운행";}
  else if(st.stage){const r=st.risk_now||0;
-  $("sub").textContent=`고장 위험도 ${r.toFixed(0)}%`+(bad?` — ${st.part||""} ${st.cause?st.cause+" 의심":""}`:v==="확인 중"?" — 평소와 다른 진동, 2분 이어지면 경미":" — 평소 범위 안");
+  $("sub").textContent=`고장 위험도 ${r.toFixed(0)}%`+(bad?` — ${st.part||""} ${st.cause?st.cause+" 의심":""}`:v==="확인 중"?" — 평소와 다른 진동, 2분 이어지면 경미":" — 진동은 평소 범위 안")+(!bad&&st.wiring?" · 배선 접촉 불량 의심 (전류 순간 끊김)":"");
   $("fill").style.width=Math.min(r,100)+"%";$("fill").style.background=riskColor(r);$("situation").textContent=st.situation||"-";$("todo").textContent=st.todo||"-";}
  $("cause").textContent=st.cause||"-";$("part").textContent=st.part||"-";
- $("vVib").textContent=num(st.vib,3,"g");$("vCur").textContent=num(st.current,2,"A")+(st.current_high?" (평소보다 높음)":"");
+ $("vVib").textContent=num(st.vib,3,"g");$("vCur").textContent=num(st.current,2,"A")+(st.current_high?" (최근 2분 평소보다 높음)":"");
  $("vVolt").textContent=num(st.voltage,2,"V")+(st.battery_low?" (7.0 V 아래)":"");$("vSpd").textContent=num(st.speed,2,"m/s");
  $("elapsed").textContent=st.elapsed!=null?fmtTime(st.elapsed):"-";
  $("note").textContent=st.calibrated===false?"정상 데이터만으로 학습한 모델: '평소와 다르다'는 확실하지만, 67%·100% 눈금과 원인 분류는 고장 데이터가 있어야 나옵니다.":"";
