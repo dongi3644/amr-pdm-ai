@@ -177,23 +177,23 @@ def run(a, out, train_specs, test_specs, t0, log):
             "고장 바퀴": C.WHEEL_KO.get(s["wheel"], "") if s["fault"] else "",
             "최종 고장 정도": round(s["final"], 2) if s["fault"] else 0.0, "고장 시작(분)": round(onset, 1) if s["fault"] else None,
             "기록(분)": round(s["minutes"], 1), "최고 점수": u["max_score"],
-            "첫 주의(분)": C.minutes(u["caution"] + 1) if alarm else None,
-            "첫 경고(분)": C.minutes(u["warning"] + 1) if u["warning"] is not None else None,
+            "첫 경미(분)": C.minutes(u["caution"] + 1) if alarm else None,
+            "첫 심각(분)": C.minutes(u["warning"] + 1) if u["warning"] is not None else None,
             "감지까지(분)": round(C.minutes(u["caution"] + 1) - onset, 1) if (alarm and s["fault"]) else None,
             "판정": ("맞음 (고장 감지)" if alarm else "놓침") if s["fault"] else ("오경보" if alarm else "맞음 (정상)"),
             "추정 원인": u["cause_pred"] or "",
             "종류 맞음": (pred.split("|")[0] in kinds) if (s["fault"] and pred and pred != NORMAL_LABEL) else None,
-            "경고 여유(분)": C.minutes(u["lead_periods"]) if u["lead_periods"] is not None and u["lead_periods"] >= 0 else None,
-            "정지 위험까지 감": u["fail"] is not None})
+            "심각 여유(분)": C.minutes(u["lead_periods"]) if u["lead_periods"] is not None and u["lead_periods"] >= 0 else None,
+            "고장 기준까지 감": u["fail"] is not None})
     df = pd.DataFrame(rows)
     df.to_csv(out / "로봇별_결과.csv", index=False, encoding="utf-8-sig")
 
     def stats(d):
         """로봇 묶음 하나 → % 요약"""
         F, N = d[d["실제"] == "고장"], d[d["실제"] == "정상"]
-        hit, ok = int(F["첫 주의(분)"].notna().sum()), int(N["첫 주의(분)"].isna().sum())
-        fl = F[F["정지 위험까지 감"]]
-        warned = int(fl["경고 여유(분)"].notna().sum())
+        hit, ok = int(F["첫 경미(분)"].notna().sum()), int(N["첫 경미(분)"].isna().sum())
+        fl = F[F["고장 기준까지 감"]]
+        warned = int(fl["심각 여유(분)"].notna().sum())
         cz = F[F["종류 맞음"].notna()]
         return dict(robots=len(d), fault=len(F), normal=len(N), accuracy_pct=pct(hit + ok, len(d)),
                     detect_pct=pct(hit, len(F)), false_alarm_pct=pct(len(N) - ok, len(N)),
@@ -223,7 +223,7 @@ def run(a, out, train_specs, test_specs, t0, log):
     for name, s in [("전체", al)] + list(res["groups"].items()):
         print(f"  [{name} {s['robots']}대] 판정 정답률 {show(s['accuracy_pct'])} · 고장 감지율 {show(s['detect_pct'])}"
               f" · 오경보율 {show(s['false_alarm_pct'])} · 고장 종류 정확도 {show(s['kind_ok_pct'])}"
-              f" · 정지 위험 전 경고 {show(s['warned_before_fail_pct'])}")
+              f" · 고장 기준 전 심각 알림 {show(s['warned_before_fail_pct'])}")
     print("  이상 감지 (1초 창): " + " / ".join(f"{k} AUC {v['auc']}" for k, v in res["windows"].items()))
     print(f"  학습 로봇 {res['train']['robots']}대 · 학습 {res['train']['minutes']}분 · 시험 {res['test_minutes']}분")
     print("=" * 72)
@@ -246,26 +246,26 @@ def write_md(r, df, path, a, train_specs):
         "  - 일반: 무작위로 정상/고장 반반, 고장은 서서히 진행 (가장 기본적인 경우)",
         "  - 복잡한 고장: 급성 · 간헐 · 복합(두 고장) · 약한 고장 · 속도 극단(학습에 없던 속도) · 베어링 변형(학습에 없던 주파수 120/320 Hz) · 고장+저전압",
         "  - 어려운 정상: 기록 중간에 바닥이 거칠어짐 · 중간에 짐을 실음 · 배터리 저전압 (고장이 아니므로 경보가 뜨면 오경보)",
-        f"- 설정: 기본값 그대로 (판정 주기 {C.PERIOD_S:g}초 · 정상 기준 per_unit · 주의 3점 / 경고 6점 / 위험 9점)",
+        f"- 설정: 기본값 그대로 (판정 주기 {C.PERIOD_S:g}초 · 정상 기준 per_unit · 경미 3점 / 심각 6점 / 위험도 100% 9점)",
         f"- 엔코더: {'4개 + 모터 명령 (바퀴 특징 11개 추가)' if a.encoders else '없음 (진동 36개만)'}"
         + (" · 센서 읽기 오류(튀는 값) 넣음" if a.glitches else ""),
         f"- 바꾼 설정: {a.set_note or '없음'} · 1분 점수 지점 {C.PERIOD_QUANTILE:g} · 오토인코더 {C.AE_ENSEMBLE}개 · 보정 로봇 {C.CAL_SPLIT} · 튀는 값 기준 {C.SPIKE_K:g}", "",
         "## 묶음별 결과", "",
-        "| 묶음 | 로봇 | 판정 정답률 | 고장 감지율 | 오경보율 | 정지 위험 전 경고 | 고장 시작 → 주의 | 고장 종류 정확도 |",
+        "| 묶음 | 로봇 | 판정 정답률 | 고장 감지율 | 오경보율 | 고장 기준 전 심각 알림 | 고장 시작 → 경미 | 고장 종류 정확도 |",
         "|---|---|---|---|---|---|---|---|"]
     for g, v in [("**전체**", r["all"])] + list(r["groups"].items()):
         lines.append(f"| {g} | {v['robots']}대 | **{f(v['accuracy_pct'])}** | {f(v['detect_pct'])} | {f(v['false_alarm_pct'])} | "
                      f"{f(v['warned_before_fail_pct'])} ({v['fail_robots']}대 중) | {f(v['mean_detect_delay_min'], '분')} | "
                      f"{f(v['kind_ok_pct'])} ({v['cause_robots']}대 중) |")
     lines += ["", "## 경우별 결과", "",
-              "| 경우 | 로봇 | 판정 정답률 | 고장 감지율 | 오경보율 | 정지 위험 전 경고 | 고장 시작 → 주의 | 고장 종류 정확도 |",
+              "| 경우 | 로봇 | 판정 정답률 | 고장 감지율 | 오경보율 | 고장 기준 전 심각 알림 | 고장 시작 → 경미 | 고장 종류 정확도 |",
               "|---|---|---|---|---|---|---|---|"]
     for c, v in r["cases"].items():
         lines.append(f"| {c} | {v['robots']}대 | {f(v['accuracy_pct'])} | {f(v['detect_pct'])} | {f(v['false_alarm_pct'])} | "
                      f"{f(v['warned_before_fail_pct'])} ({v['fail_robots']}대 중) | {f(v['mean_detect_delay_min'], '분')} | "
                      f"{f(v['kind_ok_pct'])} ({v['cause_robots']}대 중) |")
-    lines += ["", "- 판정 정답률: 고장 로봇은 '주의' 이상이 뜨면, 정상 로봇은 경보가 없으면 맞음",
-              "- 고장 시작 → 주의: 라벨상 고장이 시작된 뒤 '주의'가 뜰 때까지 걸린 평균 시간",
+    lines += ["", "- 판정 정답률: 고장 로봇은 '경미' 이상이 뜨면, 정상 로봇은 경보가 없으면 맞음",
+              "- 고장 시작 → 경미: 라벨상 고장이 시작된 뒤 '경미'가 뜰 때까지 걸린 평균 시간",
               "- 고장 종류 정확도: 원인을 낸 고장 로봇 중 종류를 맞힌 비율 (복합 고장은 두 종류 중 하나면 맞음)", "",
               "## 1초 창 단위 (모델 5개 비교, 시험 로봇 전체)", "",
               "| 이상 감지 방법 | AUC | 고장 창 감지율 (3점 이상) | 정상 창 오경보율 |", "|---|---|---|---|"]

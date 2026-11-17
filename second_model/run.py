@@ -139,7 +139,7 @@ def cmd_diagnose(a, hb=None):
           f" · 상태 변경 {pipe.bundle.get('confirm_periods', 2)}번 연속")
     data = D.load(a.path, a.fs)
     # 위험도 % 안내 (건강 점수 3·6·9점을 %로: 9점 = 100%)
-    print("고장 위험도 = 건강 점수 ÷ 9 × 100 (정지 위험 기준까지 얼마나 왔나). 단계:")
+    print("고장 위험도 = 건강 점수 ÷ 9 × 100 (학습한 고장 기준까지 얼마나 왔나). 단계:")
     for name, rng in stage_ranges():
         print(f"  {name:<5} {rng:<24} {C.RISK_TEXT[name][0]} → {C.RISK_TEXT[name][1]}")
     if pipe.bundle.get("scale") == "normal_only":
@@ -161,11 +161,11 @@ def cmd_diagnose(a, hb=None):
         except OSError as e:
             print(f"{name}: 그림 저장 실패 ({e}). 그 파일을 연 프로그램을 닫고 다시 실행하세요. 진단은 계속합니다.")
         score_at = dict(mon.period_scores)                 # 주기 번호 → 그 주기 건강 점수
-        # 알림: 상태가 바뀐 시각마다 '15분 주의 (위험도 41%)'처럼
+        # 알림: 상태가 바뀐 시각마다 '15분 경미 (위험도 41%)'처럼
         events = [f"{at_min(p)} {stage(s, score_at.get(p))[0]} (위험도 {risk_pct(score_at.get(p)):.0f}%)" for p, s in mon.events] or ["없음"]
         causes = table.loc[table["추정 원인"] != "", "추정 원인"]   # 원인이 적힌 주기들 (마지막 것을 요약에 씀)
         last = mon.period_scores[-1][1] if mon.period_scores else None
-        now, situation, todo = stage(mon.status, last)
+        now, situation, todo = stage(mon.status, last, mon.current_cause_label())
         print(f"{name}: 지금 {now} (위험도 {risk_pct(last) or 0:.0f}%) · 가장 높았던 위험도 {risk_pct(table['건강 점수'].max()) or 0:.0f}%"
               f" · 알림 {', '.join(events)}" + (f" · 추정 원인 {causes.iloc[-1]}" if len(causes) else "")
               + (" (학습에 쓰인 로봇)" if name in trained else ""))

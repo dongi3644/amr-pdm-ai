@@ -474,21 +474,23 @@ def _seconds(col, fname):
 
 def current_drops(t, cur):
     """1초 동안 전류가 '잠깐' 끊긴 횟수 (배선·커넥터 접촉 불량 감시, power.py가 1분씩 더함). 전류 샘플이 10개 미만이면 nan
-    모터가 도는 중(중앙값 > WIRING_MIN_A)일 때만 센다. 중앙값의 WIRING_DROP_RATIO배 아래로 떨어졌다가
-    WIRING_MAX_DROP_S초 안에 다시 올라오면 1번. 끝까지 안 올라오는 것(멈춤·감속)이나 너무 오래 낮은 것은 세지 않는다."""
+    모터가 도는 중(중앙값 > WIRING_MIN_A)일 때만 센다. 바로 앞 샘플이 중앙값의 WIRING_EDGE_RATIO배 이상이었는데 갑자기
+    WIRING_DROP_RATIO배 아래로 떨어지고, WIRING_MAX_DROP_S초 안에 다시 EDGE_RATIO배 이상으로 돌아오면 1번.
+    서서히 줄어드는 감속, 끝까지 안 올라오는 정지, 너무 오래 낮은 것은 세지 않는다 (가상 주행의 감속·재출발로 확인, 11/17)"""
     if len(cur) < 10:
         return float("nan")
     med = float(np.median(cur))
     if med <= C.WIRING_MIN_A:
         return 0.0
-    low = cur < C.WIRING_DROP_RATIO * med
+    low, high = cur < C.WIRING_DROP_RATIO * med, cur >= C.WIRING_EDGE_RATIO * med
     n, i = 0, 0
     while i < len(low):
-        if low[i] and i > 0:                               # 높다가 낮아진 곳 = 끊김 시작
+        if low[i] and i > 0:                               # 낮아진 곳
             j = i
             while j < len(low) and low[j]:
                 j += 1
-            if j < len(low) and t[j] - t[i] <= C.WIRING_MAX_DROP_S:   # 짧게 낮았다가 다시 올라옴
+            # 바로 앞이 높았고(갑자기 떨어짐), 짧게 낮았다가 바로 높게 돌아옴 = 끊김
+            if high[i - 1] and j < len(low) and high[j] and t[j] - t[i] <= C.WIRING_MAX_DROP_S:
                 n += 1
             i = j
         else:

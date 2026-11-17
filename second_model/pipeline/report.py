@@ -44,7 +44,7 @@ def fig_robot(table, title, note, path, calibrated=True):
     fig, axes = plt.subplots(1 + len(extra), 1, figsize=(10, 3.8 + 2.0 * len(extra)), sharex=True, squeeze=False,
                              gridspec_kw={"height_ratios": [2] + [1] * len(extra)})
     ax = axes[0, 0]
-    lines = [("주의", C.THRESH["caution"]), ("경고", C.THRESH["warning"])] + ([("정지 위험", C.THRESH["danger"])] if calibrated else [])
+    lines = [("경미", C.THRESH["caution"]), ("심각", C.THRESH["warning"])] + ([("100% 고장 기준", C.THRESH["danger"])] if calibrated else [])
     pct = lambda v: v / C.THRESH["danger"] * 100           # 건강 점수 → 고장 위험도 % (9점 = 100%)
     for name, v in lines:                                  # 기준선(점선)과 이름표 (점수와 위험도 %)
         ax.axhline(v, color=GRAY, lw=1, ls="--")
@@ -109,7 +109,7 @@ def fig_units(m, path):
     for ax in list(axes.flat)[len(us):]:                   # 남는 빈칸은 숨김
         ax.axis("off")
     fig.supxlabel("경과 시간 (분)")
-    fig.supylabel(f"건강 점수 (점선 3점 = 위험도 {C.THRESH['caution'] / C.THRESH['danger'] * 100:.0f}% = 주의)")
+    fig.supylabel(f"건강 점수 (점선 3점 = 위험도 {C.THRESH['caution'] / C.THRESH['danger'] * 100:.0f}% = 경미)")
     fig.suptitle("평가 로봇별 건강 점수 (각 로봇은 자신이 빠진 모델로 진단) · 주황 = 고장 라벨, 파랑 = 정상", fontsize=11, color=INK)
     fig.tight_layout()
     fig.savefig(path, dpi=120)
@@ -165,14 +165,14 @@ def _rate(v):
 
 
 def unit_rows(m):
-    """로봇별 판정 → 표의 줄 목록 (고장 로봇은 '주의' 이상이 뜨면 맞음, 정상 로봇은 경보가 없으면 맞음)"""
+    """로봇별 판정 → 표의 줄 목록 (고장 로봇은 '경미' 이상이 뜨면 맞음, 정상 로봇은 경보가 없으면 맞음)"""
     from pipeline.models import NORMAL_LABEL
     rows = []
     for u in sorted(m["unit_results"], key=lambda u: (u["label"] == NORMAL_LABEL, u["robot"])):   # 고장 로봇 먼저
         fault = u["label"] != NORMAL_LABEL
         alarm = u["caution"] is not None
         if fault:
-            verdict = "맞음 (경고)" if u["warning"] is not None else "맞음 (주의)" if alarm else "놓침"
+            verdict = "맞음 (심각)" if u["warning"] is not None else "맞음 (경미)" if alarm else "놓침"
             cause = ("배운 적 없는 원인" if u["cause_unseen"] else "-") if not u["cause_pred"] else \
                 f"{u['cause_pred']} ({'맞음' if u['cause_ok'] else '틀림' if u['cause_ok'] is False else '-'})"
         else:
@@ -180,7 +180,7 @@ def unit_rows(m):
         top = u["max_score"]
         rows.append({"로봇": u["robot"], "실제": u["label_ko"],
                      "최고 위험도": "-" if top is None else f"{min(100.0, top / C.THRESH['danger'] * 100):.0f}% ({top:.1f}점)",
-                     "처음 주의": f"{C.minutes(u['caution'] + 1):g}분째" if alarm else "-",
+                     "처음 경미": f"{C.minutes(u['caution'] + 1):g}분째" if alarm else "-",
                      "판정": verdict, "원인 예측": cause})
     return rows
 
@@ -191,7 +191,7 @@ def headline(m):
     us = m["unit_results"]
     F = [u for u in us if u["label"] != NORMAL_LABEL]
     N = [u for u in us if u["label"] == NORMAL_LABEL]
-    hit = sum(u["caution"] is not None for u in F)       # 고장 로봇 중 '주의' 이상이 뜬 수
+    hit = sum(u["caution"] is not None for u in F)       # 고장 로봇 중 '경미' 이상이 뜬 수
     quiet = sum(u["caution"] is None for u in N)         # 정상 로봇 중 경보가 없던 수
     c, un = m["cause"], m["units"]
     ae = m["detectors"].get("ae", {})
@@ -199,15 +199,15 @@ def headline(m):
     fail_n = sum(u["fail"] is not None for u in F)
     warned = int(un["warned_before_fail"].split("/")[0]) if un.get("warned_before_fail") else 0
     return [
-        ("판정 정답률", _pct(hit + quiet, len(F) + len(N)), "고장 로봇은 '주의' 이상, 정상 로봇은 경보 없음이면 맞음"),
-        ("고장 로봇 감지율", _pct(hit, len(F)), "고장 로봇 중 '주의' 이상이 뜬 비율"),
-        ("정상 로봇 오경보율", _pct(len(N) - quiet, len(N)), "정상 로봇인데 '주의' 이상이 뜬 비율"),
+        ("판정 정답률", _pct(hit + quiet, len(F) + len(N)), "고장 로봇은 '경미' 이상, 정상 로봇은 경보 없음이면 맞음"),
+        ("고장 로봇 감지율", _pct(hit, len(F)), "고장 로봇 중 '경미' 이상이 뜬 비율"),
+        ("정상 로봇 오경보율", _pct(len(N) - quiet, len(N)), "정상 로봇인데 '경미' 이상이 뜬 비율"),
         ("원인 분류 정확도", f"{_rate(c['window_accuracy'])} (1초 창)" + (f" · 로봇 {c['unit_accuracy']}" if c["unit_accuracy"] else ""),
          "원인을 낸 고장 로봇 중 맞힌 수 (배운 적 없는 원인은 뺌)" if cause_u else "원인을 낸 고장 로봇이 없음"),
         ("이상 감지 AUC (오토인코더)", "-" if ae.get("auc") is None else f"{ae['auc']:.3f}", "1에 가까울수록 고장 창과 정상 창을 잘 가름 (0.5 = 찍기)"),
         ("고장 창 감지율 / 정상 창 오경보율", f"{_rate(ae.get('recall'))} / {_rate(ae.get('false_positive'))}", "1초 창 기준, 건강 점수 3 이상을 '이상'으로 셈"),
-        ("정지 위험 전 경고", _pct(warned, fail_n) + (f", 평균 {un['mean_lead_min']}분 전" if un.get("mean_lead_min") is not None else ""),
-         f"고장 정도 {C.FAILURE_SEVERITY:g}에 이르기 전에 '경고'가 뜬 로봇"),
+        ("고장 기준 전 심각 알림", _pct(warned, fail_n) + (f", 평균 {un['mean_lead_min']}분 전" if un.get("mean_lead_min") is not None else ""),
+         f"고장 정도 {C.FAILURE_SEVERITY:g}에 이르기 전에 '심각'이 뜬 로봇"),
     ]
 
 
@@ -270,7 +270,7 @@ def summary_md(m, notes, path):
             tot = sum(row)
             lines.append(f"| {nm} | " + " | ".join(f"**{v:,}**" if j == i else f"{v:,}" for j, v in enumerate(row))
                          + f" | {_rate(row[i] / tot) if tot else '-'} |")
-        lines.append("\n굵은 숫자(대각선)가 맞힌 1초 창입니다. 원인은 '주의' 이상으로 판정된 뒤에만 화면에 나옵니다.")
+        lines.append("\n굵은 숫자(대각선)가 맞힌 1초 창입니다. 원인은 '경미' 이상으로 판정된 뒤에만 화면에 나옵니다.")
 
     # 건강 지표 품질: 점수가 고장 진행을 얼마나 잘 따라가나
     hi = m.get("health_indicator")

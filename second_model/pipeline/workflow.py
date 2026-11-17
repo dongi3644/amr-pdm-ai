@@ -88,7 +88,7 @@ def train(data, units=None, baseline=None):
                  f" · 학습 로봇 {len(b['trained_units'])}대 · 정상 창 {n_use:,}개 · 고장 창 {sum(r['true_sev'] > 0 for r in fault):,}개")
     if b["scale"] == "normal_only":
         notes.append("고장 데이터가 없어 건강 점수는 정상 범위만 기준으로 삼습니다 (3점 = 처음 보는 정상 기록의 "
-                     f"{C.NORMAL_ONLY_BLOCK}초 중앙값 최댓값 × {C.NORMAL_ONLY_MARGIN:g}). 정지 위험(9점) 판정은 하지 않습니다.")
+                     f"{C.NORMAL_ONLY_BLOCK}초 중앙값 최댓값 × {C.NORMAL_ONLY_MARGIN:g}). 위험도 100%(9점) 눈금은 없습니다.")
     elif b["scale"] == "all_fault":
         notes.append(f"고장 정도 {C.FAIL_CAL_BAND[0]}~{C.FAIL_CAL_BAND[1]} 구간의 창이 없어 고장 창 전체의 중앙값을 9점으로 맞췄습니다.")
     ae = b["detectors"]["ae"]
@@ -205,7 +205,7 @@ def cross_validate(data, baseline=None, progress=print):
 
     예) 로봇 A·B·C·D·E → 겹1: B~E로 학습, A 평가 / 겹2: A,C~E로 학습, B 평가 / ... 모든 로봇이 한 번씩 '처음 보는 로봇'이 됨
     겹마다 모델을 새로 학습하므로 시간이 걸린다.
-    모으는 것: 창 단위(모델별 건강 점수, 원인 예측) + 로봇 단위(첫 주의·경고 주기, 최종 원인, 주기별 점수 궤적)
+    모으는 것: 창 단위(모델별 건강 점수, 원인 예측) + 로봇 단위(첫 경미·심각 주기, 최종 원인, 주기별 점수 궤적)
     라벨 열이 아예 없는 로봇은 학습 때처럼 정상으로 간주해 오경보를 센다 (label_assumed=True로 표시)."""
     names = [n for n in data.robots if data.robots[n]]   # 창이 하나라도 있는 로봇
     baseline = choose_baseline(data, baseline)
@@ -253,15 +253,15 @@ def cross_validate(data, baseline=None, progress=print):
                 sev[r["period"]] = max(sev.get(r["period"], 0.0), r["true_sev"])
             first = lambda st: next((period for period, s in mon.events if s >= st), None)   # 처음으로 그 상태 이상이 된 주기
             onset = next((l for l in sorted(sev) if sev[l] > 0), None)                     # 라벨상 고장이 시작된 주기
-            fail = next((l for l in sorted(sev) if sev[l] >= C.FAILURE_SEVERITY), None)    # 라벨상 정지 위험(0.8)이 된 주기
+            fail = next((l for l in sorted(sev) if sev[l] >= C.FAILURE_SEVERITY), None)    # 라벨상 고장 기준(0.8)이 된 주기
             scores = [s for _, s in mon.period_scores]
             # 이 겹의 원인 모델이 배운 적 없는 고장(그 종류·바퀴의 로봇이 이 로봇 1대뿐)은 맞힐 수가 없으므로 정확도에서 따로 센다
             unseen = b["cause"] is None or label not in b["cause"].classes
             units.append(dict(robot=name, label=label, label_assumed=assumed,
                               label_ko=label_ko(label) + (" (라벨 없음, 정상으로 간주)" if assumed else ""),
                               onset=onset, caution=first(1), warning=first(2), fail=fail,
-                              # 경고는 그 주기가 '끝날 때'(주기 번호 + 1) 뜨고, 고장 정도 0.8은 fail 주기가 '시작할 때' 된다.
-                              # 여유 = fail - (경고 주기 + 1). 0 이상이면 정지 위험 전에(늦어도 그 순간에) 경고한 것
+                              # 심각은 그 주기가 '끝날 때'(주기 번호 + 1) 뜨고, 고장 정도 0.8은 fail 주기가 '시작할 때' 된다.
+                              # 여유 = fail - (심각 주기 + 1). 0 이상이면 고장 기준 전에(늦어도 그 순간에) 심각을 알린 것
                               lead_periods=(fail - first(2) - 1) if fail is not None and first(2) is not None else None,
                               max_score=round(max(scores), 2) if scores else None,
                               cause_pred=label_ko(mon.last_cause_label) if mon.last_cause_label else None,
@@ -275,7 +275,7 @@ def cross_validate(data, baseline=None, progress=print):
 def summarize(units, win, det_scores, skipped, baseline, n_folds):
     """교차검증 결과 → 발표용 수치.
     detectors: 모델별 AUC(고장/정상 창 구분력), 3점 이상 비율(고장 창 감지율·정상 창 오경보율)
-    units    : 고장 로봇 중 주의 이상이 뜬 수, 정상 로봇 중 오경보 난 수, 정지 위험(고장 정도 0.8) 전 경고 수와 여유 시간[분]
+    units    : 고장 로봇 중 경미 이상이 뜬 수, 정상 로봇 중 오경보 난 수, 고장 기준(고장 정도 0.8) 전 심각 알림 수와 여유 시간[분]
     cause    : 원인 분류 정확도(창·로봇)와 혼동행렬
     health_indicator: 고장 정도가 0.3 이상 변한(진행형) 로봇의 점수 궤적 품질"""
     from pipeline.models import DETECTOR_NAMES as names   # 모델 이름표 (화면용)
@@ -289,7 +289,7 @@ def summarize(units, win, det_scores, skipped, baseline, n_folds):
                       false_positive=round(float(np.mean(s[~y] >= C.THRESH["caution"])), 3) if (~y).any() else None)
     fault_u = [u for u in units if u["label"] and u["label"] != NORMAL_LABEL]   # 고장 라벨 로봇
     normal_u = [u for u in units if u["label"] == NORMAL_LABEL]                 # 정상 로봇 (라벨 없어 정상으로 간주한 로봇 포함)
-    # 경고 → 정지 위험까지 여유 주기. 정지 위험 뒤에 뜬 경고(음수)는 '미리 경고'가 아니므로 세지 않음
+    # 심각 → 고장 기준까지 여유 주기. 고장 기준 뒤에 뜬 심각(음수)은 '미리 알림'이 아니므로 세지 않음
     leads = [u["lead_periods"] for u in fault_u if u["lead_periods"] is not None and u["lead_periods"] >= 0]
     cause_u = [u for u in fault_u if u["cause_ok"] is not None]                 # 원인을 추정한 고장 로봇 (배운 적 있는 원인만)
     seen = np.array(win["seen"], bool)                                          # 창마다: 그 겹의 모델이 배운 원인인가
