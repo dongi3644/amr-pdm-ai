@@ -1,7 +1,7 @@
 """AI 모델 모음 (진동 + 엔코더 바퀴 특징)
 
 [역할] 파이프라인에 들어가는 모델 부품을 하나씩 정의한다. 학습 순서와 연결은 system.py가, 실시간 사용은 infer.py가 맡는다.
-[흐름에서 위치] 특징 47개(진동 36 + 바퀴 11) → 1(z-score) → 2~5(이상 점수) → health()(건강 점수 0~) → 7(원인) / 8(남은 시간)
+[흐름에서 위치] 특징 47개(진동 36 + 바퀴 11) → 1(z-score) → 2~5(이상 점수) → health()(건강 점수 0~) → 7(원인)
 
 [이상 감지 모델의 공통 약속] fit(Z): 정상 z로 학습, raw(Z): 클수록 이상한 점수. 점수 단위가 모델마다 달라서
 calibrate()가 모델별로 눈금을 맞추고 health()가 0~ 건강 점수로 바꾼다. 그래서 여러 모델을 같은 기준으로 비교할 수 있다.
@@ -15,8 +15,7 @@ calibrate()가 모델별로 눈금을 맞추고 health()가 0~ 건강 점수로 
 6) AEDetector      : 오토인코더(MLP 특징수-24-6-24-특징수) — 정상 패턴 복원 오차 = 이상 점수, 건강 점수의 기본 모델
    WheelMaxDetector · CombinedDetector : 바퀴 이상 점수, 오토인코더와 큰 값 (엔코더 4개가 있을 때 주 모델)
 7) CauseClassifier : 랜덤포레스트 + SHAP — 정상/고장 종류(+바퀴) 분류와 판단 근거
-8) kalman_forecast : 칼만 필터(수준·기울기) — 정지 위험(9점)까지 남은 시간(주기 수)과 90% 범위
-   trend_forecast  : 최근 주기 점수 직선 맞춤 — 칼만 필터의 비교 대상
+(칼만 필터로 정지 위험까지 남은 시간을 예측하던 부분은 2026-11-17에 뺐다: 판정은 지금 점수·단계·원인만으로 한다)
 """
 import numpy as np
 from sklearn.decomposition import PCA
@@ -278,45 +277,3 @@ def label_ko(lbl):
     kind, side = lbl.split("|")
     kind = C.KIND_KO.get(kind, kind)
     return f"{C.WHEEL_KO.get(side, side)} 바퀴 {kind}" if side else kind
-
-
-# ------------------------------------------------------------ 8. 정지 위험 시점 예측
-def kalman_forecast(period_scores, target=C.THRESH["danger"], cfg=None):
-    """주기별 점수를 [수준, 기울기] 칼만 필터로 추정해 target까지 남은 시간(주기 수)과 90% 범위를 반환 (상승 추세가 아니면 None)"""
-    # 상태 x = [지금 점수 수준, 주기당 기울기]. 매 주기: 예측(수준 += 기울기) → 실제 점수로 보정(칼만 이득 K만큼)
-    # q_*: 수준·기울기가 주기마다 얼마나 변할 수 있나, r: 주기 점수 자체의 잡음. 값은 workflow.tune_kalman이 데이터로 맞춤
-    cfg = cfg or C.KALMAN
-    y = np.asarray(period_scores, float)
-    if len(y) < 3:                                         # 점수가 3주기보다 적으면 기울기를 알 수 없음
-        return None
-    F, H = np.array([[1.0, 1.0], [0.0, 1.0]]), np.array([1.0, 0.0])   # F: 다음 수준 = 수준 + 기울기, H: 눈에 보이는 것은 수준뿐
-    Q = np.diag([cfg["q_level"], cfg["q_slope"]])          # 주기마다 수준·기울기가 저절로 변할 수 있는 정도
-    x, P = np.array([y[0], 0.0]), np.diag([cfg["r"], 1.0]) # 시작: 수준 = 첫 점수, 기울기 = 0, P = 그 추정이 얼마나 불확실한가
-    for v in y[1:]:
-        x, P = F @ x, F @ P @ F.T + Q                      # ① 예측: 한 주기 뒤의 수준·기울기 (불확실성은 커짐)
-        K = P @ H / (H @ P @ H + cfg["r"])                 # ② 칼만 이득: 실제 점수를 얼마나 믿고 반영할지 (0~1)
-        x, P = x + K * (v - H @ x), (np.eye(2) - np.outer(K, H)) @ P   # ③ 보정: 예측과 실제 점수의 차이만큼 고침
-    level, slope = float(x[0]), float(x[1])
-    if slope <= 0.05:                                      # 주기당 0.05점 이하로 오르면 '나빠지는 중'이 아님
-        return None
-    out = dict(level=level, slope=slope, n=len(y))
-    if level >= target:                                    # 이미 9점 이상
-        return dict(out, periods=0.0, periods_lo=0.0, periods_hi=0.0)
-    # 남은 주기 수 = (9 - 지금 수준) / 기울기. 기울기의 불확실성(±1.64σ, 90%)으로 빠르면·늦으면 범위를 낸다
-    gap, sd = target - level, float(np.sqrt(P[1, 1]))
-    return dict(out, periods=gap / slope, periods_lo=gap / (slope + 1.64 * sd),
-                periods_hi=gap / (slope - 1.64 * sd) if slope > 1.64 * sd else float("inf"))
-
-
-def trend_forecast(period_scores, n=C.TREND_PERIODS, target=C.THRESH["danger"]):
-    """최근 n주기 건강 점수에 직선을 맞춰 target 도달까지 남은 주기 수를 반환 (상승 추세가 아니면 None)"""
-    y = np.asarray(period_scores[-n:], float)              # 최근 n주기 점수만
-    if len(y) < 3:
-        return None
-    x = np.arange(len(y))
-    k, b = np.polyfit(x, y, 1)                             # 점수 ≈ k × 주기 + b 인 직선 (k = 주기당 오르는 점수)
-    if k <= 0.05:
-        return None
-    if y[-1] >= target:
-        return dict(periods=0.0, slope=float(k), intercept=float(b), n=len(y))
-    return dict(periods=float(max(0.0, (target - (k * x[-1] + b)) / k)), slope=float(k), intercept=float(b), n=len(y))

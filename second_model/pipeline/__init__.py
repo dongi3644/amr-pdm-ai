@@ -6,7 +6,7 @@
         ↓
     features.py  1초 창 → 숫자 특징 (진동 36개 + 바퀴 11개)  "신호를 숫자로 요약하는 곳"
         ↓
-    models.py    AI 모델 부품 (기준·이상 감지·원인·남은 시간) "각 모델의 정의"
+    models.py    AI 모델 부품 (기준·이상 감지·원인) "각 모델의 정의"
         ↓
     system.py    부품을 하나로 묶어 학습·저장           "모델 묶음(AMRPipeline)"
         ↓
@@ -24,7 +24,7 @@
     가상테스트/*.py        코드 점검용 가상 로봇 시험 (성능 아님)
 
 [학습할 때]  dataio → features → system.fit(모델 학습) → artifacts/model_bundle.joblib 저장
-[진단할 때]  dataio → infer.Predictor.update(창마다) → 주기별 상태·원인·남은 시간
+[진단할 때]  dataio → infer.Predictor.update(창마다) → 주기별 상태·위험도·원인
              dataio → power.PowerMonitor.update(창마다) → 주기별 전류 상태·배터리 전압·사용량
 [평가할 때]  workflow.cross_validate: 로봇 한 대(또는 몇 대)를 빼고 학습 → 뺀 로봇을 진단 → 모든 로봇에 반복
 """

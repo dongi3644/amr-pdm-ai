@@ -8,10 +8,10 @@
     cause      원인 분류 (CauseClassifier, 고장 라벨이 없으면 None)
     baseline   'per_unit' 또는 'reference',  reference  공통 정상 기준 (reference일 때만)
     scale      9점 눈금을 무엇으로 맞췄나 ('band' 고장 정도 0.75~0.85 / 'all_fault' 고장 창 전체 / 'normal_only' 고장 없음)
-    kalman     칼만 필터 잡음 값,  fit_units·cal_units  모델 학습용·눈금 보정용 정상 로봇,  period_s  판정 주기
+    fit_units·cal_units  모델 학습용·눈금 보정용 정상 로봇,  period_s  판정 주기
 
     진동 특징 → 구간별 z-score
-                  ├→ 오토인코더(건강 점수) → 칼만 필터(남은 시간)
+                  ├→ 오토인코더(건강 점수) → 고장 위험도 %·단계
                   └→ 랜덤포레스트 + SHAP(원인·판단 근거)
 
 정상 기준은 두 방식 중 하나다 (config.BASELINE_MODE).
@@ -161,7 +161,7 @@ class AMRPipeline:
                 cause = CauseClassifier().fit(Zc, yc, feats)
 
         self.bundle = dict(detectors=dets, cause=cause, feats=list(feats), version="real-vib-1.0", baseline=baseline,
-                           reference=ref, scale=scale, main=main, kalman=dict(C.KALMAN), fit_units=fit_units, cal_units=cal_units)
+                           reference=ref, scale=scale, main=main, fit_units=fit_units, cal_units=cal_units)
         return self
 
     def save(self, path=C.BUNDLE_PATH):

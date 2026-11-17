@@ -1,8 +1,8 @@
-"""실시간 추론기: 1초 창이 들어올 때마다 상태·원인·정지 위험 시점을 갱신한다.
+"""실시간 추론기: 1초 창이 들어올 때마다 상태·위험도·원인을 갱신한다.
 
 [역할] 학습이 끝난 bundle을 받아 로봇 1대를 '지켜보는' 객체(Predictor). 로봇마다 하나씩 만든다.
        창 하나는 흔들리기 쉬우므로, 판정은 판정 주기(기본 1분) 단위로 모아서 하고 상태는 2번(기본값) 연속일 때만 바꾼다 (오경보 방지).
-[흐름에서 위치] bundle(system.py) + 1초 창(dataio) → (여기) update() → 상태·점수·원인·남은 시간
+[흐름에서 위치] bundle(system.py) + 1초 창(dataio) → (여기) update() → 상태·점수·원인
 [누가 쓰나] workflow.diagnose(주기별 표), workflow.cross_validate(평가)
 
 흐름
@@ -11,7 +11,6 @@
   이후 창마다 → 진동 특징 → z-score → 오토인코더 건강 점수
   판정 주기가 끝날 때마다 → 주기 점수(기본: 중앙값) → 상태(정상/주의/경고, 기본 2번 연속일 때만 변경)
                       (주기 점수의 지점·연속 횟수는 config.PERIOD_QUANTILE·CONFIRM_PERIODS. 학습 때 값이 모델에 저장됨)
-                      → 주의 이상이면 칼만 필터로 정지 위험까지 남은 시간과 범위 예측
   주의 이상인 동안 → 랜덤포레스트로 원인 확률 누적, 주기마다 SHAP으로 판단 근거 갱신
 """
 from collections import deque
@@ -20,7 +19,7 @@ import numpy as np
 
 import config as C
 from pipeline.features import FEATS, extract
-from pipeline.models import NORMAL_LABEL, SegmentBaseline, health, kalman_forecast, label_ko
+from pipeline.models import NORMAL_LABEL, SegmentBaseline, health, label_ko
 
 FEAT_KO = {"rms": "진동 크기(RMS)", "kurt": "충격성(첨도)", "crest": "크레스트", "low": "저주파 진동",
            "mid": "중주파 진동", "high": "고주파 진동"}
@@ -134,7 +133,7 @@ class Predictor:
         # 건강 점수를 낼 모델: 지정하지 않으면 학습 때 정한 주 모델 (엔코더가 있으면 오토인코더 + 바퀴 이상, 없으면 오토인코더)
         self.b, self.det = bundle, bundle["detectors"][detector or bundle.get("main", "ae")]    # 건강 점수를 낼 모델 (기본: 오토인코더)
         self.use_cause = use_cause and bundle["cause"] is not None   # 고장 라벨 없이 학습하면 원인 모델이 없음
-        self.calibrated = bundle["scale"] != "normal_only"           # 고장 데이터가 없으면 남은 시간을 예측하지 않음
+        self.calibrated = bundle["scale"] != "normal_only"           # 고장 데이터가 없으면 9점(정지 위험) 눈금이 없음
         # 주기 점수의 지점·상태 변경 연속 횟수: 학습 때 모델에 저장한 값 (이 값이 없는 예전 모델은 예전 방식 0.5·2번)
         self.quantile = float(bundle.get("period_quantile", 0.5))
         self.confirm = int(bundle.get("confirm_periods", 2))
@@ -150,16 +149,15 @@ class Predictor:
         # cur_period: 지금 주기 번호, period_buf: 이번 주기 창 점수들, period_scores: 끝난 주기들의 (번호, 점수)
         self.cur_period, self.period_buf, self.period_scores = None, [], []
         self.status, self.pending = 0, (0, 0)            # pending = (목표 상태, 연속 주기 수)
-        # ewma: 화면용 평활 점수, cause_buf: 최근 60개 창의 원인 확률, forecast: 마지막 남은 시간 예측
-        self.ewma, self.cause_buf, self.forecast = None, deque(maxlen=C.CAUSE_WINDOW), None
+        # ewma: 화면용 평활 점수, cause_buf: 최근 60개 창의 원인 확률
+        self.ewma, self.cause_buf = None, deque(maxlen=C.CAUSE_WINDOW)
         self.period_z, self.reason = [], []              # 이번 주기 창들의 z (SHAP용), 판단 근거 문구
-        self.trend_start = 0                             # 남은 시간 예측에 쓸 점수의 시작 위치 (정비 후 정상 복귀하면 새로 시작)
         self.events = []                                 # (주기, 상태) 변경 이력
         self.recent_z = deque(maxlen=30)                 # 최근 30개 창의 z (어디가 평소와 다른가 = where())
         self.last_cause_label = None
 
     def _finish_period(self, period):
-        """판정 주기가 끝날 때 한 번: 주기 점수 → 상태 변경(연속 규칙) → 남은 시간 예측 → 원인 판단 근거(SHAP) 갱신"""
+        """판정 주기가 끝날 때 한 번: 주기 점수 → 상태 변경(연속 규칙) → 원인 판단 근거(SHAP) 갱신"""
         if not self.period_buf:
             return
         # 주기 점수 = 그 주기 창 점수들의 quantile 지점. 0.5(중앙값)면 튀는 창 몇 개에 흔들리지 않음
@@ -175,14 +173,11 @@ class Predictor:
             if cnt >= self.confirm or (lv > self.status and s >= C.THRESH["danger"]):
                 self.status, self.pending = lv, (lv, 0)
                 self.events.append((period, self.status))
-                if self.status == 0:                     # 정상 복귀(정비 후): 이전 고장의 원인·추세를 비움
+                if self.status == 0:                     # 정상 복귀(정비 후): 이전 고장의 원인을 비움
                     self.cause_buf.clear()
-                    self.reason, self.trend_start = [], len(self.period_scores)
+                    self.reason = []
         else:
             self.pending = (lv, 0)                       # 지금 상태와 같으면 세던 횟수를 버림
-        # 남은 시간 예측: 주의 이상일 때만, 고장 데이터로 9점 눈금을 맞춘 모델일 때만
-        scores = [v for _, v in self.period_scores[self.trend_start:]]
-        self.forecast = kalman_forecast(scores, cfg=self.b["kalman"]) if self.status >= 1 and self.calibrated else None
         if self.use_cause and self.status >= 1 and self.cause_buf and self.period_z:
             label = self._top_cause()[0]
             if label != NORMAL_LABEL:                    # 이번 주기 평균 z로 '왜 그 원인인가'를 SHAP으로 계산
@@ -216,7 +211,7 @@ class Predictor:
         # 이 창의 처리 결과 (화면·표가 쓰는 값). 아래에서 단계마다 채워 넣는다
         out = dict(period=row["period"], segment=row["segment"], row=row, rec=rec, phase="monitor",
                    status=self.status, status_ko=C.STATUS_KO[self.status], score=self.ewma,
-                   period_scores=list(self.period_scores), forecast=self.forecast, cause=None, cause_probs=None,
+                   period_scores=list(self.period_scores), cause=None, cause_probs=None,
                    cause_reason=list(self.reason), top_feats=[], events=list(self.events))
 
         if self.baseline is None:                         # per_unit 방식: 아직 이 로봇의 기준이 없음

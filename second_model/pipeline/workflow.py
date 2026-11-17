@@ -4,15 +4,14 @@
 [흐름에서 위치] run.py → (여기) → system.AMRPipeline.fit / infer.Predictor → report.py
 
 [함수]
-    train()           로봇들을 정상/고장으로 나눠 파이프라인 학습 + 칼만 잡음 조정
-    tune_kalman()     학습 고장 로봇의 주기별 점수로 칼만 필터 잡음 값을 격자 탐색
+    train()           로봇들을 정상/고장으로 나눠 파이프라인 학습
     diagnose()        로봇 1대를 처음부터 끝까지 진단해 판정 주기(기본 1분)별 표로
     make_folds()      교차검증 겹 나누기 (로봇 단위)
     cross_validate()  겹마다: 평가 로봇을 뺀 학습 → 평가 로봇 진단 → 창·로봇 단위 결과 수집
-    summarize()       모은 결과 → AUC·감지율·오경보·원인 정확도·예측 오차·건강 지표 품질
+    summarize()       모은 결과 → AUC·감지율·오경보·원인 정확도·건강 지표 품질
     hi_metrics()      건강 지표 품질 (단조성·추세 일치도·고장 시점 일관성)
 
-    pipe, notes = train(data)                 # 모든 로봇으로 최종 모델 학습 (칼만 필터 잡음도 데이터로 맞춤)
+    pipe, notes = train(data)                 # 모든 로봇으로 최종 모델 학습
     table, mon = diagnose(pipe, recs)         # 로봇 1대 주기별 진단 (표는 '분' 단위)
     metrics = cross_validate(data)            # 로봇 단위 교차검증: 한 로봇의 창이 학습과 평가에 나뉘어 들어가지 않음
 
@@ -29,7 +28,7 @@ import config as C
 from pipeline.dataio import DataError, choose_baseline
 from pipeline.features import ENC_FEATS, choose_feats, extract
 from pipeline.infer import risk_pct, stage, where_text
-from pipeline.models import NORMAL_LABEL, health, kalman_forecast, label_ko, trend_forecast
+from pipeline.models import NORMAL_LABEL, health, label_ko
 from pipeline.power import PowerMonitor
 from pipeline.system import AMRPipeline
 
@@ -43,7 +42,7 @@ def rows_of(recs, robot):
 
 
 # ---------------------------------------------------------------- 학습
-def train(data, units=None, baseline=None, tune=True):
+def train(data, units=None, baseline=None):
     """units 로봇들로 파이프라인 학습 → (파이프라인, 안내 문구 목록)"""
     names = list(units) if units is not None else list(data.robots)   # 학습에 쓸 로봇 (교차검증에서는 평가 로봇을 뺀 목록)
     baseline = choose_baseline(data, baseline)
@@ -89,7 +88,7 @@ def train(data, units=None, baseline=None, tune=True):
                  f" · 학습 로봇 {len(b['trained_units'])}대 · 정상 창 {n_use:,}개 · 고장 창 {sum(r['true_sev'] > 0 for r in fault):,}개")
     if b["scale"] == "normal_only":
         notes.append("고장 데이터가 없어 건강 점수는 정상 범위만 기준으로 삼습니다 (3점 = 처음 보는 정상 기록의 "
-                     f"{C.NORMAL_ONLY_BLOCK}초 중앙값 최댓값 × {C.NORMAL_ONLY_MARGIN:g}). 정지 위험 판정과 남은 시간 예측은 하지 않습니다.")
+                     f"{C.NORMAL_ONLY_BLOCK}초 중앙값 최댓값 × {C.NORMAL_ONLY_MARGIN:g}). 정지 위험(9점) 판정은 하지 않습니다.")
     elif b["scale"] == "all_fault":
         notes.append(f"고장 정도 {C.FAIL_CAL_BAND[0]}~{C.FAIL_CAL_BAND[1]} 구간의 창이 없어 고장 창 전체의 중앙값을 9점으로 맞췄습니다.")
     ae = b["detectors"]["ae"]
@@ -101,52 +100,14 @@ def train(data, units=None, baseline=None, tune=True):
                      "(3점 위도 선형 눈금으로 늘려 씀). 데이터와 라벨을 확인하세요.")
     notes.append("원인 분류 모델 없음 (고장 라벨이 필요)" if b["cause"] is None else
                  f"원인 분류 항목: {', '.join(label_ko(c) for c in b['cause'].classes)}")
-    if tune and b["scale"] != "normal_only":
-        notes.append(tune_kalman(pipe, data, sorted({r["robot"] for r in fault})))
     b["notes"] = notes
     return pipe, notes
 
 
-def _forecast_errors(scores, fn):
-    """첫 주의(3점)부터 9점 도달 직전까지 매 주기 예측해 실제 도달 주기와 비교 → [(오차[주기], 90% 범위 안인가)]"""
-    hit = next((i for i, s in enumerate(scores) if s >= C.THRESH["danger"]), None)     # 실제로 9점에 처음 닿은 주기
-    start = next((i for i, s in enumerate(scores) if s >= C.THRESH["caution"]), None)  # 처음 3점을 넘은 주기
-    if hit is None or start is None or start >= hit:
-        return []
-    out = []
-    for i in range(start, hit):                           # i 주기까지의 점수만 보고 '언제 9점이 될까'를 예측해 본다
-        fc = fn(scores[:i + 1])
-        if fc:
-            # 실제 남은 주기(hit - i)가 예측 범위(빠르면~늦으면) 안에 들었나 (추세선은 범위가 없어 None)
-            inside = fc["periods_lo"] <= hit - i <= fc["periods_hi"] if "periods_lo" in fc else None
-            out.append((abs(i + fc["periods"] - hit), inside))   # 오차 = |예측한 도달 주기 - 실제 도달 주기|
-    return out
-
-
-def tune_kalman(pipe, data, names):
-    """학습 고장 로봇의 주기별 점수로 칼만 필터 잡음(q_level, q_slope, r)을 격자 탐색해 예측 오차가 가장 작은 값을 고른다"""
-    series = []                                           # 고장 로봇마다 주기별 건강 점수 목록
-    for n in names:
-        try:
-            series.append([s for _, s in diagnose(pipe, data.robots[n])[1].period_scores])
-        except DataError:                                 # 기록이 짧아 진단할 수 없는 로봇은 건너뜀
-            continue
-    best, best_err, n_err = dict(C.KALMAN), None, 0
-    for ql, qs, r in itertools.product(*C.KALMAN_GRID.values()):   # 후보 값의 모든 조합 (2 × 4 × 3 = 24가지)
-        cfg = dict(q_level=ql, q_slope=qs, r=r)
-        errs = [e for s in series for e, _ in _forecast_errors(s, lambda y: kalman_forecast(y, cfg=cfg))]
-        if len(errs) >= 5 and (best_err is None or np.mean(errs) < best_err):   # 예측이 5번 이상 있고 평균 오차가 가장 작으면 채택
-            best, best_err, n_err = cfg, float(np.mean(errs)), len(errs)
-    pipe.bundle["kalman"] = best
-    if best_err is None:
-        return "칼만 필터: 9점까지 간 고장 기록이 부족해 초기값을 그대로 씁니다."
-    return f"칼만 필터: 학습 고장 기록 {len(series)}대로 잡음 값을 맞췄습니다 {best} (예측 {n_err}회, 학습 데이터 오차 {C.minutes(best_err):.1f}분)"
-
-
 # ---------------------------------------------------------------- 진단
 def diagnose(pipe, recs, detector=None):
-    """로봇 1대를 처음부터 끝까지 진단 → (판정 주기별 표, 추론기). 표의 시간·남은 시간은 '분' 단위
-    진동 AI(건강 점수·상태·원인·남은 시간)와 전류·배터리 감시(current·voltage 열이 있을 때)를 같은 표에 나란히 담는다.
+    """로봇 1대를 처음부터 끝까지 진단 → (판정 주기별 표, 추론기). 표의 시간은 '분' 단위
+    진동 AI(건강 점수·상태·원인)와 전류·배터리 감시(current·voltage 열이 있을 때)를 같은 표에 나란히 담는다.
     전력 감시 결과는 mon.power (power.PowerMonitor)에 있다."""
     if not recs or (pipe.bundle["baseline"] == "per_unit" and recs[-1]["period"] < C.BASELINE_PERIODS):
         raise DataError(f"기록이 짧습니다. 로봇마다 기준을 만드는 방식에서는 {C.minutes(C.BASELINE_PERIODS + 1):g}분 이상이 필요합니다.")
@@ -171,12 +132,9 @@ def diagnose(pipe, recs, detector=None):
     def flush():
         """새로 끝난 주기가 있으면 표에 한 줄씩 추가"""
         for period, score in mon.period_scores[len(rows):]:
-            fc = mon.forecast
             name, situation, todo = stage(mon.status, score)   # 단계(정상·주의·경고·정지 위험)와 상황·할 일
             rows.append({"경과(분)": round(C.minutes(period + 1), 2), "건강 점수": round(score, 2),
                          "고장 위험도(%)": round(risk_pct(score)), "상태": name, "지금 상황": situation, "할 일": todo,
-                         "정지 위험까지(분)": round(C.minutes(fc["periods"]), 1) if fc else None,
-                         "빠르면(분)": round(C.minutes(fc["periods_lo"]), 1) if fc else None,
                          "추정 원인": mon.current_cause(), "판단 근거": ", ".join(n for n, _ in mon.reason),
                          "의심 부위": where_text(mon.where()) if mon.status >= 1 else "",   # 주의 이상일 때: 평소와 가장 다른 곳과 의심 고장
                          **power.columns(period),         # 전류·배터리 칸 (열이 없는 데이터면 아무것도 붙지 않음)
@@ -242,7 +200,7 @@ def cross_validate(data, baseline=None, progress=print):
     """로봇 단위 교차검증 → metrics dict. 각 겹에서 평가 로봇은 학습에 전혀 쓰지 않는다.
 
     예) 로봇 A·B·C·D·E → 겹1: B~E로 학습, A 평가 / 겹2: A,C~E로 학습, B 평가 / ... 모든 로봇이 한 번씩 '처음 보는 로봇'이 됨
-    겹마다 모델을 새로 학습하므로 시간이 걸린다 (칼만 조정은 생략해 시간을 줄임).
+    겹마다 모델을 새로 학습하므로 시간이 걸린다.
     모으는 것: 창 단위(모델별 건강 점수, 원인 예측) + 로봇 단위(첫 주의·경고 주기, 최종 원인, 주기별 점수 궤적)
     라벨 열이 아예 없는 로봇은 학습 때처럼 정상으로 간주해 오경보를 센다 (label_assumed=True로 표시)."""
     names = [n for n in data.robots if data.robots[n]]   # 창이 하나라도 있는 로봇
@@ -253,7 +211,7 @@ def cross_validate(data, baseline=None, progress=print):
     det_scores = {}                                       # 모델 이름 → 평가 창들의 건강 점수 (AUC 계산용)
     for i, test in enumerate(folds, 1):
         try:
-            pipe, _ = train(data, [n for n in names if n not in test], baseline, tune=False)
+            pipe, _ = train(data, [n for n in names if n not in test], baseline)
         except DataError as e:
             skipped.append(f"{', '.join(test)}: 학습 불가 ({e})")
             continue
@@ -306,9 +264,7 @@ def cross_validate(data, baseline=None, progress=print):
                               cause_unseen=bool(unseen and label != NORMAL_LABEL),
                               cause_ok=(mon.last_cause_label == label) if (mon.last_cause_label and label != NORMAL_LABEL and not unseen) else None,
                               period_scores=[[int(l), round(s, 3)] for l, s in mon.period_scores],
-                              sev_range=round(max(sev.values()) - min(v for v in sev.values()), 2) if sev else 0.0,
-                              forecast_kalman=_forecast_errors(scores, lambda s: kalman_forecast(s, cfg=b["kalman"])),
-                              forecast_trend=_forecast_errors(scores, trend_forecast)))
+                              sev_range=round(max(sev.values()) - min(v for v in sev.values()), 2) if sev else 0.0))
     return summarize(units, win, det_scores, skipped, baseline, len(folds))
 
 
@@ -316,7 +272,7 @@ def summarize(units, win, det_scores, skipped, baseline, n_folds):
     """교차검증 결과 → 발표용 수치.
     detectors: 모델별 AUC(고장/정상 창 구분력), 3점 이상 비율(고장 창 감지율·정상 창 오경보율)
     units    : 고장 로봇 중 주의 이상이 뜬 수, 정상 로봇 중 오경보 난 수, 정지 위험(고장 정도 0.8) 전 경고 수와 여유 시간[분]
-    cause    : 원인 분류 정확도(창·로봇)와 혼동행렬,  forecast: 칼만 vs 추세선 남은 시간 예측 오차[분]
+    cause    : 원인 분류 정확도(창·로봇)와 혼동행렬
     health_indicator: 고장 정도가 0.3 이상 변한(진행형) 로봇의 점수 궤적 품질"""
     from pipeline.models import DETECTOR_NAMES as names   # 모델 이름표 (화면용)
     y = np.concatenate(win["y"]) if win["y"] else np.array([], bool)   # 모든 평가 창의 정답을 한 줄로
@@ -334,9 +290,6 @@ def summarize(units, win, det_scores, skipped, baseline, n_folds):
     cause_u = [u for u in fault_u if u["cause_ok"] is not None]                 # 원인을 추정한 고장 로봇 (배운 적 있는 원인만)
     seen = np.array(win["seen"], bool)                                          # 창마다: 그 겹의 모델이 배운 원인인가
     lab_a, pred_a = np.array(win["labels"]), np.array(win["pred"])
-    k_err = [e for u in fault_u for e, _ in u["forecast_kalman"]]               # 칼만 필터 예측 오차들
-    k_in = [i for u in fault_u for _, i in u["forecast_kalman"] if i is not None]   # 90% 범위 안에 들었나
-    t_err = [e for u in fault_u for e, _ in u["forecast_trend"]]                # 추세선 예측 오차들
     # 진행형 고장(고장 정도가 0.3 이상 변한) 로봇의, 고장 시작 이후 점수 궤적 → 건강 지표 품질
     progressive = [[s for _, s in u["period_scores"] if u["onset"] is None or _ >= u["onset"]] for u in fault_u if u["sev_range"] >= 0.3]
     m = lambda v: round(C.minutes(float(v)), 1)            # 주기 → 분
@@ -357,9 +310,6 @@ def summarize(units, win, det_scores, skipped, baseline, n_folds):
                    unseen_windows=int((~seen).sum()), unseen_units=sum(u["cause_unseen"] for u in fault_u),
                    labels=cm_labels,
                    confusion=confusion_matrix(win["labels"], win["pred"], labels=cm_labels).tolist() if win["labels"] else None),
-        forecast=dict(kalman=dict(mae_min=m(np.mean(k_err)) if k_err else None, n=len(k_err),
-                                  coverage=round(float(np.mean(k_in)), 2) if k_in else None),
-                      trend=dict(mae_min=m(np.mean(t_err)) if t_err else None, n=len(t_err))),
         health_indicator=hi_metrics(progressive),
-        unit_results=[{k: v for k, v in u.items() if not k.startswith("forecast")} for u in units],
+        unit_results=units,
         skipped=skipped)

@@ -240,19 +240,17 @@ class LiveDiagnoser:
         name, situation, todo = stage(mon.status, last)
         state = dict(elapsed=elapsed, phase=out["phase"], stage=name, situation=situation, todo=todo,
                      risk_now=risk_pct(out.get("score")), risk_min=risk_pct(last), cause=mon.current_cause(),
-                     forecast=None, voltage=rec.get("voltage"), current=rec.get("current"),
+                     voltage=rec.get("voltage"), current=rec.get("current"),
                      top=[n for n, _ in out.get("top_feats", [])], calibrated=mon.calibrated,
                      where=[{k: (round(v, 1) if k == "z" else v) for k, v in w.items()} for w in mon.where()])   # 어디가 문제인가 (최근 30초)
         if out["phase"] == "learning":                     # 처음 5분: 이 로봇의 평소 상태를 배우는 중
             state.update(stage="배우는 중", learn=(elapsed, C.minutes(C.BASELINE_PERIODS) * 60))
-        if mon.forecast:
-            state["forecast"] = (C.minutes(mon.forecast["periods_lo"]), C.minutes(mon.forecast["periods"]))
         return state, alerts
 
 
 # ---------------------------------------------------------------- 화면: 알림 창
 class AlertWindow:
-    """tkinter 알림 창. 상태 색 띠 · 위험도 막대 · 상황·할 일 · 원인 · 남은 시간 · 전압·전류 · 알림 목록
+    """tkinter 알림 창. 상태 색 띠 · 위험도 막대 · 상황·할 일 · 원인 · 전압·전류 · 알림 목록
     단계가 올라가면 창을 맨 앞으로 가져오고 색 띠를 3초 동안 깜빡인다 (소리는 내지 않음)"""
 
     def __init__(self, title, on_close):
@@ -282,7 +280,7 @@ class AlertWindow:
         body.pack(fill="x", padx=16)
         self.lines = {}
         for key, label in [("situation", "지금 상황"), ("todo", "할 일"), ("cause", "어디가 문제인가"),
-                           ("forecast", "정지 위험까지"), ("power", "전압 · 전류"), ("source", "데이터")]:
+                           ("power", "전압 · 전류"), ("source", "데이터")]:
             row = tk.Frame(body)
             row.pack(fill="x", pady=2)
             tk.Label(row, text=label, width=13, anchor="w", font=(f, 10, "bold"), fg="#455a64").pack(side="left")
@@ -346,9 +344,6 @@ class AlertWindow:
             self.lines["todo"].configure(text=st["todo"])
         spots = st.get("where") or []
         self.lines["cause"].configure(text=st["cause"] or (chr(10).join(f"{w['name']} {abs(w['z']):.1f}배 → {w['hint']}" for w in spots[:2]) or "-"))
-        fc = st.get("forecast")
-        self.lines["forecast"].configure(text="이미 도달" if st["stage"] == "정지 위험"
-                                         else f"약 {fc[1]:.1f}분 (빠르면 {fc[0]:.1f}분)" if fc else "-")
         v, a = st.get("voltage"), st.get("current")
         self.lines["power"].configure(text=" · ".join(x for x in [f"{v:.2f} V" if v is not None and np.isfinite(v) else "",
                                                                   f"{a:.2f} A" if a is not None and np.isfinite(a) else ""] if x) or "-")
@@ -490,7 +485,7 @@ button{font:inherit;padding:6px 14px;border-radius:8px;border:1px solid rgba(255
 <div class="grid">
 <section class="card"><h2>지금</h2><dl>
 <dt>지금 상황</dt><dd id="situation">-</dd><dt>할 일</dt><dd id="todo">-</dd><dt>추정 원인</dt><dd id="cause">-</dd>
-<dt>정지 위험까지</dt><dd id="forecast">-</dd><dt>전압 · 전류</dt><dd id="power">-</dd><dt>기록 시간</dt><dd id="elapsed">-</dd></dl>
+<dt>전압 · 전류</dt><dd id="power">-</dd><dt>기록 시간</dt><dd id="elapsed">-</dd></dl>
 <div class="note" id="note"></div></section>
 <section class="card" id="whereCard"><h2>어디가 문제인가 (최근 30초, 평소와 가장 다른 곳)</h2><div id="where">-</div>
 <div class="note">축 방향은 센서를 붙인 방향 기준입니다 (X 화살표 = 로봇 앞쪽). 진동 센서 하나로는 어느 바퀴인지까지는 모르고, 엔코더 4개나 고장 학습 데이터가 있으면 바퀴·원인까지 나옵니다.</div></section>
@@ -523,10 +518,9 @@ async function tick(){try{const r=await fetch("/state",{cache:"no-store"});const
  else if(st.stage){const r=st.risk_now||0;$("sub").textContent=`${st.stage} 단계 · 고장 위험도 ${r.toFixed(0)}%`;
   $("fill").style.width=Math.min(r,100)+"%";$("fill").style.background=riskColor(r);$("situation").textContent=st.situation||"-";$("todo").textContent=st.todo||"-";}
  $("cause").textContent=st.cause||"-";
- $("forecast").textContent=st.stage==="정지 위험"?"이미 도달":(st.forecast?`약 ${st.forecast[1].toFixed(1)}분 (빠르면 ${st.forecast[0].toFixed(1)}분)`:"-");
  const pw=[];if(st.voltage!=null)pw.push(st.voltage.toFixed(2)+" V");if(st.current!=null)pw.push(st.current.toFixed(2)+" A");$("power").textContent=pw.join(" · ")||"-";
  $("elapsed").textContent=st.elapsed!=null?fmtTime(st.elapsed):"-";
- $("note").textContent=st.calibrated===false?"정상 데이터만으로 학습한 모델: '평소와 다르다(고장)'는 확실하지만, 67%·100% 눈금과 원인·남은 시간은 고장 데이터가 있어야 나옵니다.":"";
+ $("note").textContent=st.calibrated===false?"정상 데이터만으로 학습한 모델: '평소와 다르다(고장)'는 확실하지만, 67%·100% 눈금과 원인은 고장 데이터가 있어야 나옵니다.":"";
  const ws=st.where||[],hot=(v==="고장"||v==="고장 의심");$("whereCard").classList.toggle("hot",hot&&ws.length>0);
  $("where").innerHTML=ws.length?ws.map(w=>{const a=Math.abs(w.z),c=a>=6?colors["정지 위험"]:a>=4?colors["경고"]:colors["주의"];
   return `<div class="spot"><div class="row"><b>${w.name}</b><span class="z">${w.what} · ${a.toFixed(1)}배</span></div><div class="zb"><i style="width:${Math.min(a/10,1)*100}%;background:${c}"></i></div><div class="h">→ ${w.hint}</div></div>`;}).join("")

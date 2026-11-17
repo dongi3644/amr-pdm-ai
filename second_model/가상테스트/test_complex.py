@@ -14,7 +14,7 @@
 
 '충분한 학습'의 뜻: 모델을 더 오래 돌리는 것이 아니라 더 많고 다양한 기록으로 배우게 하는 것이다.
 오토인코더는 검증 오차가 더 줄지 않으면 스스로 멈추게(early stopping) 되어 있고, 억지로 더 돌리면 학습 기록을 외운다(과대적합).
-칼만 필터 잡음 값도 학습 고장 로봇으로 맞춘다(실제 train과 같음). 모델 코드(pipeline/)는 바꾸지 않는다.
+모델 코드(pipeline/)는 바꾸지 않는다.
 
 주의: 신호와 고장은 사람이 식으로 만든 것이라 이 %는 실제 성능이 아니다. 가상 데이터는 data/에 쓰지 않는다.
 """
@@ -138,13 +138,12 @@ def run(a, out, train_specs, test_specs, t0, log):
     train_min = sum(s["minutes"] for s in train_specs)
 
     # 3) 학습 → 시험. 채점은 실측 교차검증과 같은 코드(cross_validate)를 '겹 1개 = 시험 로봇 전체'로 불러서 함
-    #    실제 train처럼 칼만 필터 잡음도 학습 고장 로봇으로 맞추도록 tune=True로 학습
     orig_train, box = W.train, {}
 
-    def train_full(data_, units=None, baseline=None, tune=True):
+    def train_full(data_, units=None, baseline=None):
         a.hb.set(f"학습 중 (로봇 {len(units)}대, 기록 {train_min / 60:.1f}시간 분량)")
         t = time.time()
-        pipe, notes = orig_train(data_, units, baseline, tune=True)
+        pipe, notes = orig_train(data_, units, baseline)
         box.update(pipe=pipe, notes=notes, train_s=time.time() - t, test_t0=time.time())
         log(f"학습 끝 ({(time.time() - t) / 60:.1f}분)")
         a.hb.set(f"평가 중 (처음 보는 시험 로봇 {len(test_names)}대 진단·채점)")
@@ -207,7 +206,7 @@ def run(a, out, train_specs, test_specs, t0, log):
                windows={v["name"]: dict(auc=v["auc"], detect_pct=None if v["recall"] is None else round(100 * v["recall"], 1),
                                         false_alarm_pct=None if v["false_positive"] is None else round(100 * v["false_positive"], 1))
                         for v in m["detectors"].values()},
-               forecast=m["forecast"], train=dict(robots=len(train_specs), hours=round(train_min / 60, 1),
+               train=dict(robots=len(train_specs), hours=round(train_min / 60, 1),
                                                    minutes=round(box["train_s"] / 60, 1), notes=box["notes"]),
                test_minutes=round(test_s / 60, 1), seed=a.seed, scale=a.scale, skipped=m["skipped"])
     (out / "metrics.json").write_text(json.dumps(dict(summary=res, cv_metrics=m), ensure_ascii=False, indent=1, default=str),
@@ -235,14 +234,13 @@ def write_md(r, df, path, a, train_specs):
     """결과 % → README.md"""
     f = lambda v, unit="%": "-" if v is None else f"{v:g}{unit}"
     tr = r["train"]
-    k = r["forecast"]["kalman"]
     cnt = pd.Series([s["cat"] for s in train_specs]).value_counts()
     lines = [
         "# 복잡한 고장 가상 로봇 학습·시험 결과 (코드 점검용 · 성능 아님)", "",
         "> **이 %는 발표·성능 자료로 쓰지 않습니다.** 진동과 고장을 사람이 식으로 만든 가상 로봇이라 실제 로봇 성능이 아닙니다.",
         "> 이 시험이 보여 주는 것: 어떤 종류의 어려운 경우에서 이 AI 구조가 약한지 (실측 기록을 계획할 때 참고).", "",
         f"- 실행: `가상테스트/test_complex.py --seed {a.seed}" + (f" --scale {a.scale:g}" if a.scale != 1 else "") + (f" --train-scale {a.train_scale:g}" if a.train_scale else "") + (f" --test-scale {a.test_scale:g}" if a.test_scale else "") + (" --encoders" if a.encoders else "") + (" --glitches" if a.glitches else "") + "".join(f" --set {x}" for x in a.set) + "` (같은 명령이면 같은 결과)",
-        f"- 학습: 가상 로봇 {tr['robots']}대, 기록 {tr['hours']}시간 분량, 학습에 걸린 시간 {tr['minutes']}분 (칼만 필터 조정 포함)",
+        f"- 학습: 가상 로봇 {tr['robots']}대, 기록 {tr['hours']}시간 분량, 학습에 걸린 시간 {tr['minutes']}분",
         "  - " + " · ".join(f"{c} {n}" for c, n in cnt.items()),
         f"- 시험: 학습에 쓰지 않은 가상 로봇 {r['all']['robots']}대, 걸린 시간 {r['test_minutes']}분",
         "  - 일반: 무작위로 정상/고장 반반, 고장은 서서히 진행 (가장 기본적인 경우)",
@@ -272,8 +270,7 @@ def write_md(r, df, path, a, train_specs):
               "## 1초 창 단위 (모델 5개 비교, 시험 로봇 전체)", "",
               "| 이상 감지 방법 | AUC | 고장 창 감지율 (3점 이상) | 정상 창 오경보율 |", "|---|---|---|---|"]
     lines += [f"| {name} | {v['auc']} | {f(v['detect_pct'])} | {f(v['false_alarm_pct'])} |" for name, v in r["windows"].items()]
-    lines += ["", f"남은 시간 예측(칼만 필터): 평균 오차 {f(k['mae_min'], '분')} ({k['n']}회) · 90% 범위 적중 "
-              f"{f(None if k['coverage'] is None else round(100 * k['coverage']))}", ""]
+    lines += [""]
     miss = df[df["판정"].isin(["놓침", "오경보"])]
     lines += ["## 틀린 로봇", ""]
     if len(miss):

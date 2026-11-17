@@ -193,7 +193,7 @@ def headline(m):
     N = [u for u in us if u["label"] == NORMAL_LABEL]
     hit = sum(u["caution"] is not None for u in F)       # 고장 로봇 중 '주의' 이상이 뜬 수
     quiet = sum(u["caution"] is None for u in N)         # 정상 로봇 중 경보가 없던 수
-    c, f, un = m["cause"], m["forecast"]["kalman"], m["units"]
+    c, un = m["cause"], m["units"]
     ae = m["detectors"].get("ae", {})
     cause_u = [u for u in F if u["cause_ok"] is not None]
     fail_n = sum(u["fail"] is not None for u in F)
@@ -208,8 +208,6 @@ def headline(m):
         ("고장 창 감지율 / 정상 창 오경보율", f"{_rate(ae.get('recall'))} / {_rate(ae.get('false_positive'))}", "1초 창 기준, 건강 점수 3 이상을 '이상'으로 셈"),
         ("정지 위험 전 경고", _pct(warned, fail_n) + (f", 평균 {un['mean_lead_min']}분 전" if un.get("mean_lead_min") is not None else ""),
          f"고장 정도 {C.FAILURE_SEVERITY:g}에 이르기 전에 '경고'가 뜬 로봇"),
-        ("남은 시간 예측 (칼만)", f"평균 오차 {f['mae_min']}분 ({f['n']}회)" if f["n"] else "예측 없음",
-         "점수가 경고 쪽으로 오르는 고장에서만 예측함"),
     ]
 
 
@@ -242,7 +240,7 @@ def final_text(m):
 
 def summary_md(m, notes, path):
     """교차검증 수치와 학습 메모를 reports/summary.md 문서로 (발표 자료에 옮겨 쓰기 쉬운 표 형식)"""
-    p, u, f, c = m["protocol"], m["units"], m["forecast"], m["cause"]   # 평가 방식, 로봇 단위, 예측, 원인
+    p, u, c = m["protocol"], m["units"], m["cause"]   # 평가 방식, 로봇 단위, 원인
     lines = ["# AMR 고장예지 평가 요약 (로봇 단위 교차검증)", "",
              "> 발표 성능으로 쓰는 것은 실측 CSV로 돌린 이 표뿐입니다. 학습 메모와 '건너뛴 항목'도 함께 확인하세요.", "",
              f"- 평가 방식: {p['split']} 교차검증 {p['folds']}겹, 정상 기준 {p['baseline']}, 판정 주기 {p['period_s']:g}초. {p['note']}",
@@ -274,17 +272,6 @@ def summary_md(m, notes, path):
                          + f" | {_rate(row[i] / tot) if tot else '-'} |")
         lines.append("\n굵은 숫자(대각선)가 맞힌 1초 창입니다. 원인은 '주의' 이상으로 판정된 뒤에만 화면에 나옵니다.")
 
-    # 남은 시간 예측: 한 번도 안 했으면 이유만
-    k, t = f["kalman"], f["trend"]
-    lines += ["", "## 정지 위험까지 남은 시간 예측", ""]
-    if not k["n"] and not t["n"]:
-        lines.append("예측 없음: 점수가 '경고' 쪽으로 꾸준히 오른 고장 기록이 없어 남은 시간을 한 번도 예측하지 않았습니다.")
-    else:
-        err = lambda d: "-" if d["mae_min"] is None else f"{d['mae_min']}분"
-        lines += ["| 방법 | 평균 오차 | 예측 횟수 | 실제 시점이 90% 범위 안에 든 비율 |", "|---|---|---|---|",
-                  f"| 칼만 필터 (판정에 씀) | {err(k)} | {k['n']} | {_rate(k['coverage'])} |",
-                  f"| 추세선 (비교용) | {err(t)} | {t['n']} | - |"]
-
     # 건강 지표 품질: 점수가 고장 진행을 얼마나 잘 따라가나
     hi = m.get("health_indicator")
     lines += ["", "## 건강 점수가 고장 진행을 따라가는 정도", ""]
@@ -296,7 +283,7 @@ def summary_md(m, notes, path):
                   "| 항목 | 값 | 뜻 |", "|---|---|---|",
                   f"| 단조성 | {val('monotonicity')} | 점수가 오르내리지 않고 한 방향으로 꾸준히 변하나 |",
                   f"| 추세 일치도 | {val('trendability')} | 로봇마다 점수가 비슷한 모양으로 변하나 (가장 다른 두 대 기준) |",
-                  f"| 고장 시점 일관성 | {val('prognosability')} | 고장 끝 무렵 점수가 로봇끼리 비슷한가 (남은 시간 예측에 중요) |"]
+                  f"| 고장 시점 일관성 | {val('prognosability')} | 고장 끝 무렵 점수가 로봇끼리 비슷한가 (9점 눈금이 로봇마다 같은 뜻인가) |"]
 
     lines += ["", "## 최종 모델 학습 메모", ""] + [f"- {n}" for n in notes]
     if m["skipped"]:
