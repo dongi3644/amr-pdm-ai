@@ -1,6 +1,7 @@
 """[역할] 코드 점검 전용 가상 로봇 생성기 (발표·성능 자료로 쓰지 않음)
 
-로봇 1대의 기록을 아두이노 기록기가 저장하는 CSV와 같은 열(time, ax~gz, current, voltage, 라벨)의 표로 만든다.
+로봇 1대의 기록을 아두이노 기록기가 저장하는 CSV와 같은 열(time, ax~gz, current, voltage, 엔코더 4개, 모터 명령, 라벨)의 표로 만든다.
+가상 데이터에는 엔코더(바퀴 4개 누적 펄스)와 모터 명령이 항상 들어간다 (11/17부터. 예전에는 encoders=True일 때만).
 100대를 CSV로 쓰면 수 GB가 되므로 파일로 저장하지 않고 메모리의 표를 그대로 dataio에 넣는다.
 
 만드는 신호 (모두 사람이 정한 식이라 실제 로봇과 다름)
@@ -236,7 +237,7 @@ def make_table(spec):
         for i in idx:
             ch = axes[grng.integers(6)]
             df.at[i, ch] = -258 / 8192 if ch[0] == "a" else -258 / 65.5
-    if spec.get("encoders"):                               # 엔코더 4개 + 모터 명령 (다른 난수를 써서, 끄면 예전과 똑같은 기록)
+    if spec.get("encoders", True):                         # 엔코더 4개 + 모터 명령: 가상 데이터에는 항상 넣음 (진동 신호와 다른 난수를 씀)
         enc = _encoders(spec, tt, pwm, fw, pw, sev, shown)
         for w in WHEELS:
             df[f"enc_{w}"] = enc[w]

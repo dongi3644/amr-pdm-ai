@@ -104,7 +104,7 @@ def demo_lines(seed=7031):
     import sim_robots as S                                  # 가상 로봇 생성기 (코드 점검용)
     rng = np.random.default_rng(seed)
     spec = S.complex_spec(rng, "시연_가상로봇", "점진 고장", "bearing", "rr")   # 학습에 안 쓴 seed로 만든 처음 보는 가상 로봇
-    spec.update(encoders=True, glitch=0)
+    spec.update(glitch=0)                                   # 엔코더 4개·모터 명령은 가상 데이터에 항상 들어감
     df = S.make_table(spec)
     t = df["time"].to_numpy()
     raw = {c: np.round(df[c].to_numpy() * (C.RAW_ACCEL_LSB_PER_G if c[0] == "a" else C.RAW_GYRO_LSB_PER_DPS)).astype(int)

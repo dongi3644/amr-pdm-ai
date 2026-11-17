@@ -63,9 +63,9 @@ def main():
     p.add_argument("--test-scale", type=float, default=None, help="시험 로봇만 따로 배율 (없으면 --scale). 0.5 ≈ 시험 6.5분, 0.75 ≈ 10분")
     p.add_argument("--out", default=str(PROJ / "가상테스트_결과"))
     p.add_argument("--model-out", default=None, help="학습한 모델을 저장할 곳 (기본: 저장 안 함. artifacts/에는 쓰지 않음)")
-    p.add_argument("--encoders", action="store_true", help="모든 가상 로봇에 엔코더 4개·모터 명령을 넣음 (바퀴 특징까지 학습)")
+    p.add_argument("--encoders", action="store_true", help=argparse.SUPPRESS)   # 예전 명령 호환용 (엔코더는 이제 항상 들어감)
     p.add_argument("--no-gyro", dest="no_gyro", action="store_true",
-                   help="가상 로봇에서 각속도(gx·gy·gz) 열을 빼고 기록 (--encoders와 함께: gz를 엔코더로 계산하는 경우 시험)")
+                   help="가상 로봇에서 각속도(gx·gy·gz) 열을 빼고 기록 (gz를 엔코더로 계산하는 경우 시험)")
     p.add_argument("--glitches", action="store_true", help="모든 가상 로봇에 센서 읽기 오류(샘플 하나만 튀는 값, 1초에 0.2번꼴)를 넣음")
     p.add_argument("--set", action="append", default=[], metavar="이름=값",
                    help="config 값을 이번 실행에서만 바꿈 (예: --set PERIOD_QUANTILE=0.75 --set AE_ENSEMBLE=1)")
@@ -79,7 +79,7 @@ def main():
     train_specs, _ = make_specs(a.seed, a.train_scale or a.scale)   # 학습·시험 규모를 따로 정할 수 있음
     _, test_specs = make_specs(a.seed + 1 if a.train_scale or a.test_scale else a.seed, a.test_scale or a.scale)
     for s in train_specs + test_specs:                    # 같은 로봇들에 엔코더·읽기 오류만 더함 (진동 신호는 그대로)
-        s["encoders"] = a.encoders
+        s["encoders"] = True                               # 가상 데이터에는 엔코더 4개·모터 명령이 항상 있음
         s["glitch"] = 0.2 if a.glitches else 0
         s["no_gyro"] = a.no_gyro
     for kv in a.set:                                      # 설정 바꾸기 (숫자면 숫자로, 아니면 글자로)
@@ -239,7 +239,7 @@ def write_md(r, df, path, a, train_specs):
         "# 복잡한 고장 가상 로봇 학습·시험 결과 (코드 점검용 · 성능 아님)", "",
         "> **이 %는 발표·성능 자료로 쓰지 않습니다.** 진동과 고장을 사람이 식으로 만든 가상 로봇이라 실제 로봇 성능이 아닙니다.",
         "> 이 시험이 보여 주는 것: 어떤 종류의 어려운 경우에서 이 AI 구조가 약한지 (실측 기록을 계획할 때 참고).", "",
-        f"- 실행: `가상테스트/test_complex.py --seed {a.seed}" + (f" --scale {a.scale:g}" if a.scale != 1 else "") + (f" --train-scale {a.train_scale:g}" if a.train_scale else "") + (f" --test-scale {a.test_scale:g}" if a.test_scale else "") + (" --encoders" if a.encoders else "") + (" --glitches" if a.glitches else "") + "".join(f" --set {x}" for x in a.set) + "` (같은 명령이면 같은 결과)",
+        f"- 실행: `가상테스트/test_complex.py --seed {a.seed}" + (f" --scale {a.scale:g}" if a.scale != 1 else "") + (f" --train-scale {a.train_scale:g}" if a.train_scale else "") + (f" --test-scale {a.test_scale:g}" if a.test_scale else "") + (" --glitches" if a.glitches else "") + "".join(f" --set {x}" for x in a.set) + "` (같은 명령이면 같은 결과)",
         f"- 학습: 가상 로봇 {tr['robots']}대, 기록 {tr['hours']}시간 분량, 학습에 걸린 시간 {tr['minutes']}분",
         "  - " + " · ".join(f"{c} {n}" for c, n in cnt.items()),
         f"- 시험: 학습에 쓰지 않은 가상 로봇 {r['all']['robots']}대, 걸린 시간 {r['test_minutes']}분",
@@ -247,7 +247,7 @@ def write_md(r, df, path, a, train_specs):
         "  - 복잡한 고장: 급성 · 간헐 · 복합(두 고장) · 약한 고장 · 속도 극단(학습에 없던 속도) · 베어링 변형(학습에 없던 주파수 120/320 Hz) · 고장+저전압",
         "  - 어려운 정상: 기록 중간에 바닥이 거칠어짐 · 중간에 짐을 실음 · 배터리 저전압 (고장이 아니므로 경보가 뜨면 오경보)",
         f"- 설정: 기본값 그대로 (판정 주기 {C.PERIOD_S:g}초 · 정상 기준 per_unit · 경미 3점 / 심각 6점 / 위험도 100% 9점)",
-        f"- 엔코더: {'4개 + 모터 명령 (바퀴 특징 11개 추가)' if a.encoders else '없음 (진동 36개만)'}"
+        "- 엔코더: 4개 + 모터 명령 (가상 데이터에는 항상 있음, 바퀴 특징 11개 추가)"
         + (" · 센서 읽기 오류(튀는 값) 넣음" if a.glitches else ""),
         f"- 바꾼 설정: {a.set_note or '없음'} · 1분 점수 지점 {C.PERIOD_QUANTILE:g} · 오토인코더 {C.AE_ENSEMBLE}개 · 보정 로봇 {C.CAL_SPLIT} · 튀는 값 기준 {C.SPIKE_K:g}", "",
         "## 묶음별 결과", "",

@@ -100,8 +100,7 @@
         "--train-scale",
         "0.8",
         "--test-scale",
-        "0.75",
-        "--encoders"
+        "0.75"
       ],
       "cwd": "${workspaceFolder}/second_model",
       "console": "integratedTerminal",
@@ -117,8 +116,7 @@
       "program": "${workspaceFolder}/second_model/가상테스트/test_complex.py",
       "args": [
         "--scale",
-        "0.1",
-        "--encoders"
+        "0.1"
       ],
       "cwd": "${workspaceFolder}/second_model",
       "console": "integratedTerminal",
