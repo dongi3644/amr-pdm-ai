@@ -5,7 +5,7 @@
   - 모든 데이터에 엔코더 4개가 있다. 실측은 엔코더가 앞 오른쪽(enc2) 하나뿐이라 나머지 3개를 가상으로 채운다
   - 실측 기록기에는 각속도가 없으므로 가상 로봇에서도 각속도 열을 빼고, gz(회전 속도)는 엔코더로 계산한다(dataio)
 실측 로봇 만들기
-  - 실측 파일은 20초씩이라 '처음 5분 정상 기준'이 없다 → 같은 바닥·같은 역할(학습/시험)의 실측 조각으로 만든 5.5분 정상 구간을 앞에 붙이고,
+  - 실측 파일은 20초씩이라 '처음 5분 정상 기준'이 없다 → 그 로봇의 실측 정상 파일을 섞어 되풀이한 5.5분을 앞에 붙이고,
     그 뒤에 실측 파일을 시간 순서대로 이어 붙임 (욧골: 정상 파일들 → 테이프 고장 파일들)
   - 앞 오른쪽 엔코더 = 실측 enc2를 누적 펄스로 바꾸고 바퀴 1회전 330펄스 눈금으로 맞춤 (끊김·0도 그대로 남음)
   - 나머지 3개 엔코더 = 모터 명령(spd)으로 정한 바퀴 속도 + 평소 흔들림 4.5%
@@ -69,14 +69,17 @@ def real_part(df, rng, t0, kind, sev):
     return out
 
 
-def real_robot(name, floor, normals, faults, pools, idle, fm, rng):
-    """[실측 조각으로 만든 5.5분 정상] + [실측 정상 파일들] + [실측 테이프 고장 파일들] → 로봇 1대의 표"""
-    spd = 5 if floor == "욧골" else int(rng.choice([5, 7]))
-    spec = dict(name=name, seed=int(rng.integers(1 << 31)), minutes=5.5, fault=False, kind="normal", wheel="",
-                floor=floor, spd=spd, phase=0.0)
-    head = R.make_table(spec, pools, idle, fm).drop(columns=GYRO + ["robot"])
-    enc0 = {w: int(head[f"enc_{w}"].iloc[-1]) for w in ("fl", "fr", "rl", "rr")}
-    parts, t0 = [], float(head["time"].iloc[-1]) + 0.01
+def real_robot(name, floor, normals, faults, rng, base_min=5.5):
+    """[그 로봇의 실측 정상 파일을 섞어 반복한 5.5분 = 정상 기준] + [실측 정상 파일들] + [실측 테이프 고장 파일들] → 로봇 1대의 표
+    실측 파일이 20초씩이라 처음 5분 기준이 없으므로, 같은 로봇(같은 날·바닥)의 정상 파일을 되풀이해 채운다 (가상 조각을 쓰면 이음매가 고장처럼 보였음)"""
+    parts, t0 = [], 0.0
+    while t0 < base_min * 60:
+        for i in rng.permutation(len(normals)):
+            p = real_part(normals[i][1], rng, t0, "normal", 0.0)
+            parts.append(p)
+            t0 = float(p["time"].iloc[-1]) + 0.01
+            if t0 >= base_min * 60:
+                break
     for _, df in normals:
         p = real_part(df, rng, t0, "normal", 0.0)
         parts.append(p)
@@ -85,11 +88,10 @@ def real_robot(name, floor, normals, faults, pools, idle, fm, rng):
         p = real_part(df, rng, t0, "unbalance", 1.0)
         parts.append(p)
         t0 = float(p["time"].iloc[-1]) + 0.01
-    tail = pd.concat(parts, ignore_index=True)
-    for w in ("fl", "fr", "rl", "rr"):                       # 엔코더: 앞 구간 끝 값에서 이어서 누적 (16비트처럼 넘침)
-        cnt = enc0[w] + np.floor(np.cumsum(tail.pop(f"_{w}").to_numpy()))
-        tail[f"enc_{w}"] = ((cnt.astype(np.int64) + 32768) % 65536) - 32768
-    full = pd.concat([head, tail[head.columns]], ignore_index=True)
+    full = pd.concat(parts, ignore_index=True)
+    for w in ("fl", "fr", "rl", "rr"):                       # 엔코더: 누적 펄스 (16비트처럼 넘침)
+        cnt = np.floor(np.cumsum(full.pop(f"_{w}").to_numpy()))
+        full[f"enc_{w}"] = ((cnt.astype(np.int64) + 32768) % 65536) - 32768
     return full, len(normals), len(faults)
 
 
@@ -143,13 +145,13 @@ def main():
             if floor == "욧골":
                 faults = [(k, pd.read_csv(fault_all[k])) for k in (TRAIN_FAULT if role == "train" else TEST_FAULT)]
             name = f"실측_{'학습' if role == 'train' else '시험'}_{floor}"
-            table, n_n, n_f = real_robot(name, floor, normals, faults, sp[role], idle, fm, rng)
+            table, n_n, n_f = real_robot(name, floor, normals, faults, rng)
             recs, fs = D._windows(table, name, data, None)
             data.robots[name], data.fs[name] = recs, fs
             real_specs.append(dict(name=name, role=role, fault=bool(n_f), floor=floor, n_normal=n_n, n_fault=n_f,
                                    onset=float(table.loc[table["fault_severity"] > 0, "time"].min() / 60) if n_f else None,
                                    minutes=round(float(table["time"].iloc[-1]) / 60, 1)))
-            log(f"실측 로봇 {name}: 정상 파일 {n_n}개 + 고장 파일 {n_f}개 (앞 5.5분 = 같은 역할 실측 조각), {real_specs[-1]['minutes']}분")
+            log(f"실측 로봇 {name}: 정상 파일 {n_n}개 + 고장 파일 {n_f}개 (앞 5.5분 = 이 로봇의 실측 정상 파일 반복), {real_specs[-1]['minutes']}분")
 
     train = T.make_specs(a.seed, a.scale, "train", sp["train"])
     for s in train:
