@@ -147,6 +147,15 @@ def summary(rows):
                 early=sum(r["early"] for r in F), delay=round(float(np.mean(d)), 1) if d else None)
 
 
+def _diag_one(pipe, recs, k, caution):
+    """로봇 1대를 실제 진단 코드로 (여러 프로세스에서 나눠 돌릴 수 있게 따로 뺀 함수) → (처음 경미 주기, 마지막 원인)"""
+    import config as C_
+    from pipeline import workflow as W_
+    C_.THRESH = dict(C_.THRESH, caution=caution)
+    table, mon = W_.diagnose(pipe, recs, detector=k)
+    return next((pp for pp, st in mon.events if st >= 1), None), mon.last_cause_label
+
+
 def main():
     p = argparse.ArgumentParser(description="실측 보정 가상 로봇 학습·검증·시험")
     p.add_argument("--g3", action="append", required=True, help="공3옥상 정상 폴더 (여러 번)")
@@ -158,6 +167,9 @@ def main():
     p.add_argument("--max-fa", type=float, default=5.0, help="검증에서 허용하는 최대 오경보율 [%%]")
     p.add_argument("--holdout", choices=S.KINDS, help="이 고장 종류를 학습·검증 로봇에서 모두 뺌 (시험에만 있음 = 처음 보는 고장)")
     p.add_argument("--no-real-check", dest="real_check", action="store_false", help="실제 진단 코드로 다시 채점하는 단계를 건너뜀 (1설정에 약 18분)")
+    p.add_argument("--real-setups", default="default,ae_wheel,rf_wheel,ae_rf_wheel",
+                   help="실제 진단 코드로 다시 채점할 방법 (쉼표로. default = 지금 기본 설정, 나머지는 그 방법의 검증 최고 조합)")
+    p.add_argument("--jobs", type=int, default=1, help="실제 진단을 몇 개 프로세스로 나눠 돌릴지")
     p.add_argument("--out", default=None, help="기본: 가상테스트_결과/실측보정 (--holdout이면 실측보정_처음보는_<종류>)")
     a = p.parse_args()
     out = Path(a.out or PROJ / "가상테스트_결과" / ("실측보정" + (f"_처음보는_{a.holdout}" if a.holdout else "")))
@@ -190,6 +202,7 @@ def main():
     pipe, notes = W.train(data, train_names, "per_unit")
     n_rf = add_rf(pipe, data, train_names)
     log(f"학습 끝 (창 {n_rf:,}개). 감지기: {list(pipe.bundle['detectors'])}")
+    pipe.save(out / "model_bundle.joblib")
     keys = [k for k in SETUPS if k in pipe.bundle["detectors"]]
 
     cache = {}
@@ -248,15 +261,20 @@ def main():
     # 실제 진단 코드(workflow.diagnose)로 다시 채점 (원인 정확도 포함). 주기 점수 지점·연속 횟수는 모델(bundle)에 저장된 값을 쓰므로 거기에 넣음
     def real_check(k, q, cf, cu):
         pipe.bundle["period_quantile"], pipe.bundle["confirm_periods"] = q, cf
-        C.THRESH = dict(C.THRESH, caution=cu)
+        tests = specs["test"]
+        if a.jobs > 1:
+            import os
+            from joblib import Parallel, delayed
+            os.environ["PYTHONPATH"] = os.pathsep.join([str(PROJ), str(HERE)])
+            got = Parallel(n_jobs=a.jobs, backend="loky")(delayed(_diag_one)(pipe, data.robots[s["name"]], k, cu) for s in tests)
+        else:
+            got = [_diag_one(pipe, data.robots[s["name"]], k, cu) for s in tests]
+        C.THRESH = dict(C.THRESH, caution=3.0)
         hit = fa = nF = nN = kind_ok = kind_n = 0
-        for s in specs["test"]:
-            table, mon = W.diagnose(pipe, data.robots[s["name"]], detector=k)
-            first = next((pp for pp, st in mon.events if st >= 1), None)
+        for s, (first, lbl) in zip(tests, got):
             if s["fault"]:
                 nF += 1
                 hit += first is not None and first >= int(s["onset"] * 60 // C.PERIOD_S)
-                lbl = mon.last_cause_label
                 kinds = {s["kind"]} | ({s["second"]["kind"]} if s.get("second") else set())
                 if lbl and lbl != NORMAL_LABEL:
                     kind_n += 1
@@ -264,19 +282,17 @@ def main():
             else:
                 nN += 1
                 fa += first is not None
-        C.THRESH = dict(C.THRESH, caution=3.0)
-        return dict(setup=SETUPS[k], quantile=q, confirm=cf, caution=cu, detect=round(100 * hit / nF, 1),
-                    false_alarm=round(100 * fa / nN, 1), kind_ok=round(100 * kind_ok / kind_n, 1) if kind_n else None, kind_n=kind_n)
+        v = dict(setup=SETUPS[k], quantile=q, confirm=cf, caution=cu, detect=round(100 * hit / nF, 1),
+                 false_alarm=round(100 * fa / nN, 1), kind_ok=round(100 * kind_ok / kind_n, 1) if kind_n else None, kind_n=kind_n)
+        log(f"실제 진단: {v}")
+        return v
 
     best_of = {k: max([g for g in ok if g["setup"] == k] or [g for g in grid if g["setup"] == k],
                       key=lambda g: (g["balanced"], -g["false_alarm"])) for k in keys}
-    checks = [DEFAULT] + [(k, best_of[k]["quantile"], best_of[k]["confirm"], best_of[k]["caution"]) for k in ("ae_wheel", "rf_wheel", "ae_rf_wheel") if k in best_of]
+    checks = [DEFAULT if k == "default" else (k, best_of[k]["quantile"], best_of[k]["confirm"], best_of[k]["caution"])
+              for k in a.real_setups.split(",") if k == "default" or k in best_of]
     res["실제 진단 코드 시험"] = [real_check(*c) for c in dict.fromkeys(checks)] if a.real_check else []
-    for v in res["실제 진단 코드 시험"]:
-        log(f"실제 진단: {v}")
     pipe.bundle["period_quantile"], pipe.bundle["confirm_periods"] = C.PERIOD_QUANTILE, C.CONFIRM_PERIODS
-    if a.real_check:
-        pipe.save(out / "model_bundle.joblib")
     res["검증 상위 10"] = grid[:10]
     res["학습"] = dict(robots=len(specs["train"]), notes=notes)
     (out / "결과.json").write_text(json.dumps(res, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
