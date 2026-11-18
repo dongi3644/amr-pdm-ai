@@ -23,7 +23,6 @@ import time
 from pathlib import Path
 
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import roc_auc_score
 
 HERE = Path(__file__).resolve().parent
@@ -33,24 +32,12 @@ sys.path.insert(0, str(HERE))
 import config as C  # noqa: E402
 from pipeline import dataio as D, workflow as W  # noqa: E402
 from pipeline import models as M  # noqa: E402
-from pipeline.models import NORMAL_LABEL, CombinedDetector, calibrate, health  # noqa: E402
+from pipeline.models import NORMAL_LABEL, CombinedDetector, RFDetector, calibrate, health  # noqa: E402
 from pipeline.system import per_unit_z  # noqa: E402
 import test_complex as T  # noqa: E402
 
 
-class RFDetector:
-    """랜덤포레스트가 낸 '정상이 아닐 확률'(1 - P(정상))을 이상 점수로 쓰는 비교용 감지기"""
-    name = "랜덤포레스트만"
-
-    def fit(self, Z, y):
-        self.m = RandomForestClassifier(n_estimators=150, min_samples_leaf=3, class_weight="balanced",
-                                        random_state=C.SEED, n_jobs=-1).fit(Z, y)
-        self.m.n_jobs = 1
-        self.i_normal = list(self.m.classes_).index(NORMAL_LABEL)
-        return self
-
-    def raw(self, Z):
-        return 1.0 - self.m.predict_proba(Z)[:, self.i_normal]
+# RFDetector는 11/18부터 pipeline/models.py에 있음 (주 모델에 들어감). 예전 저장 모델이 이 이름으로 찾을 수 있게 그대로 가져옴
 
 
 def add_rf(pipe, data, units):

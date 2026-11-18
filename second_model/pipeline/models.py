@@ -5,7 +5,8 @@
 
 [이상 감지 모델의 공통 약속] fit(Z): 정상 z로 학습, raw(Z): 클수록 이상한 점수. 점수 단위가 모델마다 달라서
 calibrate()가 모델별로 눈금을 맞추고 health()가 0~ 건강 점수로 바꾼다. 그래서 여러 모델을 같은 기준으로 비교할 수 있다.
-진단(판정)에 쓰는 것은 오토인코더(+ 엔코더가 있으면 바퀴 이상 점수)뿐이고, z-score·ECOD·PCA는 교차검증 비교표용이다.
+진단(판정)에 쓰는 것은 오토인코더 + 랜덤포레스트(고장 데이터가 있을 때) + 바퀴 이상 점수(엔코더 4개가 있을 때) 중 큰 값이고,
+z-score·ECOD·PCA는 교차검증 비교표용이다 (11/18: 실측 보정 가상 시험에서 이 조합이 가장 좋아 기본으로 바꿈, README 7-6).
 
 1) SegmentBaseline : 구간별 정상 기준(평균·표준편차) → z-score  (복도 지문)
 2) ZScoreDetector  : 비교 기준선 — |z| 평균
@@ -13,7 +14,9 @@ calibrate()가 모델별로 눈금을 맞추고 health()가 0~ 건강 점수로 
    (Isolation Forest는 2026-11-11에 뺐다: 가상 시험 7번 모두 ECOD보다 낮음)
 5) PCADetector     : PCA 복원 오차 — 오토인코더의 선형 비교 대상
 6) AEDetector      : 오토인코더(MLP 특징수-24-6-24-특징수) — 정상 패턴 복원 오차 = 이상 점수, 건강 점수의 기본 모델
-   WheelMaxDetector · CombinedDetector : 바퀴 이상 점수, 오토인코더와 큰 값 (엔코더 4개가 있을 때 주 모델)
+   WheelMaxDetector : 바퀴 이상 점수 (엔코더 4개가 있을 때)
+   RFDetector       : 랜덤포레스트가 낸 '정상이 아닐 확률' (고장 라벨이 있을 때). 아는 고장을 빠르게 잡음
+   CombinedDetector : 두 점수 중 큰 값 → 주 모델 = 오토인코더 · 랜덤포레스트 · 바퀴 점수 중 큰 값
 7) CauseClassifier : 랜덤포레스트 + SHAP — 정상/고장 종류(+바퀴) 분류와 판단 근거
 (칼만 필터로 정지 위험까지 남은 시간을 예측하던 부분은 2026-11-17에 뺐다: 판정은 지금 점수·단계·원인만으로 한다)
 """
@@ -177,14 +180,33 @@ class WheelMaxDetector:
         return np.maximum.reduce([a, b, c])
 
 
+class RFDetector:
+    """랜덤포레스트가 낸 '정상이 아닐 확률'(1 - P(정상))을 이상 점수로 쓴다 (고장 라벨이 있는 데이터로 학습)
+    학습한 고장은 오토인코더보다 빨리·정확히 잡고(실측 보정 가상 시험: 테이프 불균형 12.5% → 100%),
+    처음 보는 고장은 오토인코더가 받쳐 주도록 CombinedDetector로 둘 중 큰 값을 쓴다. 눈금은 calibrate()로 똑같이 맞춘다."""
+    name = "랜덤포레스트 (AI)"
+
+    def fit(self, Z, y):
+        self.m = RandomForestClassifier(n_estimators=150, min_samples_leaf=3, class_weight="balanced",
+                                        random_state=C.SEED, n_jobs=-1).fit(Z, y)
+        self.m.n_jobs = 1                                  # 실시간 1건 추론은 단일 스레드가 더 빠름
+        self.i_normal = list(self.m.classes_).index(NORMAL_LABEL)
+        return self
+
+    def raw(self, Z):
+        return 1.0 - self.m.predict_proba(Z)[:, self.i_normal]
+
+
 class CombinedDetector:
-    """오토인코더 건강 점수와 바퀴 이상 점수 중 큰 값 → 다시 눈금을 맞춤 (엔코더가 있을 때의 주 모델)
+    """두 점수(예: 오토인코더 건강 점수와 바퀴 이상 점수) 중 큰 값 → 다시 눈금을 맞춤
     두 점수를 각각 정상 99.5% = 3점으로 맞춘 뒤 큰 쪽을 쓰면 '둘 중 하나라도' 넘는 경우가 늘어 오경보가 조금 많아지므로,
-    합친 점수로 눈금을 한 번 더 맞춰 정상 99.5% = 3점을 지킨다."""
+    합친 점수로 눈금을 한 번 더 맞춰 정상 99.5% = 3점을 지킨다. 셋을 합칠 때는 CombinedDetector(CombinedDetector(a, b), c)."""
     name = "오토인코더 + 바퀴 (AI)"
 
-    def __init__(self, ae, wheel):
+    def __init__(self, ae, wheel, name=None):
         self.ae, self.wheel = ae, wheel
+        if name:
+            self.name = name
 
     def fit(self, Z):
         return self
@@ -195,7 +217,9 @@ class CombinedDetector:
 
 # 교차검증 결과 표에 쓰는 모델 이름 (엔코더가 있을 때만 생기는 두 모델 포함)
 DETECTOR_NAMES = {"zscore": "기준선 (z-score)", "ecod": "ECOD", "pca": "PCA",
-                  "ae": "오토인코더 (AI)", "wheel": WheelMaxDetector.name, "ae_wheel": CombinedDetector.name}
+                  "ae": "오토인코더 (AI)", "wheel": WheelMaxDetector.name, "ae_wheel": CombinedDetector.name,
+                  "rf": RFDetector.name, "ae_rf": "오토인코더 + 랜덤포레스트 (AI)",
+                  "ae_rf_wheel": "오토인코더 + 랜덤포레스트 + 바퀴 (AI)"}
 
 
 def make_detectors():

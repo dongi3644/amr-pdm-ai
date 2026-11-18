@@ -252,7 +252,7 @@ class LiveDiagnoser:
         where = mon.where()
         n_enc = sum(1 for k in C.ENCODER_CHANNELS if k in rec and np.isfinite(rec[k]))   # 이 1초에 값이 있는 엔코더 수
         wheel, part = suspect_part(cause, where, n_enc)
-        for p, s in mon.events[self.n_events:]:            # 상태가 바뀐 때 (2분 연속 규칙, 9점 이상이면 바로)
+        for p, s in mon.events[self.n_events:]:            # 상태가 바뀐 때 (CONFIRM_PERIODS번 연속 규칙, 9점 이상이면 바로)
             name, situation, todo = stage(s, score_at.get(p), cause)
             spot = where_text(where) if s >= 1 else ""     # 고장 쪽으로 바뀌면: 어디가 평소와 가장 다른가
             alerts.append((min(s, 2), f"{C.minutes(p + 1):g}분: {name} (위험도 {risk_pct(score_at.get(p)) or 0:.0f}%)"
@@ -413,7 +413,7 @@ class AlertWindow:
 # ---------------------------------------------------------------- 화면: 브라우저(HTML)
 def verdict(st):
     """화면 맨 위 큰 글자: 정상 / 경미 / 심각 / 확인 중 / 배우는 중 / 오류 → (글자, 색 이름)
-    경미·심각 = 2분 연속 규칙을 거친 단계. 확인 중 = 단계는 아직 정상이지만 지금 1초 위험도가 33% 이상 (2분 이어지면 경미)"""
+    경미·심각 = 1분 판정(CONFIRM_PERIODS번 연속 규칙)을 거친 단계. 확인 중 = 단계는 아직 정상이지만 지금 1초 위험도가 33% 이상 (1분 점수가 넘으면 경미)"""
     if st.get("stage") in ("오류", "배우는 중", "경미", "심각"):
         return st["stage"], st["stage"]
     if (st.get("risk_now") or 0) >= 100 * C.THRESH["caution"] / C.THRESH["danger"]:
@@ -631,7 +631,7 @@ async function tick(){try{const r=await fetch("/state",{cache:"no-store"});const
  else if(st.stage==="배우는 중"){const [a,b]=st.learn||[0,300];$("sub").textContent=`이 로봇의 평소 상태를 배우는 중 ${fmtTime(a)} / ${fmtTime(b)}`;
   $("situation").textContent="처음 5분은 판정하지 않고 평소 진동을 모읍니다. 주행·정지·회전을 섞어 주세요.";$("todo").textContent="계속 운행";}
  else if(st.stage){const r=st.risk_now||0;
-  $("sub").textContent=`고장 위험도 ${r.toFixed(0)}%`+(bad?` — ${st.part||""} ${st.cause?st.cause+" 의심":""}`:v==="확인 중"?" — 평소와 다른 진동, 2분 이어지면 경미":" — 진동은 평소 범위 안")+(!bad&&st.wiring?" · 배선 접촉 불량 의심 (전류 순간 끊김)":"");
+  $("sub").textContent=`고장 위험도 ${r.toFixed(0)}%`+(bad?` — ${st.part||""} ${st.cause?st.cause+" 의심":""}`:v==="확인 중"?" — 평소와 다른 진동, 1분 점수가 넘으면 경미":" — 진동은 평소 범위 안")+(!bad&&st.wiring?" · 배선 접촉 불량 의심 (전류 순간 끊김)":"");
   $("fill").style.width=Math.min(r,100)+"%";$("fill").style.background=riskColor(r);$("situation").textContent=st.situation||"-";$("todo").textContent=st.todo||"-";}
  $("cause").textContent=st.cause||"-";$("part").textContent=st.part||"-";
  $("vVib").textContent=num(st.vib,3,"g");$("vCur").textContent=num(st.current,2,"A")+(st.current_high?" (최근 2분 평소보다 높음)":"");

@@ -92,8 +92,10 @@ def train(data, units=None, baseline=None):
     elif b["scale"] == "all_fault":
         notes.append(f"고장 정도 {C.FAIL_CAL_BAND[0]}~{C.FAIL_CAL_BAND[1]} 구간의 창이 없어 고장 창 전체의 중앙값을 9점으로 맞췄습니다.")
     ae = b["detectors"]["ae"]
-    if b.get("main") == "ae_wheel":
-        notes.append("주 모델: 오토인코더 + 바퀴 이상 점수 중 큰 값 (엔코더 특징 사용)")
+    main_ko = {"ae": "오토인코더", "ae_wheel": "오토인코더 + 바퀴 이상 점수 중 큰 값 (엔코더 특징 사용)",
+               "ae_rf": "오토인코더 + 랜덤포레스트 이상 점수 중 큰 값",
+               "ae_rf_wheel": "오토인코더 + 랜덤포레스트 + 바퀴 이상 점수 중 큰 값 (엔코더 특징 사용)"}
+    notes.append(f"주 모델: {main_ko.get(b.get('main', 'ae'), b.get('main'))}")
     # 고장 창 점수가 정상 상위 0.5% 경계의 1.5배도 안 되면 9점 눈금을 믿을 수 없다고 알림
     if b["scale"] != "normal_only" and ae.rfail <= ae.r995 * C.MIN_FAIL_RATIO:
         notes.append("고장 창의 이상 점수가 정상 범위와 충분히 구분되지 않아 9점 눈금을 맞추지 못했습니다 "

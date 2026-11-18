@@ -26,7 +26,8 @@ import numpy as np
 import config as C
 from pipeline.features import FEATS, WHEEL_FEATS
 from pipeline.infer import Predictor
-from pipeline.models import NORMAL_LABEL, CauseClassifier, CombinedDetector, SegmentBaseline, WheelMaxDetector, calibrate, make_detectors
+from pipeline.models import (DETECTOR_NAMES, NORMAL_LABEL, CauseClassifier, CombinedDetector, RFDetector, SegmentBaseline,
+                             WheelMaxDetector, calibrate, make_detectors)
 
 
 def usable(rows, feats):
@@ -145,6 +146,21 @@ class AMRPipeline:
             dets["wheel"] = calibrate(WheelMaxDetector(feats).fit(Zfit), Zcal, Zfail)
             dets["ae_wheel"] = calibrate(CombinedDetector(dets["ae"], dets["wheel"]).fit(Zfit), Zcal, Zfail)
             main = "ae_wheel"
+        # 고장 라벨이 있으면: 랜덤포레스트 이상 점수(정상이 아닐 확률)를 더해 '오토인코더(+바퀴) · 랜덤포레스트 중 큰 값'을 주 모델로
+        # (11/18 실측 보정 가상 시험: 학습한 고장 감지 65.8% → 100%, 오경보 0%. 처음 보는 고장은 오토인코더가 받쳐 줌. README 7-6)
+        if C.RF_DETECTOR and (sev > 0).any():
+            keep = (sev == 0) | (sev >= C.CAUSE_MIN_SEVERITY)
+            labels = np.array([NORMAL_LABEL if r["true_sev"] == 0 else f"{r['true_kind']}|{r['true_side']}" for r in frows])
+            Zr = np.vstack([Zfit, Zf[keep]])               # 학습용 정상 창 + 고장 로봇 창 (눈금 보정용 정상 창은 빼 둠)
+            yr = np.concatenate([[NORMAL_LABEL] * len(Zfit), labels[keep]])
+            if len(set(yr)) >= 2:
+                dets["rf"] = calibrate(RFDetector().fit(Zr, yr), Zcal, Zfail)
+                base = main
+                dets[f"{base}_rf" if base == "ae" else "ae_rf_wheel"] = calibrate(
+                    CombinedDetector(dets[base], dets["rf"], DETECTOR_NAMES["ae_rf" if base == "ae" else "ae_rf_wheel"]), Zcal, Zfail)
+                if base == "ae_wheel":                     # 비교용: 바퀴 점수 없는 오토인코더 + 랜덤포레스트
+                    dets["ae_rf"] = calibrate(CombinedDetector(dets["ae"], dets["rf"], DETECTOR_NAMES["ae_rf"]), Zcal, Zfail)
+                main = "ae_rf" if base == "ae" else "ae_rf_wheel"
         if scale == "normal_only":                         # 고장 데이터 없이 정상만으로 학습한 경우: 3점 눈금을 '몇 초 중앙값' 기준으로
             for d in dets.values():
                 normal_only_anchor(d, Zcal, [r["robot"] for r in cal_used])
