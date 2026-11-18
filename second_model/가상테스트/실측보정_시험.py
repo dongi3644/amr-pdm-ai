@@ -156,9 +156,11 @@ def main():
     p.add_argument("--scale", type=float, default=0.6)
     p.add_argument("--seed", type=int, default=2027)
     p.add_argument("--max-fa", type=float, default=5.0, help="검증에서 허용하는 최대 오경보율 [%%]")
-    p.add_argument("--out", default=str(PROJ / "가상테스트_결과" / "실측보정"))
+    p.add_argument("--holdout", choices=S.KINDS, help="이 고장 종류를 학습·검증 로봇에서 모두 뺌 (시험에만 있음 = 처음 보는 고장)")
+    p.add_argument("--no-real-check", dest="real_check", action="store_false", help="실제 진단 코드로 다시 채점하는 단계를 건너뜀 (1설정에 약 18분)")
+    p.add_argument("--out", default=None, help="기본: 가상테스트_결과/실측보정 (--holdout이면 실측보정_처음보는_<종류>)")
     a = p.parse_args()
-    out = Path(a.out)
+    out = Path(a.out or PROJ / "가상테스트_결과" / ("실측보정" + (f"_처음보는_{a.holdout}" if a.holdout else "")))
     out.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
     log = lambda s: print(f"[{(time.time() - t0) / 60:5.1f}분] {s}", flush=True)
@@ -174,6 +176,10 @@ def main():
     (out / "실측파일_나누기.json").write_text(json.dumps(pools.names, ensure_ascii=False, indent=1), encoding="utf-8")
 
     specs = {r: make_specs(a.seed + i, a.scale, r, sp[r]) for i, r in enumerate(["train", "val", "test"])}
+    kinds_of = lambda s_: {s_["kind"]} | ({s_["second"]["kind"]} if s_.get("second") else set()) if s_["fault"] else set()
+    if a.holdout:                                          # 학습·검증에서 그 고장(두 번째 고장 포함)이 든 로봇을 모두 뺌
+        for r in ("train", "val"):
+            specs[r] = [s_ for s_ in specs[r] if a.holdout not in kinds_of(s_)]
     data = D.Dataset()
     for r, lst in specs.items():
         for s in lst:
@@ -225,6 +231,20 @@ def main():
             quantile=b["quantile"], confirm=b["confirm"], caution=b["caution"],
             **summary(score_robots(cache, specs["test"], k, b["quantile"], b["confirm"], b["caution"])))
 
+    if a.holdout:                                          # 처음 보는 고장 로봇만 따로
+        held = [s_ for s_ in specs["test"] if a.holdout in kinds_of(s_)]
+        res["처음 보는 고장"] = {"종류": C.KIND_KO[a.holdout], "로봇": len(held)}
+        for k in keys:
+            b = max([g for g in ok if g["setup"] == k] or [g for g in grid if g["setup"] == k], key=lambda g: (g["balanced"], -g["false_alarm"]))
+            for lab, cfg in [("그 방법의 검증 최고 조합", (b["quantile"], b["confirm"], b["caution"])), ("기본 판정(0.5·2번·3점)", (0.5, 2, 3.0))]:
+                sm_h = summary(score_robots(cache, held, k, *cfg))
+                sm_a = summary(score_robots(cache, specs["test"], k, *cfg))
+                res["처음 보는 고장"][f"{SETUPS[k]} · {lab}"] = dict(cfg=cfg, held_detect=sm_h["detect"], all_detect=sm_a["detect"], false_alarm=sm_a["false_alarm"])
+        print(f"\n[처음 보는 고장: {C.KIND_KO[a.holdout]}, 시험 {len(held)}대]")
+        for k_, v in res["처음 보는 고장"].items():
+            if isinstance(v, dict):
+                print(f"   {k_} {v['cfg']}: 처음 보는 고장 감지 {v['held_detect']}% · 전체 감지 {v['all_detect']}% · 오경보 {v['false_alarm']}%")
+
     # 실제 진단 코드(workflow.diagnose)로 다시 채점 (원인 정확도 포함). 주기 점수 지점·연속 횟수는 모델(bundle)에 저장된 값을 쓰므로 거기에 넣음
     def real_check(k, q, cf, cu):
         pipe.bundle["period_quantile"], pipe.bundle["confirm_periods"] = q, cf
@@ -251,11 +271,12 @@ def main():
     best_of = {k: max([g for g in ok if g["setup"] == k] or [g for g in grid if g["setup"] == k],
                       key=lambda g: (g["balanced"], -g["false_alarm"])) for k in keys}
     checks = [DEFAULT] + [(k, best_of[k]["quantile"], best_of[k]["confirm"], best_of[k]["caution"]) for k in ("ae_wheel", "rf_wheel", "ae_rf_wheel") if k in best_of]
-    res["실제 진단 코드 시험"] = [real_check(*c) for c in dict.fromkeys(checks)]
+    res["실제 진단 코드 시험"] = [real_check(*c) for c in dict.fromkeys(checks)] if a.real_check else []
     for v in res["실제 진단 코드 시험"]:
         log(f"실제 진단: {v}")
     pipe.bundle["period_quantile"], pipe.bundle["confirm_periods"] = C.PERIOD_QUANTILE, C.CONFIRM_PERIODS
-    pipe.save(out / "model_bundle.joblib")
+    if a.real_check:
+        pipe.save(out / "model_bundle.joblib")
     res["검증 상위 10"] = grid[:10]
     res["학습"] = dict(robots=len(specs["train"]), notes=notes)
     (out / "결과.json").write_text(json.dumps(res, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
