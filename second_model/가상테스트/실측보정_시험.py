@@ -225,27 +225,37 @@ def main():
             quantile=b["quantile"], confirm=b["confirm"], caution=b["caution"],
             **summary(score_robots(cache, specs["test"], k, b["quantile"], b["confirm"], b["caution"])))
 
-    # 고른 설정을 실제 진단 코드로 다시 (원인 정확도 포함)
-    C.PERIOD_QUANTILE, C.CONFIRM_PERIODS = pick[1], pick[2]
-    C.THRESH = dict(C.THRESH, caution=pick[3])
-    hit = fa = nF = nN = 0
-    kind_ok = kind_n = 0
-    for s in specs["test"]:
-        table, mon = W.diagnose(pipe, data.robots[s["name"]], detector=pick[0])
-        first = next((pp for pp, st in mon.events if st >= 1), None)
-        if s["fault"]:
-            nF += 1
-            hit += first is not None and first >= int(s["onset"] * 60 // C.PERIOD_S)
-            lbl = mon.last_cause_label
-            kinds = {s["kind"]} | ({s["second"]["kind"]} if s.get("second") else set())
-            if lbl and lbl != NORMAL_LABEL:
-                kind_n += 1
-                kind_ok += lbl.split("|")[0] in kinds
-        else:
-            nN += 1
-            fa += first is not None
-    res["고른 설정 (실제 진단 코드)"] = dict(detect=round(100 * hit / nF, 1), false_alarm=round(100 * fa / nN, 1),
-                                         kind_ok=round(100 * kind_ok / kind_n, 1) if kind_n else None, kind_n=kind_n)
+    # 실제 진단 코드(workflow.diagnose)로 다시 채점 (원인 정확도 포함). 주기 점수 지점·연속 횟수는 모델(bundle)에 저장된 값을 쓰므로 거기에 넣음
+    def real_check(k, q, cf, cu):
+        pipe.bundle["period_quantile"], pipe.bundle["confirm_periods"] = q, cf
+        C.THRESH = dict(C.THRESH, caution=cu)
+        hit = fa = nF = nN = kind_ok = kind_n = 0
+        for s in specs["test"]:
+            table, mon = W.diagnose(pipe, data.robots[s["name"]], detector=k)
+            first = next((pp for pp, st in mon.events if st >= 1), None)
+            if s["fault"]:
+                nF += 1
+                hit += first is not None and first >= int(s["onset"] * 60 // C.PERIOD_S)
+                lbl = mon.last_cause_label
+                kinds = {s["kind"]} | ({s["second"]["kind"]} if s.get("second") else set())
+                if lbl and lbl != NORMAL_LABEL:
+                    kind_n += 1
+                    kind_ok += lbl.split("|")[0] in kinds
+            else:
+                nN += 1
+                fa += first is not None
+        C.THRESH = dict(C.THRESH, caution=3.0)
+        return dict(setup=SETUPS[k], quantile=q, confirm=cf, caution=cu, detect=round(100 * hit / nF, 1),
+                    false_alarm=round(100 * fa / nN, 1), kind_ok=round(100 * kind_ok / kind_n, 1) if kind_n else None, kind_n=kind_n)
+
+    best_of = {k: max([g for g in ok if g["setup"] == k] or [g for g in grid if g["setup"] == k],
+                      key=lambda g: (g["balanced"], -g["false_alarm"])) for k in keys}
+    checks = [DEFAULT] + [(k, best_of[k]["quantile"], best_of[k]["confirm"], best_of[k]["caution"]) for k in ("ae_wheel", "rf_wheel", "ae_rf_wheel") if k in best_of]
+    res["실제 진단 코드 시험"] = [real_check(*c) for c in dict.fromkeys(checks)]
+    for v in res["실제 진단 코드 시험"]:
+        log(f"실제 진단: {v}")
+    pipe.bundle["period_quantile"], pipe.bundle["confirm_periods"] = C.PERIOD_QUANTILE, C.CONFIRM_PERIODS
+    pipe.save(out / "model_bundle.joblib")
     res["검증 상위 10"] = grid[:10]
     res["학습"] = dict(robots=len(specs["train"]), notes=notes)
     (out / "결과.json").write_text(json.dumps(res, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
@@ -258,7 +268,9 @@ def main():
         for g, x in v["groups"].items():
             print(f"     {g}: 감지 {x['detect']}% · 오경보 {x['false_alarm']}% ({x['robots']}대)")
         print("     종류별 감지: " + ", ".join(f"{C.KIND_KO[k]} {x['detect']}%" for k, x in v["kinds"].items()))
-    print("[고른 설정, 실제 진단 코드]", res["고른 설정 (실제 진단 코드)"])
+    print("[실제 진단 코드]")
+    for v in res["실제 진단 코드 시험"]:
+        print(f"   {v['setup']} (주기 {v['quantile']}, {v['confirm']}번, 기준 {v['caution']}): 감지 {v['detect']}% · 오경보 {v['false_alarm']}% · 원인 맞음 {v['kind_ok']}% ({v['kind_n']}대)")
     print("[모든 방법]")
     for k, v in res["모든 방법 시험 (각 방법의 검증 최고 조합)"].items():
         print(f"   {k}: 감지 {v['detect']}% · 오경보 {v['false_alarm']}% (주기 {v['quantile']}, {v['confirm']}번, 기준 {v['caution']})")
