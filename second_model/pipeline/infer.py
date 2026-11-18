@@ -207,9 +207,20 @@ class Predictor:
         self.period_z = []
 
     def _top_cause(self):
-        """최근 창들의 원인 확률 평균 → (가장 높은 라벨, 확률 배열)"""
+        """최근 창들의 원인 확률 평균 → (추정 라벨, 확률 배열)
+        CAUSE_BY_KIND(11/19): 고장 종류마다 바퀴 4개의 확률을 더해 종류를 먼저 고르고, 그 종류 안에서 확률이 가장 높은 바퀴를 붙임.
+        (라벨 하나만 보면 한 종류의 확률이 바퀴 4개로 나뉘어 다른 종류에 지는 일이 생김. 실측 보정 가상 시험: 원인 맞음 94.1% → 97.4%)"""
         p = np.mean(self.cause_buf, axis=0)
         cls = self.b["cause"].classes
+        if C.CAUSE_BY_KIND:
+            sums = {}
+            for c, v in zip(cls, p):
+                if c != NORMAL_LABEL:
+                    sums[c.split("|")[0]] = sums.get(c.split("|")[0], 0.0) + float(v)
+            if sums:
+                k = max(sums, key=sums.get)
+                i = max((j for j, c in enumerate(cls) if c != NORMAL_LABEL and c.split("|")[0] == k), key=lambda j: p[j])
+                return cls[i], p
         return cls[int(np.argmax(p))], p
 
     def current_cause_label(self):
