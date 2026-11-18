@@ -145,9 +145,10 @@ def suspect_part(cause_label, where_items, n_enc):
     return None, "구동계 (바퀴 4개 중 특정 불가)" if n_enc < 4 else "구동계 (한 바퀴만 다르게 도는 곳 없음)"
 
 
-def level(score):
-    """건강 점수 → 상태 번호. 3점 미만 0(정상), 6점 미만 1(경미), 그 이상 2(심각)"""
-    return 0 if score < C.THRESH["caution"] else 1 if score < C.THRESH["warning"] else 2
+def level(score, caution=None):
+    """건강 점수 → 상태 번호. 경미 경보 점수(CAUTION_ALARM, 기본 3점) 미만 0(정상), 6점 미만 1(경미), 그 이상 2(심각)"""
+    caution = C.CAUTION_ALARM if caution is None else caution
+    return 0 if score < caution else 1 if score < C.THRESH["warning"] else 2
 
 
 class Predictor:
@@ -159,6 +160,7 @@ class Predictor:
         # 주기 점수의 지점·상태 변경 연속 횟수: 학습 때 모델에 저장한 값 (이 값이 없는 예전 모델은 예전 방식 0.5·2번)
         self.quantile = float(bundle.get("period_quantile", 0.5))
         self.confirm = int(bundle.get("confirm_periods", 2))
+        self.caution = float(bundle.get("caution_alarm", C.THRESH["caution"]))   # 경미 경보 점수 (예전 모델은 3점)
         self.feats = list(bundle.get("feats", FEATS))     # 모델이 학습한 특징 목록 (엔코더 특징 포함 여부)
         self.skipped = 0                                 # 특징 값이 비어 판정하지 못한 창 수 (예: 엔코더 값이 끊긴 1초)
         self.reset()
@@ -186,7 +188,7 @@ class Predictor:
         s = float(np.median(self.period_buf)) if self.quantile == 0.5 else float(np.quantile(self.period_buf, self.quantile))
         self.period_scores.append((period, s))
         self.period_buf = []
-        lv = level(s)                                    # 이번 주기 점수만 보면 어떤 상태인가
+        lv = level(s, self.caution)                      # 이번 주기 점수만 보면 어떤 상태인가
         if lv != self.status:                            # 지금 상태와 다르면 바로 바꾸지 않고 횟수를 센다
             tgt, cnt = self.pending
             cnt = cnt + 1 if tgt == lv else 1            # 지난 주기와 같은 방향이면 +1, 아니면 1부터 다시
@@ -277,7 +279,7 @@ class Predictor:
         self.period_z.append(z[0])
         self.recent_z.append(z[0])
         # 원인 확률은 점수가 경미 근처(2.4점)까지 올랐거나 이미 경미 이상일 때부터 쌓는다 (정상일 땐 원인을 묻지 않음)
-        if self.use_cause and (self.ewma >= 0.8 * C.THRESH["caution"] or self.status >= 1):
+        if self.use_cause and (self.ewma >= 0.8 * self.caution or self.status >= 1):
             self.cause_buf.append(self.b["cause"].proba(z)[0])
         out.update(score=self.ewma, window_score=h, z=z[0])
         order = np.argsort(-np.abs(z[0]))[:3]             # 평소에서 가장 많이 벗어난 특징 3개

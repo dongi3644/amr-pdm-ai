@@ -416,7 +416,7 @@ def verdict(st):
     경미·심각 = 1분 판정(CONFIRM_PERIODS번 연속 규칙)을 거친 단계. 확인 중 = 단계는 아직 정상이지만 지금 1초 위험도가 33% 이상 (1분 점수가 넘으면 경미)"""
     if st.get("stage") in ("오류", "배우는 중", "경미", "심각"):
         return st["stage"], st["stage"]
-    if (st.get("risk_now") or 0) >= 100 * C.THRESH["caution"] / C.THRESH["danger"]:
+    if (st.get("risk_now") or 0) >= 100 * C.CAUTION_ALARM / C.THRESH["danger"]:
         return "확인 중", "경미"
     return "정상", "정상"
 

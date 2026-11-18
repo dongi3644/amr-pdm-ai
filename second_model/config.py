@@ -166,6 +166,7 @@ FAULT_TODO = {                    # 고장 종류 → 할 일 (원인을 알 때
 CAUSE_MIN_SEVERITY = 0.25         # 원인 분류 학습에 쓰는 최소 고장 정도
 FAILURE_SEVERITY = 0.8            # 평가용 '고장 기준' (라벨의 고장 정도). 건강 점수 9점 = 위험도 100%가 이 정도
 FAIL_CAL_BAND = (0.75, 0.85)      # 건강 점수 9에 맞출 고장 정도 구간
+CAUTION_ALARM = 3.0               # 경미 경보를 내는 1분 점수 (11/19 추가). 눈금(정상 99.5% = THRESH["caution"] = 3점)은 그대로 두고 경보 문턱만 바꿈
 THRESH = dict(caution=3.0, warning=6.0, danger=9.0)   # 건강 점수: 정상 99.5% 지점 = 3(경미 시작), 6(심각 시작), 고장 정도 0.8 = 9(위험도 100%)
 NORMAL_ONLY_BLOCK = 10            # 정상 데이터만으로 학습할 때: 3점 눈금을 '처음 보는 정상 로봇의 이 초 수 묶음 중앙값' 최댓값으로 (system.normal_only_anchor)
 NORMAL_ONLY_MARGIN = 1.2          #   그 최댓값에 곱하는 여유 (작으면 민감하지만 오경보↑)

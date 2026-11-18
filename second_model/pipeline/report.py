@@ -44,7 +44,7 @@ def fig_robot(table, title, note, path, calibrated=True):
     fig, axes = plt.subplots(1 + len(extra), 1, figsize=(10, 3.8 + 2.0 * len(extra)), sharex=True, squeeze=False,
                              gridspec_kw={"height_ratios": [2] + [1] * len(extra)})
     ax = axes[0, 0]
-    lines = [("경미", C.THRESH["caution"]), ("심각", C.THRESH["warning"])] + ([("100% 고장 기준", C.THRESH["danger"])] if calibrated else [])
+    lines = [("경미", C.CAUTION_ALARM), ("심각", C.THRESH["warning"])] + ([("100% 고장 기준", C.THRESH["danger"])] if calibrated else [])
     pct = lambda v: v / C.THRESH["danger"] * 100           # 건강 점수 → 고장 위험도 % (9점 = 100%)
     for name, v in lines:                                  # 기준선(점선)과 이름표 (점수와 위험도 %)
         ax.axhline(v, color=GRAY, lw=1, ls="--")
@@ -103,13 +103,13 @@ def fig_units(m, path):
         periods, scores = zip(*u["period_scores"])
         # x축: 주기 번호 → 분, 색: 고장 라벨 로봇은 주황, 정상은 파랑
         ax.plot([C.minutes(p + 1) for p in periods], scores, color=ORANGE if u["label"] not in (None, "normal|") else BLUE, lw=1.6)
-        ax.axhline(C.THRESH["caution"], color=GRAY, lw=1, ls="--")
+        ax.axhline(C.CAUTION_ALARM, color=GRAY, lw=1, ls="--")
         ax.set_ylim(0, top)
         ax.set_title(f"{u['robot']} · {u['label_ko']}", fontsize=9, loc="left")
     for ax in list(axes.flat)[len(us):]:                   # 남는 빈칸은 숨김
         ax.axis("off")
     fig.supxlabel("경과 시간 (분)")
-    fig.supylabel(f"건강 점수 (점선 3점 = 위험도 {C.THRESH['caution'] / C.THRESH['danger'] * 100:.0f}% = 경미)")
+    fig.supylabel(f"건강 점수 (점선 {C.CAUTION_ALARM:g}점 = 위험도 {C.CAUTION_ALARM / C.THRESH['danger'] * 100:.0f}% = 경미)")
     fig.suptitle("평가 로봇별 건강 점수 (각 로봇은 자신이 빠진 모델로 진단) · 주황 = 고장 라벨, 파랑 = 정상", fontsize=11, color=INK)
     fig.tight_layout()
     fig.savefig(path, dpi=120)

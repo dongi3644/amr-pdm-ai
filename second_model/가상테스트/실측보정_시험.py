@@ -149,9 +149,8 @@ def summary(rows):
 
 def _diag_one(pipe, recs, k, caution):
     """로봇 1대를 실제 진단 코드로 (여러 프로세스에서 나눠 돌릴 수 있게 따로 뺀 함수) → (처음 경미 주기, 마지막 원인)"""
-    import config as C_
     from pipeline import workflow as W_
-    C_.THRESH = dict(C_.THRESH, caution=caution)
+    pipe.bundle["caution_alarm"] = caution                 # 경미 경보 점수만 바꿈 (눈금은 그대로. 11/19 전에는 THRESH를 바꿔 눈금까지 움직였음)
     table, mon = W_.diagnose(pipe, recs, detector=k)
     return next((pp for pp, st in mon.events if st >= 1), None), mon.last_cause_label
 

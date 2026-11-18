@@ -83,6 +83,7 @@ def train(data, units=None, baseline=None):
     b["period_s"] = C.PERIOD_S                             # 진단할 때 같은 판정 주기를 쓰도록 모델에 저장
     b["period_quantile"] = C.PERIOD_QUANTILE               # 주기 점수 지점·연속 횟수도 저장 (infer.Predictor가 이 값을 읽음)
     b["confirm_periods"] = C.CONFIRM_PERIODS
+    b["caution_alarm"] = C.CAUTION_ALARM                   # 경미 경보 점수 (11/19)
     notes.append(f"판정 주기 {C.PERIOD_S:g}초 · 정상 기준: "
                  f"{f'로봇마다 처음 {C.minutes(C.BASELINE_PERIODS):g}분' if baseline == 'per_unit' else '정상 로봇들의 공통 기준'}"
                  f" · 학습 로봇 {len(b['trained_units'])}대 · 정상 창 {n_use:,}개 · 고장 창 {sum(r['true_sev'] > 0 for r in fault):,}개")
@@ -287,8 +288,8 @@ def summarize(units, win, det_scores, skipped, baseline, n_folds):
         s = np.concatenate(parts)
         both = 0 < y.sum() < len(y)                       # AUC는 고장 창과 정상 창이 둘 다 있어야 계산 가능
         det[k] = dict(name=names[k], auc=round(float(roc_auc_score(y, s)), 3) if both else None,
-                      recall=round(float(np.mean(s[y] >= C.THRESH["caution"])), 3) if y.any() else None,
-                      false_positive=round(float(np.mean(s[~y] >= C.THRESH["caution"])), 3) if (~y).any() else None)
+                      recall=round(float(np.mean(s[y] >= C.CAUTION_ALARM)), 3) if y.any() else None,
+                      false_positive=round(float(np.mean(s[~y] >= C.CAUTION_ALARM)), 3) if (~y).any() else None)
     fault_u = [u for u in units if u["label"] and u["label"] != NORMAL_LABEL]   # 고장 라벨 로봇
     normal_u = [u for u in units if u["label"] == NORMAL_LABEL]                 # 정상 로봇 (라벨 없어 정상으로 간주한 로봇 포함)
     # 심각 → 고장 기준까지 여유 주기. 고장 기준 뒤에 뜬 심각(음수)은 '미리 알림'이 아니므로 세지 않음
