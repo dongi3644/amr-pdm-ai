@@ -9,6 +9,9 @@
     ② 오토인코더 + 랜덤포레스트               바퀴 점수(규칙)를 뺀 것 → 순수하게 AI 둘만
     ③ 랜덤포레스트만                         랜덤포레스트가 낸 '정상이 아닐 확률' = 이상 점수
     ④ 랜덤포레스트만 + 바퀴 점수              ③에 바퀴 점수를 더한 것
+    ⑤ 오토인코더·랜덤포레스트 점수 중 큰 쪽   둘 다 3·6·9점 눈금에 맞춘 뒤 큰 값 (아는 고장은 RF, 처음 보는 고장은 AE가 잡기를 기대)
+    ⑥ ⑤ + 바퀴 점수                         지금 구조(①)에 RF 점수를 더한 것
+    --only ae_rf,ae_rf_wheel 처럼 일부만 돌릴 수 있다 (같은 seed·scale이면 결과는 늘 같으므로 나눠 돌려도 됨)
 ③의 랜덤포레스트는 지금 원인 분류와 같은 설정(나무 150그루, class_weight=balanced)으로, 학습용 정상 로봇 + 고장 로봇의 창으로 배우고,
 오토인코더와 똑같이 '학습에 안 쓴 정상 로봇 99.5% = 3점, 고장 정도 0.75~0.85 = 9점' 눈금을 맞춘다. 판정(1분·2번 연속)도 같다.
 시험 로봇은 test_complex와 같다 (학습에 없던 고장: 베어링 변형·속도 극단 포함). 가상 로봇에는 엔코더 4개가 항상 있다.
@@ -71,11 +74,15 @@ def add_rf(pipe, data, units):
     b["detectors"]["rf"] = rf
     if "wheel" in b["detectors"]:
         b["detectors"]["rf_wheel"] = calibrate(CombinedDetector(rf, b["detectors"]["wheel"]), Zcal, Zfail)
+    b["detectors"]["ae_rf"] = calibrate(CombinedDetector(b["detectors"]["ae"], rf), Zcal, Zfail)
+    if "ae_wheel" in b["detectors"]:
+        b["detectors"]["ae_rf_wheel"] = calibrate(CombinedDetector(b["detectors"]["ae_wheel"], rf), Zcal, Zfail)
     return len(Z)
 
 
 SETUPS = [("ae_wheel", "① 오토인코더 + 바퀴 점수 + 랜덤포레스트 (지금)"), ("ae", "② 오토인코더 + 랜덤포레스트"),
-          ("rf", "③ 랜덤포레스트만"), ("rf_wheel", "④ 랜덤포레스트 + 바퀴 점수")]
+          ("rf", "③ 랜덤포레스트만"), ("rf_wheel", "④ 랜덤포레스트 + 바퀴 점수"),
+          ("ae_rf", "⑤ 오토인코더·랜덤포레스트 중 큰 쪽"), ("ae_rf_wheel", "⑥ 오토인코더·랜덤포레스트 중 큰 쪽 + 바퀴 점수")]
 UNSEEN = {"베어링 변형", "속도 다름"}                     # 시험에서 학습 때 없던 값으로 만든 경우
 
 
@@ -85,7 +92,11 @@ def main():
     p.add_argument("--scale", type=float, default=0.3)
     p.add_argument("--out", default=str(PROJ / "가상테스트_결과" / "AE_RF_비교"))
     p.add_argument("--holdout", choices=["unbalance", "looseness", "bearing"], help="이 고장 종류를 학습 로봇에서 모두 뺌 (시험에는 그대로)")
+    p.add_argument("--only", help="돌릴 방법만 쉼표로 (예: ae_rf,ae_rf_wheel). 없으면 6가지 모두")
     a = p.parse_args()
+    global SETUPS
+    if a.only:
+        SETUPS = [x for x in SETUPS if x[0] in a.only.split(",")]
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
@@ -151,9 +162,9 @@ def main():
                                              sum(1 for x in r if x["group"] == g))) for g in ["일반", "복잡한 고장", "어려운 정상"]})
     (out / "결과.json").write_text(json.dumps(res, ensure_ascii=False, indent=1), encoding="utf-8")
     f = lambda v, u="%": "-" if v is None else f"{v:g}{u}"
-    nF = sum(x["fault"] for x in rows["ae"])
+    nF = sum(x["fault"] for x in rows[SETUPS[0][0]])
     lines = ["# 오토인코더 + 랜덤포레스트 vs 랜덤포레스트만 (가상 로봇, 코드 점검용 · 성능 아님)", "",
-             f"- 실행: `가상테스트/compare_ae_rf.py --seed {a.seed} --scale {a.scale:g}" + (f" --holdout {a.holdout}" if a.holdout else "") + f"` · 학습 {len(train_specs)}대 · 시험 {len(test_specs)}대 (고장 {nF} · 정상 {len(test_specs) - nF})",
+             f"- 실행: `가상테스트/compare_ae_rf.py --seed {a.seed} --scale {a.scale:g}" + (f" --holdout {a.holdout}" if a.holdout else "") + (f" --only {a.only}" if a.only else "") + f"` · 학습 {len(train_specs)}대 · 시험 {len(test_specs)}대 (고장 {nF} · 정상 {len(test_specs) - nF})",
              "- 원인 분류는 모두 같은 랜덤포레스트, 다른 것은 이상을 알아채는 점수뿐. 가상 로봇에는 엔코더 4개가 항상 있음", "",
              "| 방법 | 판정 정답률 | 고장 감지율 | 오경보율 | 처음 보는 고장 감지 | 고장 → 경미까지 | 고장 종류 정확도 | AUC (1초) | 1초 감지율 / 오경보율 |",
              "|---|---|---|---|---|---|---|---|---|"]
