@@ -1,8 +1,11 @@
 """[역할] third_model(1D-CNN) 성능 시험: 실측 보정 가상 로봇으로 학습 → 아는 고장 · 처음 보는 고장을 따로 채점 (11/19)
 
-    python 가상테스트/성능시험.py --g3 "data/정상 데이터_공3옥상" --g3 "data/정상 데이터_공3옥상(11.16)" \
-        --yg "data/정상 데이터_욧골(11.15)" --fault "data/고장 데이터_욧골" --test-scale 2.0 [--jobs 8]
-    (third_model 폴더에서 실행. 실측 폴더 4개를 data/ 아래에 둠. 약 15분, --test-scale 0.6이면 약 5분)
+    python 가상테스트/성능시험.py [--jobs 8]
+    (third_model 폴더에서 실행. 실측 폴더 4개를 data/ 아래에 둠. 약 15분)
+    기본값 = README 5-1절 최종 결과의 조건 (11/20): --seed 2031 · 검증 로봇 --val-scale 1.0 (83대) · 시험 로봇 --test-scale 2.0 (166대)
+      · --cond 0.5-1.0 (고장 세기 0.5~1.0배 무작위, 고장 절반이 처음 보는 고장) · --test-shift 1
+      → 정답률 97.6 · 아는 고장 96.3 · 처음 보는 고장 94.9 · 오경보 0 · 원인 96.6 (가상 로봇 결과)
+    --cond all 이면 예전 4조건(아는 고장만 · 기본 세기 · 1.2~1.5배 · 0.4~1.0배)을 모두 잼
 
 가상 로봇: 가상테스트/실측보정_로봇.py (실측 정상 조각을 이어 붙이고, 실측 테이프 고장의 진동 증가분을 넣음). third_model 폴더만 있으면 돌아감.
   엔코더 4개(가정), 각속도 없음. 실측 파일은 학습·검증·시험으로 나눠 겹치지 않음.
@@ -213,25 +216,29 @@ def evaluate(cache, specs, key, q, cf, cu, classes=None):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--g3", action="append", required=True)
-    p.add_argument("--yg", action="append", required=True)
-    p.add_argument("--fault", required=True)
+    p.add_argument("--g3", action="append", default=None, help="공3옥상 정상 실측 폴더 (기본: data/ 아래 2개)")
+    p.add_argument("--yg", action="append", default=None, help="욧골 정상 실측 폴더 (기본: data/정상 데이터_욧골(11.15))")
+    p.add_argument("--fault", default="data/고장 데이터_욧골", help="욧골 테이프 고장 실측 폴더")
     p.add_argument("--skip", default="114650,114717,110211")
     p.add_argument("--scale", type=float, default=0.5)
-    p.add_argument("--val-scale", type=float, default=0.4)
-    p.add_argument("--test-scale", type=float, default=0.6)
-    p.add_argument("--seed", type=int, default=2027)
+    p.add_argument("--val-scale", type=float, default=1.0, help="검증 로봇 수 배율 (1.0 = 83대, 판정 설정을 고름)")
+    p.add_argument("--test-scale", type=float, default=2.0, help="시험 로봇 수 배율 (2.0 = 조건마다 166대)")
+    p.add_argument("--seed", type=int, default=2031, help="로봇 · 실측 파일 나누기 seed (2031 = README 5-1절 최종 결과)")
     p.add_argument("--jobs", type=int, default=8)
     p.add_argument("--max-fa", type=float, default=3.0)
     p.add_argument("--epochs", type=int, default=15, help="1D-CNN 최대 학습 반복 (config.DEEP_EPOCHS 대신)")
     p.add_argument("--max-windows", type=int, default=20000, help="1D-CNN 학습 창 수 상한 (config.DEEP_MAX_WINDOWS 대신)")
-    p.add_argument("--cond", default=None, help="시험 조건 하나만 (빠른 실험): 고장 세기 범위 예) 0.7-1.0. 고장 절반은 처음 보는 고장")
+    p.add_argument("--cond", default="0.5-1.0", help="시험 조건: 고장 세기 범위 (기본 0.5-1.0 = 최종 결과 조건, 고장 절반은 처음 보는 고장). all = 예전 4조건 모두")
     p.add_argument("--synth-share", type=float, default=None, help="config.SYNTH_SHARE 대신 (정상 창 중 가상 이상을 넣는 비율)")
     p.add_argument("--synth-low", type=float, default=None, help="config.SYNTH_ENERGY 아래 끝 대신 (약한 가상 이상)")
     p.add_argument("--reuse", default=None, help="이미 끝난 시험 폴더 (빠른 추가 채점): 그 폴더의 학습 모델과 검증으로 고른 설정을 그대로 쓰고 학습 · 검증은 건너뜀. 같은 --seed로")
-    p.add_argument("--test-shift", type=int, default=0, help="시험 로봇 seed를 이만큼 바꿈 (같은 조건이라도 다른 시험 로봇)")
+    p.add_argument("--test-shift", type=int, default=1, help="시험 로봇 seed를 이만큼 바꿈 (같은 조건이라도 다른 시험 로봇, 1 = 최종 결과)")
     p.add_argument("--out", default=str(PROJ / "가상테스트_결과" / "성능시험"))
     a = p.parse_args()
+    a.g3 = a.g3 or ["data/정상 데이터_공3옥상", "data/정상 데이터_공3옥상(11.16)"]
+    a.yg = a.yg or ["data/정상 데이터_욧골(11.15)"]
+    if a.cond in ("", "all", "none"):                      # 예전 4조건 모두
+        a.cond = None
     C.DEEP_EPOCHS, C.DEEP_MAX_WINDOWS, C.DEEP_PATIENCE = a.epochs, a.max_windows, min(C.DEEP_PATIENCE, 4)
     if a.synth_share is not None:
         C.SYNTH_SHARE = a.synth_share
