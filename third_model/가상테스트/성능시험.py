@@ -234,7 +234,11 @@ def main():
     p.add_argument("--reuse", default=None, help="이미 끝난 시험 폴더 (빠른 추가 채점): 그 폴더의 학습 모델과 검증으로 고른 설정을 그대로 쓰고 학습 · 검증은 건너뜀. 같은 --seed로")
     p.add_argument("--test-shift", type=int, default=1, help="시험 로봇 seed를 이만큼 바꿈 (같은 조건이라도 다른 시험 로봇, 1 = 최종 결과)")
     p.add_argument("--out", default=str(PROJ / "가상테스트_결과" / "성능시험"))
+    p.add_argument("--show", default=None, help="실험 없이 이 결과 폴더의 요약표 · 그림만 다시 보기 (예: 가상테스트_결과/성능시험)")
     a = p.parse_args()
+    if a.show:
+        import 결과요약
+        return 결과요약.show(a.show)
     a.g3 = a.g3 or ["data/정상 데이터_공3옥상", "data/정상 데이터_공3옥상(11.16)"]
     a.yg = a.yg or ["data/정상 데이터_욧골(11.15)"]
     if a.cond in ("", "all", "none"):                      # 예전 4조건 모두
@@ -365,19 +369,12 @@ def score_tests(a, out, log, sp, idle, fm, path, keys, pick, classes, res):
             HW = g["hw"]
             v = evaluate(tc, specs, k, g["q"], g["cf"], g["cu"], classes)
             res["levels"][lname][k] = v
-            log(f"{lname} · {k}: {v}")
         (out / "결과.json").write_text(json.dumps(res, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
-    print("\n" + "=" * 70)
-    names = {"ae_wheel": "특징 오토인코더 + 바퀴", "cnn_ae": "1D-CNN 오토인코더", "deep": "특징 AI + 1D-CNN (원래 주 모델)",
-             "rf": "랜덤포레스트", "deep_rf": "특징 AI + 1D-CNN 오토인코더 + 랜덤포레스트", 
-             "feat_rf": "특징 오토인코더 + 랜덤포레스트", "spec_ae": "주파수 모양 오토인코더", "spec_wheel": "주파수 모양 오토인코더 + 바퀴 점수",
-             "spec_rf": "주파수 모양 오토인코더 + 랜덤포레스트 (새 주 모델, AI 2개)"}
-    for lname, v in res["levels"].items():
-        print(f"[{lname}]")
-        for k, x in v.items():
-            print(f"   {names.get(k, k)}: 정답률 {x['accuracy']}% · 아는 고장 감지 {x['known']}% · 처음 보는 고장 감지 {x['unseen']}% · "
-                  f"오경보 {x['false_alarm']}% · 원인 {x['cause']}% ({x['n']}) {x['by_unseen']}")
-    log(f"저장: {out}")
+        log(f"채점 끝: {lname}")
+    print()
+    import 결과요약                                        # 한눈에 보는 요약표 · 그림 (가상테스트/결과요약.py)
+    결과요약.show(out)
+    log(f"저장 폴더: {out}  (결과.json · 결과_요약.txt · 결과_그림.png)")
 
 
 def rescore(a, out, log, sp, idle, fm):

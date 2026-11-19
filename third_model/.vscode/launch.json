@@ -10,28 +10,7 @@
       "cwd": "${workspaceFolder}", "console": "integratedTerminal"
     },
     {
-      "name": "2. 데이터 검사 (check)",
-      "type": "debugpy", "request": "launch",
-      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
-      "program": "${workspaceFolder}/run.py", "args": ["check"],
-      "cwd": "${workspaceFolder}", "console": "integratedTerminal", "env": { "PYTHONUTF8": "1" }
-    },
-    {
-      "name": "3. 학습 + 교차검증 (train)",
-      "type": "debugpy", "request": "launch",
-      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
-      "program": "${workspaceFolder}/run.py", "args": ["train"],
-      "cwd": "${workspaceFolder}", "console": "integratedTerminal", "env": { "PYTHONUTF8": "1" }
-    },
-    {
-      "name": "4. 진단 (diagnose)",
-      "type": "debugpy", "request": "launch",
-      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
-      "program": "${workspaceFolder}/run.py", "args": ["diagnose"],
-      "cwd": "${workspaceFolder}", "console": "integratedTerminal", "env": { "PYTHONUTF8": "1" }
-    },
-    {
-      "name": "가상 성능 시험 (최종 결과 조건: 새 로봇 166대 · 고장 세기 0.5~1.0배, 약 15분 · data/ 아래 실측 폴더 4개 필요)",
+      "name": "2. 가상 성능 시험 (최종 결과 조건: 새 로봇 166대 · 고장 세기 0.5~1.0배, 약 15분 · data/ 아래 실측 폴더 4개 필요)",
       "type": "debugpy", "request": "launch",
       "python": "${workspaceFolder}/.venv/Scripts/python.exe",
       "program": "${workspaceFolder}/가상테스트/성능시험.py",
@@ -39,11 +18,18 @@
       "cwd": "${workspaceFolder}", "console": "integratedTerminal", "env": { "PYTHONUTF8": "1" }
     },
     {
-      "name": "가상 성능 시험: 예전 4조건 모두 (약 30분)",
+      "name": "3. 지난 결과 다시 보기 (실험 없이 바로, 결과 요약 · 그림)",
       "type": "debugpy", "request": "launch",
       "python": "${workspaceFolder}/.venv/Scripts/python.exe",
       "program": "${workspaceFolder}/가상테스트/성능시험.py",
-      "args": ["--cond", "all", "--jobs", "8", "--out", "가상테스트_결과/성능시험_4조건"],
+      "args": ["--show", "가상테스트_결과/성능시험"],
+      "cwd": "${workspaceFolder}", "console": "integratedTerminal", "env": { "PYTHONUTF8": "1" }
+    },
+    {
+      "name": "4. 진단 (diagnose: CSV → 1분 진단표 · 그래프)",
+      "type": "debugpy", "request": "launch",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "program": "${workspaceFolder}/run.py", "args": ["diagnose"],
       "cwd": "${workspaceFolder}", "console": "integratedTerminal", "env": { "PYTHONUTF8": "1" }
     },
     {
@@ -55,34 +41,19 @@
       "cwd": "${workspaceFolder}", "console": "integratedTerminal", "env": { "PYTHONUTF8": "1" }
     },
     {
-      "name": "가상 성능 시험: 빠른 확인 (약 3분)",
+      "name": "가상 성능 시험: 예전 4조건 모두 (약 30분)",
+      "type": "debugpy", "request": "launch",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "program": "${workspaceFolder}/가상테스트/성능시험.py",
+      "args": ["--cond", "all", "--jobs", "8", "--out", "가상테스트_결과/성능시험_4조건"],
+      "cwd": "${workspaceFolder}", "console": "integratedTerminal", "env": { "PYTHONUTF8": "1" }
+    },
+    {
+      "name": "가상 성능 시험: 빠른 확인 (약 3분, 로봇 수만 줄여 작동 확인)",
       "type": "debugpy", "request": "launch",
       "python": "${workspaceFolder}/.venv/Scripts/python.exe",
       "program": "${workspaceFolder}/가상테스트/성능시험.py",
       "args": ["--scale", "0.12", "--val-scale", "0.1", "--test-scale", "0.1", "--jobs", "8", "--out", "가상테스트_결과/빠른확인"],
-      "cwd": "${workspaceFolder}", "console": "integratedTerminal", "env": { "PYTHONUTF8": "1" }
-    },
-    {
-      "name": "가상 시험: 학습 약 10분 + 시험 약 10분 (코드 점검용)",
-      "type": "debugpy", "request": "launch",
-      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
-      "program": "${workspaceFolder}/가상테스트/test_complex.py",
-      "args": ["--train-scale", "0.8", "--test-scale", "0.75", "--encoders"],
-      "cwd": "${workspaceFolder}", "console": "integratedTerminal", "env": { "PYTHONUTF8": "1" }
-    },
-    {
-      "name": "가상 시험: 빠른 확인 (약 4분)",
-      "type": "debugpy", "request": "launch",
-      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
-      "program": "${workspaceFolder}/가상테스트/test_complex.py",
-      "args": ["--scale", "0.1", "--encoders"],
-      "cwd": "${workspaceFolder}", "console": "integratedTerminal", "env": { "PYTHONUTF8": "1" }
-    },
-    {
-      "name": "0. 아두이노 기록 (저장소 스케치를 쓸 때만, USB 연결 후)",
-      "type": "debugpy", "request": "launch",
-      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
-      "program": "${workspaceFolder}/실행/0_아두이노_기록.py",
       "cwd": "${workspaceFolder}", "console": "integratedTerminal", "env": { "PYTHONUTF8": "1" }
     }
   ]

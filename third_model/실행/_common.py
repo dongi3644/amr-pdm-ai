@@ -2,7 +2,7 @@
 
 [역할] 실행/ 폴더의 번호 붙은 스크립트들이 공유하는 도우미. IDE가 어떤 Python을 골라 두었든
        항상 .venv(패키지가 설치된 환경)로 run.py를 실행하게 해서, 버튼 하나로 같은 결과가 나오게 한다.
-[구조] 실행/2_데이터_검사.py → _common.run(["check", ...]) → .venv\\Scripts\\python.exe run.py check ...
+[구조] 실행/4_진단.py → _common.run(["diagnose", ...]) → .venv\\Scripts\\python.exe run.py diagnose ...
 """
 import os
 import subprocess
