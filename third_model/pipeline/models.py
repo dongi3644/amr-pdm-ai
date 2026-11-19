@@ -172,7 +172,8 @@ class WheelMaxDetector:
         상대 속도  : 네 바퀴 z의 중앙값에서 가장 멀리 벗어난 거리 ÷ (흩어진 정도 + 1)
                     → 한 바퀴만 튀면 크고, 거친 바닥처럼 네 바퀴가 함께(제각각) 흔들리면 작다 (네 값 중 '외톨이' 정도)
         앞뒤 차이  : 왼쪽·오른쪽 앞뒤 바퀴 속도 차이의 |z|
-    세 값 중 가장 큰 것. 학습할 것이 없는 단순한 규칙이라 과대적합될 여지가 없고, 눈금은 학습에 안 쓴 정상 로봇으로 맞춘다."""
+        1회전 모양 : 바퀴마다 '같은 각도에서 매번 느려지는 정도'(다른 세 바퀴와의 차이, config.ENC_REV)의 z 중 가장 큰 값 (바퀴 찍힘 · 휜 림)
+    네 값 중 가장 큰 것. 학습할 것이 없는 단순한 규칙이라 과대적합될 여지가 없고, 눈금은 학습에 안 쓴 정상 로봇으로 맞춘다."""
     name = "바퀴 이상 (엔코더)"
 
     def __init__(self, feats):
@@ -181,6 +182,7 @@ class WheelMaxDetector:
         self.rip = [pos[f"{w}_rip"] for w in wheels]      # z에서 바퀴별 속도 흔들림 열 번호
         self.rel = [pos[f"{w}_rel"] for w in wheels]      # 바퀴별 상대 속도 열 번호
         self.diff = [pos[f] for f in ("left_diff", "right_diff") if f in pos]
+        self.rv = [pos[f] for f in feats if f.endswith("_rv1") or f.endswith("_rv2")]   # 엔코더 1회전 속도 모양 (있을 때만)
 
     def fit(self, Z):
         return self
@@ -191,7 +193,8 @@ class WheelMaxDetector:
         a = (rip.max(1) - np.median(rip, axis=1)) / spread(rip)
         b = np.abs(rel - np.median(rel, axis=1, keepdims=True)).max(1) / spread(rel)
         c = np.abs(Z[:, self.diff]).max(1) if self.diff else np.zeros(len(Z))
-        return np.maximum.reduce([a, b, c])
+        d = Z[:, self.rv].max(1) if getattr(self, "rv", None) else np.zeros(len(Z))   # 예전 모델 파일에는 rv가 없음
+        return np.maximum.reduce([a, b, c, d])
 
 
 class CombinedDetector:

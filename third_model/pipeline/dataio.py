@@ -535,6 +535,16 @@ def _windows(df, fname, data, fs_arg):
             if ok.sum() >= 3:
                 rec["enc_t"] = (t[a:b][ok] - t[a]).astype(np.float32)
                 rec["enc_cnt"] = (enc[a:b][ok] - enc[a:b][ok][0]).astype(np.float32)
+            if getattr(C, "ENC_REV", False):                         # 엔코더 1회전 속도 모양: 이 창 끝까지의 최근 ENC_REV_CTX_S초 (지난 기록만)
+                from pipeline.features import enc_rev_profile
+                a0 = int(np.searchsorted(t, t[b - 1] - C.ENC_REV_CTX_S))
+                rv = np.full((enc.shape[1], 2), np.nan)
+                for i in range(enc.shape[1]):
+                    ok = ~np.isnan(enc[a0:b, i])
+                    pr = enc_rev_profile(t[a0:b][ok], enc[a0:b, i][ok]) if ok.sum() >= 10 else None
+                    if pr is not None:
+                        rv[i] = pr
+                rec["enc_rev"] = rv.astype(np.float32)
         if has_label:                                                # 라벨: 창 안의 마지막 고장 종류와 최대 고장 정도
             kind = next((k for k in (kinds[a:b][::-1] if kinds is not None else ()) if k), "")   # 뒤에서부터 첫 빈칸 아닌 종류
             sv = sevs[a:b][~np.isnan(sevs[a:b])] if sevs is not None else ()

@@ -30,6 +30,8 @@ ENC_KO = {**{f"{w}_rel": f"{C.WHEEL_KO[w]} 바퀴 상대 속도" for w in C.WHEE
           "left_diff": "왼쪽 앞뒤 바퀴 속도 차이", "right_diff": "오른쪽 앞뒤 바퀴 속도 차이", "cmd_eff": "모터 명령 대비 속도",
           **{f"{w}_speff": f"{C.WHEEL_KO[w]} 바퀴 명령 대비 속도" for w in C.WHEEL_KO},
           **{f"{w}_sprip": f"{C.WHEEL_KO[w]} 바퀴 속도 출렁임" for w in C.WHEEL_KO},
+          **{f"{w}_rv1": f"{C.WHEEL_KO[w]} 바퀴 1회전 속도 출렁임 (완만)" for w in C.WHEEL_KO},
+          **{f"{w}_rv2": f"{C.WHEEL_KO[w]} 바퀴 1회전 속도 패임 (좁음)" for w in C.WHEEL_KO},
           "cmd": "모터 명령(속도 단계)"}
 
 

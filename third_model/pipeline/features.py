@@ -55,6 +55,34 @@ def rev_periodicity(x, fs, fw):
     return float((a * b).sum() / d) if d > 0 else 0.0
 
 
+def enc_rev_profile(t, c):
+    """(시각, 누적 펄스) 최근 몇 초 → (1차 조화, 나머지 조화) 크기. 각도 칸을 지나는 시간 ÷ 주변 1회전 평균 − 1을 칸별로 평균한 모양의 FFT.
+    바퀴가 2바퀴도 안 돌았으면 None"""
+    nb, ppr = int(C.ENC_REV_BINS), float(C.ENCODER_PPR)
+    c = np.abs(np.asarray(c, float) - c[0])
+    t = np.asarray(t, float)
+    keep = np.r_[True, np.diff(c) > 0]
+    t, c = t[keep], c[keep]
+    if len(c) < 10 or c[-1] - c[0] < 2 * ppr:
+        return None
+    blk = ppr / nb
+    lv = np.arange(np.ceil(c[0] / blk), np.floor(c[-1] / blk) + 1) * blk     # 15펄스마다
+    du = np.diff(np.interp(lv, c, t))                                         # 그 칸을 지나는 데 걸린 시간
+    if len(du) < 2 * nb:
+        return None
+    loc = np.convolve(du, np.ones(nb) / nb, mode="same")                      # 주변 1회전 평균 (가감속은 지움)
+    i = np.arange(len(du))
+    ok = (i >= nb // 2) & (i < len(du) - nb // 2) & (loc > 0)
+    if ok.sum() < nb:
+        return None
+    r = du[ok] / loc[ok] - 1
+    b = np.round(lv[:-1][ok] / blk).astype(int) % nb                          # 바퀴 각도 칸
+    cnt = np.bincount(b, minlength=nb)
+    p = np.bincount(b, weights=r, minlength=nb) / np.maximum(cnt, 1)
+    F_ = np.fft.rfft(p) / nb * 2
+    return float(abs(F_[1])), float(np.sqrt((np.abs(F_[2:]) ** 2).sum()))
+
+
 def spec_shape(x, fs):
     """진동 파형 1초 → 주파수 칸마다 log10(그 칸 에너지 ÷ 전체 에너지). 전체 크기는 나눠서 없애고 '모양'만 남김"""
     x = np.asarray(x, float) - np.mean(x)
@@ -120,6 +148,14 @@ def enc_features(rec):
             out[f"{w}_rel"] = float(np.mean(S[:, i] - others) / level)   # +면 다른 바퀴보다 빠름, -면 느림
         out["left_diff"] = float(np.mean(S[:, 0] - S[:, 2]) / level)    # 앞 왼쪽 - 뒤 왼쪽
         out["right_diff"] = float(np.mean(S[:, 1] - S[:, 3]) / level)   # 앞 오른쪽 - 뒤 오른쪽
+    rv = rec.get("enc_rev")                                # 엔코더 1회전 속도 모양 (dataio가 최근 몇 초로 계산, 바퀴 × (1차, 나머지))
+    if getattr(C, "ENC_REV", False) and rv is not None:
+        rv = np.asarray(rv, float)
+        for i, w in enumerate(WHEELS):
+            for j, k in enumerate(("rv1", "rv2")):
+                v = rv[:, j]
+                others = np.delete(v, i)
+                out[f"{w}_{k}"] = float(v[i] - np.median(others)) if np.isfinite(v).all() else 0.0   # 2바퀴도 안 돌았으면 0
     cmd = rec.get("motor_cmd", float("nan"))
     if not np.isnan(cmd):
         out["cmd_eff"] = level / abs(cmd) if abs(cmd) > 0 else 0.0
@@ -202,6 +238,9 @@ SPEC_KO.update({f"{ch}_peak": f"{C.CHANNEL_KO.get(ch, ch)} 뾰족한 주파수 �
 SPEC_KO.update({f"{ch}_rev": f"{C.CHANNEL_KO.get(ch, ch)} 1회전 박자 충격" for ch in ACC})
 # 엔코더 특징 11개 (학습 데이터에 엔코더가 있을 때만 FEATS 뒤에 붙음. 실제로 쓴 목록은 모델 파일의 bundle["feats"])
 ENC_BASE = [f"{w}_{k}" for w in WHEELS for k in ("rel", "rip")] + ["left_diff", "right_diff"]
+# 엔코더 1회전 속도 모양 8개 (config.ENC_REV): {바퀴}_rv1 완만하게 (불평형 쪽), {바퀴}_rv2 좁게 패임 (찍힘 쪽). 다른 세 바퀴보다 얼마나 큰가
+ENC_REV_FEATS = [f"{w}_{k}" for w in WHEELS for k in ("rv1", "rv2")] if getattr(C, "ENC_REV", False) else []
+ENC_BASE = ENC_BASE + ENC_REV_FEATS
 # 바퀴 하나에만 생기는 이상을 보는 특징 (models.WheelMaxDetector가 이 중 가장 크게 벗어난 값을 봄)
 WHEEL_FEATS = list(ENC_BASE)
 ENC_FEATS = ENC_BASE + ["cmd_eff"]
