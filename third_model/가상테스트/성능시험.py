@@ -225,6 +225,7 @@ def main():
     p.add_argument("--max-fa", type=float, default=3.0)
     p.add_argument("--epochs", type=int, default=15, help="1D-CNN 최대 학습 반복 (config.DEEP_EPOCHS 대신)")
     p.add_argument("--max-windows", type=int, default=20000, help="1D-CNN 학습 창 수 상한 (config.DEEP_MAX_WINDOWS 대신)")
+    p.add_argument("--cond", default=None, help="시험 조건 하나만 (빠른 실험): 고장 세기 범위 예) 0.7-1.0. 고장 절반은 처음 보는 고장")
     p.add_argument("--synth-share", type=float, default=None, help="config.SYNTH_SHARE 대신 (정상 창 중 가상 이상을 넣는 비율)")
     p.add_argument("--synth-low", type=float, default=None, help="config.SYNTH_ENERGY 아래 끝 대신 (약한 가상 이상)")
     p.add_argument("--out", default=str(PROJ / "가상테스트_결과" / "성능시험"))
@@ -307,9 +308,14 @@ def main():
     res = dict(main=main, feats=len(b["feats"]), wave_ch=b.get("wave_ch"), notes=notes, pick=pick, levels={},
                unknown_prob=C.UNKNOWN_PROB)
     rng = np.random.default_rng(a.seed + 500)
-    for li, (lname, share, strength) in enumerate([("K 아는 고장만", 0.0, 1.0), ("U 고장 절반이 처음 보는 고장", 0.5, 1.0),
+    conds = [("K 아는 고장만", 0.0, 1.0), ("U 고장 절반이 처음 보는 고장", 0.5, 1.0),
                                                      ("U6 충분히 진행된 고장(세기 ×1.2~1.5) + 절반이 처음 보는 고장", 0.5, (1.2, 1.5)),
-                                                     ("U3 고장 세기 무작위(×0.4~1.0) + 절반이 처음 보는 고장 (현실 조건)", 0.5, (0.4, 1.0))]):
+             ("U3 고장 세기 무작위(×0.4~1.0) + 절반이 처음 보는 고장 (현실 조건)", 0.5, (0.4, 1.0))]
+    li0 = 0
+    if a.cond:                                             # 빠른 실험: 조건 하나만 (다른 조건과 다른 시험 로봇)
+        lo, hi = (float(x) for x in a.cond.split("-"))
+        conds, li0 = [(f"C 고장 세기 무작위(×{lo:g}~{hi:g}) + 절반이 처음 보는 고장", 0.5, (lo, hi))], 4
+    for li, (lname, share, strength) in enumerate(conds, start=li0):
         specs = make_unseen(make_specs(a.seed + 1000 + li * 5, a.test_scale, "test", sp["test"]), rng, share)
         for s in specs:                                     # 고장 세기 (약한 고장 조건, rand = 로봇마다 0.4~1.0배)
             if s["fault"]:
