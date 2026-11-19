@@ -28,6 +28,33 @@ VIB_KEYS = ["rms", "kurt", "crest", "low", "mid", "high"]
 SPEC_EDGES = np.geomspace(2.0, 235.0, C.SPEC_BANDS + 1)
 
 
+def wheel_hz(rec):
+    """이 1초의 바퀴 회전 [Hz] = 살아 있는 엔코더 속도(펄스/초)의 중앙값 ÷ 1회전 펄스. 없거나 거의 멈춰 있으면 0"""
+    v = [abs(rec.get(k, np.nan)) for k in C.ENCODER_CHANNELS]
+    v = [x for x in v if np.isfinite(x) and x > 0]
+    fw = float(np.median(v)) / C.ENCODER_PPR if v else 0.0
+    return fw if fw > 0.5 else 0.0
+
+
+def rev_periodicity(x, fs, fw):
+    """충격(20 Hz 이상 떨림)의 크기가 바퀴 1회전 간격으로 되풀이되는 정도 → -1~1 (멈춰 있거나 1회전이 창의 절반보다 길면 0)"""
+    x = np.asarray(x, float) - np.mean(x)
+    n = len(x)
+    if fw <= 0 or n < 16:
+        return 0.0
+    lag = int(round(fs / fw))
+    if lag < 2 or lag > n // 2:
+        return 0.0
+    X = np.fft.rfft(x)
+    X[np.fft.rfftfreq(n, 1 / fs) < 20] = 0               # 느린 흔들림(바퀴 불균형 · 주행)은 빼고 충격만
+    e = np.abs(np.fft.irfft(X, n))
+    e = np.convolve(e, np.ones(5) / 5, mode="same")       # 충격의 크기(포락선)
+    e = e - e.mean()
+    a, b = e[:-lag], e[lag:]
+    d = np.sqrt((a ** 2).sum() * (b ** 2).sum())
+    return float((a * b).sum() / d) if d > 0 else 0.0
+
+
 def spec_shape(x, fs):
     """진동 파형 1초 → 주파수 칸마다 log10(그 칸 에너지 ÷ 전체 에너지). 전체 크기는 나눠서 없애고 '모양'만 남김"""
     x = np.asarray(x, float) - np.mean(x)
@@ -146,6 +173,8 @@ def extract(rec):
         for ch in ACC:
             for i, v in enumerate(spec_shape(rec[ch], rec["vib_fs"])):
                 row[f"{ch}_s{i:02d}"] = float(v)
+            if getattr(C, "SPEC_REV", False):              # 1회전 박자: 충격 크기의 자기상관을 바퀴 1회전 간격에서 잼
+                row[f"{ch}_rev"] = rev_periodicity(rec[ch], rec["vib_fs"], wheel_hz(rec))
             if C.SPEC_PEAK:                                # 뾰족함: 한 주파수만 솟으면 큼 (기어 순음), 넓게 퍼지면 작음 (마찰 잡음·바닥)
                 x = np.asarray(rec[ch], float) - np.mean(rec[ch])
                 a_ = np.abs(np.fft.rfft(x * np.hanning(len(x))))
@@ -165,10 +194,12 @@ def extract(rec):
 # 모델에 들어가는 진동 특징 이름 36개와 그 순서. 모든 모델이 이 순서대로 숫자를 받으므로 순서를 바꾸면 저장된 모델과 맞지 않게 된다
 FEATS = [f"{ch}_{k}" for ch in CHANNELS for k in VIB_KEYS]
 SPEC_FEATS = ([f"{ch}_s{i:02d}" for ch in ACC for i in range(C.SPEC_BANDS)]
-              + ([f"{ch}_peak" for ch in ACC] if C.SPEC_PEAK else [])) if C.SPEC_FEATURES else []
+              + ([f"{ch}_peak" for ch in ACC] if C.SPEC_PEAK else [])
+              + ([f"{ch}_rev" for ch in ACC] if getattr(C, "SPEC_REV", False) else [])) if C.SPEC_FEATURES else []
 SPEC_KO = {f"{ch}_s{i:02d}": f"{C.CHANNEL_KO.get(ch, ch)} {SPEC_EDGES[i]:.0f}~{SPEC_EDGES[i + 1]:.0f} Hz 비중"
            for ch in ACC for i in range(C.SPEC_BANDS)}
 SPEC_KO.update({f"{ch}_peak": f"{C.CHANNEL_KO.get(ch, ch)} 뾰족한 주파수 정도" for ch in ACC})
+SPEC_KO.update({f"{ch}_rev": f"{C.CHANNEL_KO.get(ch, ch)} 1회전 박자 충격" for ch in ACC})
 # 엔코더 특징 11개 (학습 데이터에 엔코더가 있을 때만 FEATS 뒤에 붙음. 실제로 쓴 목록은 모델 파일의 bundle["feats"])
 ENC_BASE = [f"{w}_{k}" for w in WHEELS for k in ("rel", "rip")] + ["left_diff", "right_diff"]
 # 바퀴 하나에만 생기는 이상을 보는 특징 (models.WheelMaxDetector가 이 중 가장 크게 벗어난 값을 봄)

@@ -94,6 +94,7 @@ def train(data, units=None, baseline=None):
     b["period_s"] = C.PERIOD_S                             # 진단할 때 같은 판정 주기를 쓰도록 모델에 저장
     b["period_quantile"] = C.PERIOD_QUANTILE               # 주기 점수 지점·연속 횟수도 저장 (infer.Predictor가 이 값을 읽음)
     b["confirm_periods"] = C.CONFIRM_PERIODS
+    b["period_high_w"] = C.PERIOD_HIGH_W                   # 간헐 고장 규칙 (11/20)
     notes.append(f"판정 주기 {C.PERIOD_S:g}초 · 정상 기준: "
                  f"{f'로봇마다 처음 {C.minutes(C.BASELINE_PERIODS):g}분' if baseline == 'per_unit' else '정상 로봇들의 공통 기준'}"
                  f" · 학습 로봇 {len(b['trained_units'])}대 · 정상 창 {n_use:,}개 · 고장 창 {sum(r['true_sev'] > 0 for r in fault):,}개")

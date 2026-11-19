@@ -15,6 +15,7 @@ CSV를 data 폴더에 넣고 아래 순서로 실행한다. 형식은 README.md
     train --no-eval      교차검증 없이 최종 모델만 학습
 """
 import argparse
+from pathlib import Path
 import json
 import re
 import sys
@@ -130,9 +131,11 @@ def cmd_train(a, hb=None):
 def cmd_diagnose(a, hb=None):
     """저장된 최종 모델로 로봇마다 처음부터 끝까지 1초 창을 넣어 보고, 판정 주기별 결과 표(CSV)와 점수 그래프(PNG)를 남긴다.
     학습에 쓰인 로봇은 표시해 둔다 (그 로봇의 결과는 성능이 아님)."""
-    if not C.BUNDLE_PATH.exists():
-        raise D.DataError("모델이 없습니다. 먼저 python run.py train 을 실행하세요.")
-    pipe = AMRPipeline.load()
+    path = Path(a.model) if getattr(a, "model", None) else C.BUNDLE_PATH   # --model: 가상 시험으로 학습한 모델 등 다른 모델 파일
+    if not path.exists():
+        raise D.DataError(f"모델이 없습니다 ({path}). 먼저 python run.py train 을 실행하거나, --model로 모델 파일을 지정하세요.")
+    pipe = AMRPipeline.load(path)
+    print(f"모델: {path}")
     C.PERIOD_S = pipe.bundle.get("period_s", C.PERIOD_S)    # 학습 때와 같은 판정 주기로 읽어야 기준이 맞음
     # 주기 점수 지점·연속 횟수도 모델에 저장된 학습 때 값을 씀 (infer.Predictor가 직접 읽음. 예전 모델은 중앙값·2번)
     print(f"모델 설정: 판정 주기 {C.PERIOD_S:g}초 · 주기 점수 {quantile_ko(pipe.bundle.get('period_quantile', 0.5))}"
@@ -176,6 +179,8 @@ def main():
         s.add_argument("--baseline", choices=["auto", "per_unit", "reference"], default=None)
         if name == "train":
             s.add_argument("--no-eval", action="store_true")
+        if name == "diagnose":                             # 예: --model 가상테스트_결과/성능시험/model_bundle.joblib (실측 고장 기록 확인용)
+            s.add_argument("--model", default=None, help="쓸 모델 파일 (기본: artifacts/model_bundle.joblib)")
     a = p.parse_args()
     if getattr(a, "period_s", None):
         C.PERIOD_S = a.period_s                            # 이번 실행에서만 판정 주기를 바꿈

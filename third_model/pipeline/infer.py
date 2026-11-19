@@ -61,6 +61,7 @@ class Predictor:
         self.calibrated = bundle["scale"] != "normal_only"           # 고장 데이터가 없으면 9점(정지 위험) 선을 그리지 않음
         # 주기 점수의 지점·상태 변경 연속 횟수: 학습 때 모델에 저장한 값 (이 값이 없는 예전 모델은 예전 방식 0.5·2번)
         self.quantile = float(bundle.get("period_quantile", 0.5))
+        self.high_w = float(bundle.get("period_high_w", 0.0))   # 간헐 고장: 상위 10% 지점 × 이 비율도 함께 (config.PERIOD_HIGH_W)
         self.confirm = int(bundle.get("confirm_periods", 2))
         self.feats = list(bundle.get("feats", FEATS))     # 모델이 학습한 특징 목록 (엔코더 특징 포함 여부)
         self.skipped = 0                                 # 특징 값이 비어 판정하지 못한 창 수 (예: 엔코더 값이 끊긴 1초)
@@ -87,6 +88,8 @@ class Predictor:
             return
         # 주기 점수 = 그 주기 창 점수들의 quantile 지점. 0.5(중앙값)면 튀는 창 몇 개에 흔들리지 않음
         s = float(np.median(self.period_buf)) if self.quantile == 0.5 else float(np.quantile(self.period_buf, self.quantile))
+        if self.high_w > 0:                              # 가끔만 크게 튀는 간헐 고장이 중앙값에 묻히지 않게
+            s = max(s, self.high_w * float(np.quantile(self.period_buf, C.PERIOD_HIGH_Q)))
         self.period_scores.append((period, s))
         self.period_buf = []
         lv = level(s)                                    # 이번 주기 점수만 보면 어떤 상태인가

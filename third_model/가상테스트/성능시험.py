@@ -42,7 +42,8 @@ EVAL_COMPLEX = {"급성 고장": 5, "간헐 고장": 5, "복합 고장": 5, "약
 EVAL_HARD = {"바닥 바뀜": 6, "짐 실음": 4, "저전압 정상": 4, "속도 바뀜": 4}
 UNSEEN = ["gear", "flat", "bearing_new"]
 UNSEEN_KO = {"gear": "기어 마모", "flat": "바퀴 찍힘", "bearing_new": "처음 보는 주파수의 베어링"}
-GRID = dict(quantile=[0.5, 0.75], confirm=[1, 2, 3], caution=[1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0])
+GRID = dict(quantile=[0.5, 0.75], confirm=[1, 2, 3], caution=[1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0], high_w=[0.0, 0.5, 0.65, 0.8])
+HW = 0.0                                                # 간헐 고장 규칙 비율 (config.PERIOD_HIGH_W와 같은 뜻, 채점 때 바꿔 끼움)
 KEYS = ["ae_wheel", "cnn_ae", "deep", "rf", "deep_rf", "feat_rf", "spec_ae", "spec_wheel", "spec_rf"]
 
 
@@ -134,6 +135,8 @@ def fast_status(periods, scores, q, confirm, caution):
         if p < C.BASELINE_PERIODS:
             continue
         v = float(np.quantile(scores[periods == p], q))
+        if HW > 0:
+            v = max(v, HW * float(np.quantile(scores[periods == p], C.PERIOD_HIGH_Q)))
         lvl = 2 if v >= C.THRESH["warning"] else (1 if v >= caution else 0)
         cand, run = (cand, run + 1) if lvl == cand else (lvl, 1)
         if run >= confirm and lvl != state:
@@ -274,14 +277,19 @@ def main():
     log(f"검증 로봇 {len(val)}대 점수 계산 끝 (아는 고장만)")
     pick = {}
     for k in keys:
-        grid = [dict(q=q, cf=cf, cu=cu, **evaluate(vc, val, k, q, cf, cu)) for q, cf, cu in itertools.product(*GRID.values())]
+        global HW
+        grid = []
+        for q, cf, cu, hw in itertools.product(*GRID.values()):
+            HW = hw
+            grid.append(dict(q=q, cf=cf, cu=cu, hw=hw, **evaluate(vc, val, k, q, cf, cu)))
         ok = [g for g in grid if g["false_alarm"] <= a.max_fa] or grid
-        pick[k] = max(ok, key=lambda g: (g["accuracy"], -g["false_alarm"], -g["cu"], -g["cf"]))   # 같으면 더 민감한(낮은) 문턱
-        log(f"  검증 최고 {k}: 1분 점수 {pick[k]['q']} · {pick[k]['cf']}번 · 경미 {pick[k]['cu']}점 → 정답률 {pick[k]['accuracy']}% · 오경보 {pick[k]['false_alarm']}%")
+        pick[k] = max(ok, key=lambda g: (g["accuracy"], -g["false_alarm"], -g["cu"], -g["cf"], g["hw"]))   # 같으면 더 민감한 쪽
+        log(f"  검증 최고 {k}: 1분 점수 {pick[k]['q']} · 간헐 {pick[k]['hw']} · {pick[k]['cf']}번 · 경미 {pick[k]['cu']}점 → 정답률 {pick[k]['accuracy']}% · 오경보 {pick[k]['false_alarm']}%")
 
     # '원인 미확정' 기준(UNKNOWN_PROB)도 검증 로봇으로: 아는 고장 원인 맞음이 97% 이상인 가장 높은 기준 (시험 로봇은 보지 않음)
     if classes is not None and b["main"] in pick:
         g = pick[b["main"]]
+        HW = g["hw"]
         for th in (0.6, 0.55, 0.5, 0.45, 0.4, 0.35, 0.3):
             C.UNKNOWN_PROB = th
             vcause = evaluate(vc, val, b["main"], g["q"], g["cf"], g["cu"], classes)["cause"]
@@ -307,6 +315,7 @@ def main():
         res["levels"][lname] = {}
         for k in keys:
             g = pick[k]
+            HW = g["hw"]
             v = evaluate(tc, specs, k, g["q"], g["cf"], g["cu"], classes)
             res["levels"][lname][k] = v
             log(f"{lname} · {k}: {v}")
