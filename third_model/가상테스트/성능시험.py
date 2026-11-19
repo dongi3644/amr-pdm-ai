@@ -260,13 +260,15 @@ def main():
     res = dict(main=b["main"], feats=len(b["feats"]), wave_ch=b.get("wave_ch"), notes=notes, pick=pick, levels={})
     rng = np.random.default_rng(a.seed + 500)
     for li, (lname, share, strength) in enumerate([("K 아는 고장만", 0.0, 1.0), ("U 고장 절반이 처음 보는 고장", 0.5, 1.0),
-                                                     ("U2 약한 고장(×0.6) + 절반이 처음 보는 고장", 0.5, 0.6)]):
+                                                     ("U2 약한 고장(×0.6) + 절반이 처음 보는 고장", 0.5, 0.6),
+                                                     ("U3 고장 세기 무작위(×0.4~1.0) + 절반이 처음 보는 고장 (현실 조건)", 0.5, "rand")]):
         specs = make_unseen(make_specs(a.seed + 1000 + li * 5, a.test_scale, "test", sp["test"]), rng, share)
-        for s in specs:                                     # 고장 세기 (약한 고장 조건)
+        for s in specs:                                     # 고장 세기 (약한 고장 조건, rand = 로봇마다 0.4~1.0배)
             if s["fault"]:
-                s["strength"] *= strength
+                strength_ = float(rng.uniform(0.4, 1.0)) if strength == "rand" else strength
+                s["strength"] *= strength_
                 if s.get("second"):
-                    s["second"]["strength"] *= strength
+                    s["second"]["strength"] *= strength_
         tc = cache_of(specs, sp["test"])
         res["levels"][lname] = {}
         for k in keys:
