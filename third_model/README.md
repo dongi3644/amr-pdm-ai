@@ -16,6 +16,7 @@
    ```
 
    결과: `가상테스트_결과/성능시험/결과.json` + 화면 표. 가상 로봇은 실측 기록을 재료로 실행할 때 새로 만듦
+   가상 로봇 몇 대만 CSV로 열어 보기: `python 가상테스트/가상로봇_저장.py` (정상 1 + 불균형 · 풀림 · 마찰 각 1대, `--fault gear,flat` 등으로 고름) → `가상테스트_결과/가상로봇_CSV/`
 5. 실측 6분 이상 기록이 있으면: `python run.py check` → `python run.py train` → `python run.py diagnose`
 
 
