@@ -287,16 +287,24 @@ def main():
         log(f"  검증 최고 {k}: 1분 점수 {pick[k]['q']} · 간헐 {pick[k]['hw']} · {pick[k]['cf']}번 · 경미 {pick[k]['cu']}점 → 정답률 {pick[k]['accuracy']}% · 오경보 {pick[k]['false_alarm']}%")
 
     # '원인 미확정' 기준(UNKNOWN_PROB)도 검증 로봇으로: 아는 고장 원인 맞음이 97% 이상인 가장 높은 기준 (시험 로봇은 보지 않음)
-    if classes is not None and b["main"] in pick:
-        g = pick[b["main"]]
+    cands = [k for k in ("spec_rf", "feat_rf") if k in pick]
+    main = max(cands, key=lambda k: (pick[k]["accuracy"], -pick[k]["false_alarm"], k == b["main"])) if cands else b["main"]
+    desc = ", ".join("%s 정답률 %s%% 오경보 %s%%" % (k, pick[k]["accuracy"], pick[k]["false_alarm"]) for k in cands)
+    log(f"  검증으로 고른 주 모델: {main} (후보: {desc})")
+    if classes is not None and main in pick:
+        g = pick[main]
         HW = g["hw"]
         for th in (0.6, 0.55, 0.5, 0.45, 0.4, 0.35, 0.3):
             C.UNKNOWN_PROB = th
-            vcause = evaluate(vc, val, b["main"], g["q"], g["cf"], g["cu"], classes)["cause"]
+            vcause = evaluate(vc, val, main, g["q"], g["cf"], g["cu"], classes)["cause"]
             if vcause is not None and vcause >= 97.0:
                 break
         log(f"  검증으로 고른 '원인 미확정' 기준: {C.UNKNOWN_PROB} (검증 아는 고장 원인 맞음 {vcause}%)")
-    res = dict(main=b["main"], feats=len(b["feats"]), wave_ch=b.get("wave_ch"), notes=notes, pick=pick, levels={},
+    if main in pick:                                       # 검증으로 고른 주 모델 · 판정 설정을 모델 파일에도 저장 → run.py diagnose --model 로 그대로 씀
+        g = pick[main]
+        b.update(main=main, period_quantile=g["q"], confirm_periods=g["cf"], period_high_w=g["hw"], caution_alarm=g["cu"])
+        pipe.save(path)
+    res = dict(main=main, feats=len(b["feats"]), wave_ch=b.get("wave_ch"), notes=notes, pick=pick, levels={},
                unknown_prob=C.UNKNOWN_PROB)
     rng = np.random.default_rng(a.seed + 500)
     for li, (lname, share, strength) in enumerate([("K 아는 고장만", 0.0, 1.0), ("U 고장 절반이 처음 보는 고장", 0.5, 1.0),
