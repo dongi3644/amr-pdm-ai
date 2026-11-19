@@ -24,10 +24,10 @@ import joblib
 import numpy as np
 
 import config as C
-from pipeline.features import FEATS, WHEEL_FEATS
+from pipeline.features import FEATS, SPEC_FEATS, WHEEL_FEATS
 from pipeline.infer import Predictor
 from pipeline import deep as DP
-from pipeline.models import NORMAL_LABEL, CauseClassifier, CombinedDetector, RFDetector, SegmentBaseline, WheelMaxDetector, calibrate, make_detectors
+from pipeline.models import NORMAL_LABEL, CauseClassifier, AEDetector, CombinedDetector, RFDetector, SegmentBaseline, SubsetDetector, WheelMaxDetector, calibrate, make_detectors
 
 
 def usable(rows, feats):
@@ -126,11 +126,18 @@ class AMRPipeline:
             dets["wheel"] = calibrate((DP.SlicedDetector(wd, nf) if wave_ch else wd).fit(Zfit), Zcal, Zfail)
             dets["ae_wheel"] = calibrate(CombinedDetector(dets["ae"], dets["wheel"]).fit(Zfit), Zcal, Zfail)
             main = "ae_wheel"
+        # 주파수 모양 오토인코더 (비지도, 11/19): 주파수 모양 특징만 보고 정상만 학습 → 처음 보는 고장 감지. 바퀴 점수(규칙)와 큰 값
+        spec_idx = [i for i, f in enumerate(feats) if f in SPEC_FEATS]
+        if spec_idx and C.SPEC_AE:
+            dets["spec_ae"] = calibrate(SubsetDetector(AEDetector((32, 8, 32)), spec_idx, "주파수 모양 오토인코더 (AI)").fit(Zfit), Zcal, Zfail)
+            if "wheel" in dets:
+                dets["spec_wheel"] = calibrate(CombinedDetector(dets["spec_ae"], dets["wheel"], "주파수 모양 오토인코더 + 바퀴"), Zcal, Zfail)
         if wave_ch:                                        # 1D-CNN 오토인코더 (파형, 정상만 학습) + 특징 AI와 큰 값
             dets["cnn_ae"] = calibrate(DP.CNNAEDetector(nf, wave_ch).fit(Zfit), Zcal, Zfail)
             dets["deep"] = calibrate(DP.MaxDetector(dets[main], dets["cnn_ae"]).fit(Zfit), Zcal, Zfail)
             main = C.DEEP_MAIN if C.DEEP_MAIN in dets else "deep"
         # 고장 라벨(+ 가상 이상)이 있으면 랜덤포레스트 이상 점수를 더해 '특징 AI·1D-CNN·랜덤포레스트 중 큰 값'을 주 모델로 (11/19)
+        rfd = None
         if C.RF_DETECTOR and (sev > 0).any():
             keep = (sev == 0) | (sev >= C.CAUSE_MIN_SEVERITY)
             lab = np.array([NORMAL_LABEL if r["true_sev"] == 0 else f"{r['true_kind']}|{r['true_side']}" for r in frows])
@@ -153,7 +160,11 @@ class AMRPipeline:
             Zc = np.vstack([Zf[keep], Zcal])               # 입력: 고장 로봇 창 + 보정용 정상 로봇 창
             yc = np.concatenate([labels[keep], [NORMAL_LABEL] * len(Zcal)])
             if len(set(yc)) >= 2:                          # 라벨이 두 종류 이상이어야 분류를 배울 수 있음
-                if wave_ch and C.CAUSE_MODEL == "cnn":
+                if C.CAUSE_MODEL == "rf_shared" and rfd is not None:   # 감지용 랜덤포레스트를 원인에도 (AI 하나로, 11/19)
+                    cc = CauseClassifier()
+                    cc.m, cc.feats, cc.classes = rfd.m, list(feats), [str(c) for c in rfd.m.classes_]
+                    cause = DP.SlicedCause(cc, nf) if wave_ch else cc
+                elif wave_ch and C.CAUSE_MODEL == "cnn":
                     cause = DP.DeepCauseClassifier(nf, wave_ch).fit(Zc, yc, feats)
                 elif wave_ch:
                     cause = DP.SlicedCause(CauseClassifier().fit(Zc[:, :nf], yc, feats), nf)
@@ -164,6 +175,9 @@ class AMRPipeline:
         if "rf" in dets:
             base = "ae_wheel" if "ae_wheel" in dets else "ae"
             dets["feat_rf"] = calibrate(CombinedDetector(dets[base], dets["rf"], "특징 AI + 랜덤포레스트 (주 모델)"), Zcal, Zfail)
+            sbase = "spec_wheel" if "spec_wheel" in dets else "spec_ae"
+            if sbase in dets:                              # AI 2개: 주파수 모양 오토인코더(비지도) + 랜덤포레스트(지도)
+                dets["spec_rf"] = calibrate(CombinedDetector(dets[sbase], dets["rf"], "주파수 모양 오토인코더 + 랜덤포레스트 (주 모델)"), Zcal, Zfail)
             main = C.DEEP_MAIN if C.DEEP_MAIN in dets else main
         self.bundle = dict(detectors=dets, cause=cause, feats=list(feats), version="real-vib-1.0", baseline=baseline,
                            reference=ref, scale=scale, main=main, wave_ch=wave_ch, fit_units=fit_units, cal_units=cal_units)

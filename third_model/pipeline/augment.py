@@ -8,6 +8,9 @@
     좁은 대역 잡음 : 5~235 Hz 중 한 곳, 폭 4~40 Hz        (베어링·마찰 같은 고장)
     순음 + 배음    : 3~200 Hz 중 하나 + 2·3배 성분          (기어·회전 부품)
     주기 충격      : 1초에 1~30번 '쿵', 15~220 Hz로 울림     (풀림·찍힘·이 빠짐)
+    바퀴가 돌 때는 절반을 '바퀴 회전에 묶인 모양'으로 (11/19, 회전 부품 고장은 대부분 회전 속도의 몇 배로 나타남)
+    회전 × k배 순음 : k = 1~80 (+ 회전 옆띠)                (기어·축·모터)
+    1회전에 m번 충격 : m = 1~4                               (바퀴 찍힘·이 빠짐·축 휨)
     세기: 넣는 에너지 = 그 창 진동 에너지의 config.SYNTH_ENERGY 범위 배. 가속도 3축에만 넣음 (엔코더·전류는 그대로)
 [지키는 것] 원래 데이터 파일과 원래 창은 바꾸지 않는다. 처음 5분(정상 기준)은 원래 창 그대로 두어 그 로봇 기준으로 비교된다.
            가상 이상 창은 synthetic=True로 표시되어 건강 점수 9점 눈금 맞추기에는 쓰지 않는다 (system.fit).
@@ -60,7 +63,42 @@ def _impulses(rng, n, fs):
     return _unit(np.convolve(hits, ring)[:n])
 
 
+def _order_tone(rng, n, fs, fw):
+    """바퀴 회전 × k배 순음 (k = 1~80, 회전 부품: 기어·축·모터). 바퀴 회전으로 옆띠가 생김. 샘플링 절반을 넘으면 실제처럼 접힘"""
+    t = np.arange(n) / fs
+    ph = 2 * np.pi * fw * t + rng.uniform(0, 2 * np.pi)
+    k = rng.uniform(1, 80)
+    x = np.sin(k * ph) * (1 + rng.uniform(0, 0.6) * np.sin(ph))
+    if rng.random() < 0.5:
+        x += rng.uniform(0.1, 0.5) * np.sin(2 * k * ph + 1.0)
+    return _unit(x)
+
+
+def _per_rev(rng, n, fs, fw):
+    """바퀴 1회전에 m번 '쿵' (m = 1~4, 바퀴 찍힘·이 빠짐·축 휨)"""
+    rate = fw * int(rng.integers(1, 5))
+    fr = rng.uniform(15, min(220.0, 0.45 * fs))
+    L = int(min(n, rng.uniform(0.03, 0.15) * fs))
+    k = np.arange(L)
+    ring = np.exp(-k / max(L / 4, 1)) * np.sin(2 * np.pi * fr * k / fs)
+    hits = np.zeros(n)
+    i = rng.uniform(0, fs / rate)
+    while i < n:
+        hits[int(i)] = rng.uniform(0.8, 1.2)
+        i += (fs / rate) * rng.uniform(0.97, 1.03)
+    return _unit(np.convolve(hits, ring)[:n])
+
+
+def _wheel_hz(rec):
+    """이 1초의 바퀴 회전 [Hz] (엔코더 속도 펄스/초 ÷ 1회전 펄스). 엔코더가 없거나 멈춰 있으면 None"""
+    v = [abs(rec.get(k, np.nan)) for k in C.ENCODER_CHANNELS]
+    v = [x for x in v if np.isfinite(x) and x > 0]
+    fw = float(np.median(v)) / getattr(C, "ENCODER_PPR", 330) if v else 0.0
+    return fw if fw > 0.3 else None
+
+
 SHAPES = (_band_noise, _tone, _impulses)
+WHEEL_SHAPES = (_order_tone, _per_rev)                     # 바퀴가 돌 때만 (11/19)
 
 
 def inject(rec, rng):
@@ -68,7 +106,11 @@ def inject(rec, rng):
     out = dict(rec)
     fs = float(rec["vib_fs"])
     n = min(len(rec[a]) for a in ACC if a in rec)
-    shape = SHAPES[rng.integers(len(SHAPES))](rng, n, fs)
+    fw = _wheel_hz(rec)
+    if fw is not None and rng.random() < 0.5:
+        shape = WHEEL_SHAPES[rng.integers(len(WHEEL_SHAPES))](rng, n, fs, fw)
+    else:
+        shape = SHAPES[rng.integers(len(SHAPES))](rng, n, fs)
     lo, hi = C.SYNTH_ENERGY
     e = float(np.exp(rng.uniform(np.log(lo), np.log(hi))))   # 넣는 에너지 ÷ 창 에너지
     w = rng.uniform(0.3, 1.0, len(ACC))

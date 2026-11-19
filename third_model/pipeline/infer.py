@@ -38,6 +38,9 @@ def feat_ko(f):
     ax_rms → 'X축 가속도 진동 크기(RMS)', gz_high → 'Z축 각속도 고주파 진동'"""
     if f in ENC_KO:                                       # 엔코더 특징 (예: fl_rip → 앞 왼쪽 바퀴 속도 흔들림)
         return ENC_KO[f]
+    from pipeline.features import SPEC_KO
+    if f in SPEC_KO:                                      # 주파수 모양 (예: ax_s17 → X축 가속도 102~124 Hz 비중)
+        return SPEC_KO[f]
     if f.count("_") != 1:                                 # 이미 한국어 이름 (1D-CNN 판단 근거: 'X축 가속도 파형 0.2~0.4초' 등)
         return f
     ch, key = f.split("_")
@@ -46,7 +49,8 @@ def feat_ko(f):
 
 def level(score):
     """건강 점수 → 상태 번호. 3점 미만 0(정상), 6점 미만 1(주의), 그 이상 2(경고)"""
-    return 0 if score < C.THRESH["caution"] else 1 if score < C.THRESH["warning"] else 2
+    caution = getattr(C, "CAUTION_ALARM", C.THRESH["caution"])   # 주의 경보 문턱 (눈금 3점과 따로, 11/19)
+    return 0 if score < caution else 1 if score < C.THRESH["warning"] else 2
 
 
 class Predictor:

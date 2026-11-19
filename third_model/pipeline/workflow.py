@@ -26,7 +26,7 @@ from sklearn.metrics import confusion_matrix, roc_auc_score
 
 import config as C
 from pipeline.dataio import DataError, choose_baseline
-from pipeline.features import ENC_FEATS, PART_ENC_FEATS, choose_feats, extract
+from pipeline.features import ENC_FEATS, PART_ENC_FEATS, SPEC_FEATS, choose_feats, extract
 from pipeline.models import NORMAL_LABEL, health, label_ko
 from pipeline.power import PowerMonitor
 from pipeline.augment import synth_copy
@@ -82,6 +82,9 @@ def train(data, units=None, baseline=None):
                      "정상 로봇을 3대 이상(가능하면 5대 이상) 넣으세요.")
     try:                                                  # 모델에 넣을 특징: 진동 36개 (+ 모든 학습 기록에 엔코더가 있으면 바퀴 11개)
         feats, feat_note = choose_feats(normal + fault)
+        if SPEC_FEATS:                                     # 주파수 모양 특징 (config.SPEC_FEATURES)
+            feats = list(feats) + SPEC_FEATS
+            feat_note += f" + 주파수 모양 {len(SPEC_FEATS)}개"
     except ValueError as e:
         raise DataError(str(e)) from e
     notes.append(feat_note)

@@ -138,6 +138,7 @@ KIND_KO = {"normal": "정상", "unbalance": "불평형", "looseness": "체결부
 CAUSE_MIN_SEVERITY = 0.25         # 원인 분류 학습에 쓰는 최소 고장 정도
 FAILURE_SEVERITY = 0.8            # 평가용 '정지 위험' 기준 (라벨의 고장 정도)
 FAIL_CAL_BAND = (0.75, 0.85)      # 건강 점수 9에 맞출 고장 정도 구간
+CAUTION_ALARM = 2.5               # 주의 경보를 내는 1분 점수 (11/19, 검증 로봇으로 고름). 눈금(정상 99.5% = THRESH["caution"] = 3점)은 그대로
 THRESH = dict(caution=3.0, warning=6.0, danger=9.0)   # 건강 점수: 정상 99.5% 지점 = 3, 고장 정도 0.8 = 9
 MIN_FAIL_RATIO = 1.5              # 고장 기준 점수가 정상 99.5% 지점의 이 배수를 넘을 때만 9점 눈금(로그)을 맞춤 (아니면 눈금이 불안정)
 SCORE_MAX = 30.0                  # 건강 점수 상한 (표시·평균이 극단값 하나에 끌려가지 않도록)
@@ -155,11 +156,13 @@ CV_MAX_FOLDS = 5                  # 로봇 단위 교차검증 최대 겹 수. �
 # ---------------- 딥러닝 (1D-CNN, pipeline/deep.py) ----------------
 # True면 1초 파형을 그대로 넣는 1D-CNN 오토인코더(감지)와 1D-CNN 원인 분류를 학습한다 (PyTorch 필요).
 # False면 예전 방식(특징 + 오토인코더 + 랜덤포레스트)만. 바꾸면 train부터 다시.
-DEEP_MODEL = True
-DEEP_MAIN = "feat_rf"             # 진단에 쓸 건강 점수 (11/19): "feat_rf" = 특징 AI(+바퀴)·랜덤포레스트 중 큰 값 (가상 시험에서 가장 균형)
+DEEP_MODEL = False                # 11/19: 끔 (AI 2개 구성 = 주파수 모양 오토인코더 + 랜덤포레스트. 1D-CNN 쓰려면 True)
+DEEP_MAIN = "spec_rf"             # 진단에 쓸 건강 점수 (11/19): "spec_rf" = 주파수 모양 오토인코더(+바퀴 점수)·랜덤포레스트 중 큰 값 (AI 2개)
+                                  # "feat_rf" = 특징 오토인코더(+바퀴)·랜덤포레스트 중 큰 값
                                   # "deep_rf" = 여기에 1D-CNN 오토인코더까지 (처음 보는 고장 87%를 잡지만 바닥 바뀜에 오경보 21%)
                                   # "deep" = 특징 AI와 1D-CNN 오토인코더 중 큰 값 (예전 기본, 오경보 21~28%), "cnn_ae" = 1D-CNN 오토인코더만
-CAUSE_MODEL = "cnn"               # 원인 분류: "cnn" = 1D-CNN(파형 + 특징), "rf" = 랜덤포레스트(특징)
+CAUSE_MODEL = "rf_shared"         # 원인 분류: "rf_shared" = 감지용 랜덤포레스트를 원인에도 그대로 씀 (AI 하나로 감지 + 원인, 11/19)
+                                  # "cnn" = 1D-CNN(파형 + 특징, DEEP_MODEL = True일 때), "rf" = 원인용 랜덤포레스트를 따로 학습
 DEEP_CAUSE_FEATS = True           # 1D-CNN 원인 분류에 특징 z도 함께 넣을지
 DEEP_WAVE_LEN = 512               # 1초 파형을 이 길이로 다시 뽑음 (500 Hz 기록 ≈ 그대로). 16의 배수
 DEEP_LATENT = 32                  # 오토인코더 병목 크기
@@ -168,6 +171,9 @@ DEEP_PATIENCE = 6
 DEEP_BATCH = 128
 DEEP_LR = 1e-3
 DEEP_MAX_WINDOWS = 60000          # 학습 창이 이보다 많으면 무작위로 이만큼만
+SPEC_FEATURES = True              # 주파수 모양 특징 (11/19): 축마다 2~235 Hz를 로그 간격 SPEC_BANDS칸으로 나눠 '그 칸 에너지 ÷ 전체 에너지'(로그).
+SPEC_BANDS = 24                   #   바닥이 거칠어지면 모든 칸이 함께 커져 비율은 그대로, 고장은 특정 칸만 커져 비율이 바뀜. 진동 샘플링 480 Hz 이상 필요
+SPEC_AE = True                    # 주파수 모양 특징만 보는 오토인코더 (정상만 학습, 처음 보는 고장 감지용)
 RF_DETECTOR = True                # 고장 라벨이 있으면 랜덤포레스트 '정상이 아닐 확률'(특징)을 감지 점수에 더함: 주 모델 = 특징 AI·1D-CNN·랜덤포레스트 중 큰 값 (11/19)
 SYNTH_ANOMALY = True              # 처음 보는 고장 대비 (11/19): 학습용 정상 로봇 진동에 '가상 이상'(좁은 대역 잡음·순음·주기 충격, 무작위 주파수)을 넣은
                                   # 복사본을 '처음 보는 이상' 라벨로 랜덤포레스트·1D-CNN 원인 분류에 함께 가르침 (pipeline/augment.py)

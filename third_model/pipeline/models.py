@@ -131,12 +131,15 @@ class AEDetector:
     PCA와 달리 특징 사이의 곡선 관계(tanh)도 배울 수 있다. 라벨 없는 정상 데이터만 있어도 학습된다는 것이 장점."""
     name = "오토인코더 (AI)"
 
+    def __init__(self, hidden=(24, 6, 24)):
+        self.hidden = tuple(hidden)
+
     def fit(self, Z):
         self.sc = z_scaler(Z)                              # 신경망은 입력 크기가 고를 때 잘 배우므로 한 번 더 표준화
         X = self.sc.transform(Z)
         # 특징수 → 24 → 6(병목) → 24 → 특징수. 입력과 정답이 같은 X (자기 자신을 복원), 검증 오차가 멈추면 학습 중단
         # 시작값(random_state)만 다른 신경망 AE_ENSEMBLE개 → 복원 오차를 평균 (하나가 우연히 잘못 배워도 덜 흔들림, 크기는 그대로)
-        self.ms = [MLPRegressor(hidden_layer_sizes=(24, 6, 24), activation="tanh", max_iter=400,
+        self.ms = [MLPRegressor(hidden_layer_sizes=getattr(self, "hidden", (24, 6, 24)), activation="tanh", max_iter=400,
                                 early_stopping=True, random_state=C.SEED + i).fit(X, X) for i in range(max(1, int(C.AE_ENSEMBLE)))]
         self.m = self.ms[0]
         return self
@@ -146,6 +149,21 @@ class AEDetector:
         ms = getattr(self, "ms", [self.m])                # 예전 모델 파일은 신경망 하나
         # 복원한 값(predict)과 원래 값의 차이(RMSE)를 신경망마다 구해 평균
         return np.mean([np.sqrt(np.mean((m.predict(X) - X) ** 2, axis=1)) for m in ms], axis=0)
+
+
+class SubsetDetector:
+    """특징 일부(idx 열)만 보는 감지기 (예: 주파수 모양 특징만 보는 오토인코더, 11/19)"""
+
+    def __init__(self, det, idx, name=None):
+        self.det, self.idx = det, list(idx)
+        self.name = name or getattr(det, "name", "")
+
+    def fit(self, Z):
+        self.det.fit(np.asarray(Z)[:, self.idx])
+        return self
+
+    def raw(self, Z):
+        return self.det.raw(np.atleast_2d(Z)[:, self.idx])
 
 
 class WheelMaxDetector:

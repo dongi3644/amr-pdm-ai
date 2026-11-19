@@ -42,7 +42,7 @@ EVAL_HARD = {"바닥 바뀜": 6, "짐 실음": 4, "저전압 정상": 4, "속도
 UNSEEN = ["gear", "flat", "bearing_new"]
 UNSEEN_KO = {"gear": "기어 마모", "flat": "바퀴 찍힘", "bearing_new": "처음 보는 주파수의 베어링"}
 GRID = dict(quantile=[0.5, 0.75], confirm=[1, 2, 3], caution=[1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0])
-KEYS = ["ae_wheel", "cnn_ae", "deep", "rf", "deep_rf", "feat_rf"]
+KEYS = ["ae_wheel", "cnn_ae", "deep", "rf", "deep_rf", "feat_rf", "spec_ae", "spec_wheel", "spec_rf"]
 
 
 def place(spec, rng, pools, cat):
@@ -107,8 +107,11 @@ _PIPE = {}
 
 def _score(path, s, pools, idle, fm):
     """로봇 1대 만들기 → 감지 점수들 + 원인 확률 (프로세스 하나에서, 모델은 파일에서 한 번만 읽음)"""
-    import torch
-    torch.set_num_threads(2)
+    try:                                                   # 1D-CNN을 켰을 때만 PyTorch가 필요
+        import torch
+        torch.set_num_threads(2)
+    except ImportError:
+        pass
     if path not in _PIPE:
         _PIPE[path] = AMRPipeline.load(path)
     pipe = _PIPE[path]
@@ -251,13 +254,19 @@ def main():
     for k in keys:
         grid = [dict(q=q, cf=cf, cu=cu, **evaluate(vc, val, k, q, cf, cu)) for q, cf, cu in itertools.product(*GRID.values())]
         ok = [g for g in grid if g["false_alarm"] <= a.max_fa] or grid
-        pick[k] = max(ok, key=lambda g: (g["accuracy"], -g["false_alarm"]))
+        pick[k] = max(ok, key=lambda g: (g["accuracy"], -g["false_alarm"], -g["cu"], -g["cf"]))   # 같으면 더 민감한(낮은) 문턱
         log(f"  검증 최고 {k}: 1분 점수 {pick[k]['q']} · {pick[k]['cf']}번 · 경미 {pick[k]['cu']}점 → 정답률 {pick[k]['accuracy']}% · 오경보 {pick[k]['false_alarm']}%")
 
     res = dict(main=b["main"], feats=len(b["feats"]), wave_ch=b.get("wave_ch"), notes=notes, pick=pick, levels={})
     rng = np.random.default_rng(a.seed + 500)
-    for lname, share in [("K 아는 고장만", 0.0), ("U 고장 절반이 처음 보는 고장", 0.5)]:
-        specs = make_unseen(make_specs(a.seed + 1000 + int(share * 10), a.test_scale, "test", sp["test"]), rng, share)
+    for li, (lname, share, strength) in enumerate([("K 아는 고장만", 0.0, 1.0), ("U 고장 절반이 처음 보는 고장", 0.5, 1.0),
+                                                     ("U2 약한 고장(×0.6) + 절반이 처음 보는 고장", 0.5, 0.6)]):
+        specs = make_unseen(make_specs(a.seed + 1000 + li * 5, a.test_scale, "test", sp["test"]), rng, share)
+        for s in specs:                                     # 고장 세기 (약한 고장 조건)
+            if s["fault"]:
+                s["strength"] *= strength
+                if s.get("second"):
+                    s["second"]["strength"] *= strength
         tc = cache_of(specs, sp["test"])
         res["levels"][lname] = {}
         for k in keys:
@@ -269,7 +278,8 @@ def main():
     print("\n" + "=" * 70)
     names = {"ae_wheel": "특징 오토인코더 + 바퀴", "cnn_ae": "1D-CNN 오토인코더", "deep": "특징 AI + 1D-CNN (원래 주 모델)",
              "rf": "랜덤포레스트", "deep_rf": "특징 AI + 1D-CNN 오토인코더 + 랜덤포레스트", 
-             "feat_rf": "특징 AI + 랜덤포레스트 (새 주 모델)"}
+             "feat_rf": "특징 오토인코더 + 랜덤포레스트", "spec_ae": "주파수 모양 오토인코더", "spec_wheel": "주파수 모양 오토인코더 + 바퀴 점수",
+             "spec_rf": "주파수 모양 오토인코더 + 랜덤포레스트 (새 주 모델, AI 2개)"}
     for lname, v in res["levels"].items():
         print(f"[{lname}]")
         for k, x in v.items():
