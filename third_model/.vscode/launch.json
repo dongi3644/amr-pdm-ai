@@ -31,6 +31,25 @@
       "cwd": "${workspaceFolder}", "console": "integratedTerminal", "env": { "PYTHONUTF8": "1" }
     },
     {
+      "name": "가상 성능 시험 (실측 보정 가상 로봇, 약 15분 · data/ 아래 실측 폴더 4개 필요)",
+      "type": "debugpy", "request": "launch",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "program": "${workspaceFolder}/가상테스트/성능시험.py",
+      "args": ["--g3", "data/정상 데이터_공3옥상", "--g3", "data/정상 데이터_공3옥상(11.16)",
+               "--yg", "data/정상 데이터_욧골(11.15)", "--fault", "data/고장 데이터_욧골", "--test-scale", "2.0", "--jobs", "8"],
+      "cwd": "${workspaceFolder}", "console": "integratedTerminal", "env": { "PYTHONUTF8": "1" }
+    },
+    {
+      "name": "가상 성능 시험: 빠른 확인 (약 3분)",
+      "type": "debugpy", "request": "launch",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "program": "${workspaceFolder}/가상테스트/성능시험.py",
+      "args": ["--g3", "data/정상 데이터_공3옥상", "--g3", "data/정상 데이터_공3옥상(11.16)",
+               "--yg", "data/정상 데이터_욧골(11.15)", "--fault", "data/고장 데이터_욧골",
+               "--scale", "0.12", "--val-scale", "0.1", "--test-scale", "0.1", "--jobs", "8"],
+      "cwd": "${workspaceFolder}", "console": "integratedTerminal", "env": { "PYTHONUTF8": "1" }
+    },
+    {
       "name": "가상 시험: 학습 약 10분 + 시험 약 10분 (코드 점검용)",
       "type": "debugpy", "request": "launch",
       "python": "${workspaceFolder}/.venv/Scripts/python.exe",

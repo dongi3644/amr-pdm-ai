@@ -1,6 +1,7 @@
 """[역할] 코드 점검 전용 가상 로봇 생성기 (발표·성능 자료로 쓰지 않음)
 
-로봇 1대의 기록을 아두이노 기록기가 저장하는 CSV와 같은 열(time, ax~gz, current, voltage, 라벨)의 표로 만든다.
+로봇 1대의 기록을 아두이노 기록기가 저장하는 CSV와 같은 열(time, ax~gz, current, voltage, 엔코더 4개, 모터 명령, 라벨)의 표로 만든다.
+가상 데이터에는 엔코더(바퀴 4개 누적 펄스)와 모터 명령이 항상 들어간다 (11/17부터. 예전에는 encoders=True일 때만).
 100대를 CSV로 쓰면 수 GB가 되므로 파일로 저장하지 않고 메모리의 표를 그대로 dataio에 넣는다.
 
 만드는 신호 (모두 사람이 정한 식이라 실제 로봇과 다름)
@@ -64,7 +65,7 @@ def random_spec(rng, name, fault, kind=None, wheel=None):
     ramp = rng.uniform(6, 12)                              # 고장이 최종 정도까지 커지는 데 걸리는 시간 [분]
     spec.update(kind=kind or str(rng.choice(KINDS)), wheel=wheel or str(rng.choice(WHEELS)),
                 onset=onset, ramp=ramp,
-                final=rng.uniform(0.5, 1.0),               # 최종 고장 정도 (0.8 미만이면 '정지 위험'까지 안 감)
+                final=rng.uniform(0.5, 1.0),               # 최종 고장 정도 (0.8 미만이면 고장 기준(0.8)까지 안 감)
                 shape=rng.uniform(1.0, 2.0),               # 1이면 일정하게, 2면 갈수록 빠르게 나빠짐
                 strength=rng.uniform(0.7, 1.3),            # 같은 고장 정도라도 로봇마다 진동에 드러나는 세기가 다름
                 minutes=onset + ramp + rng.uniform(1, 2))  # 최종 정도에 이른 뒤 1~2분 더 기록
@@ -101,7 +102,7 @@ def complex_spec(rng, name, cat, kind=None, wheel=None, extreme=False):
         k2 = str(rng.choice([k for k in KINDS if k != spec["kind"]]))
         spec["second"] = dict(kind=k2, wheel=str(rng.choice(WHEELS)), ratio=rng.uniform(0.5, 1.0),
                               strength=rng.uniform(0.7, 1.3))
-    elif cat == "약한 고장":                                # 끝까지 가볍게만 진행 (정지 위험까지 안 감)
+    elif cat == "약한 고장":                                # 끝까지 가볍게만 진행 (고장 기준까지 안 감)
         spec.update(final=rng.uniform(0.3, 0.5), strength=rng.uniform(0.6, 1.0))
     elif cat == "베어링 변형":                              # 학습에 없던 결함 주파수의 베어링 고장
         spec.update(kind="bearing", bearing_hz=float(rng.choice([120.0, 320.0])) if extreme else 200.0)
@@ -208,6 +209,12 @@ def make_table(spec):
         sig["cur"] += after * 0.25 * lvl * pwm
         sig["az"] += after * 0.006 * lvl * k * np.sin(pw)
         sig["gy"] += after * 0.3 * lvl * k * R()
+    if spec.get("wiring_at") is not None:                  # 배선 접촉 불량 (11/17): 달리는 중 전류가 30~80 ms 동안 거의 0으로 끊김
+        wrng = np.random.default_rng(spec["seed"] + 3)     # 1분에 wiring_rate번꼴 (진동에는 거의 안 드러남)
+        start_i = np.flatnonzero((t_min >= spec["wiring_at"]) & mv & (wrng.random(n) < spec.get("wiring_rate", 8) / 60 / FS))
+        for i in start_i:
+            j = min(n, i + int(wrng.uniform(0.03, 0.08) * FS))
+            sig["cur"][i:j] = 0.02 + 0.005 * wrng.standard_normal(j - i)
     volt = v_batt - 0.15 * sig["cur"]
 
     # 센서 해상도로 반올림 (MPU6050 ±4g·±500°/s, INA219 전류 1 mA·전압 4 mV)
@@ -230,7 +237,7 @@ def make_table(spec):
         for i in idx:
             ch = axes[grng.integers(6)]
             df.at[i, ch] = -258 / 8192 if ch[0] == "a" else -258 / 65.5
-    if spec.get("encoders"):                               # 엔코더 4개 + 모터 명령 (다른 난수를 써서, 끄면 예전과 똑같은 기록)
+    if spec.get("encoders", True):                         # 엔코더 4개 + 모터 명령: 가상 데이터에는 항상 넣음 (진동 신호와 다른 난수를 씀)
         enc = _encoders(spec, tt, pwm, fw, pw, sev, shown)
         for w in WHEELS:
             df[f"enc_{w}"] = enc[w]

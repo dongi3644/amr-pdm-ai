@@ -1,9 +1,10 @@
 """[역할] third_model(1D-CNN) 성능 시험: 실측 보정 가상 로봇으로 학습 → 아는 고장 · 처음 보는 고장을 따로 채점 (11/19)
 
     python 가상테스트/성능시험.py --g3 "data/정상 데이터_공3옥상" --g3 "data/정상 데이터_공3옥상(11.16)" \
-        --yg "data/정상 데이터_욧골(11.15)" --fault "data/고장 데이터_욧골" [--jobs 8]
+        --yg "data/정상 데이터_욧골(11.15)" --fault "data/고장 데이터_욧골" --test-scale 2.0 [--jobs 8]
+    (third_model 폴더에서 실행. 실측 폴더 4개를 data/ 아래에 둠. 약 15분, --test-scale 0.6이면 약 5분)
 
-가상 로봇: second_model/가상테스트/실측보정_로봇.py (실측 정상 조각을 이어 붙이고, 실측 테이프 고장의 진동 증가분을 넣음).
+가상 로봇: 가상테스트/실측보정_로봇.py (실측 정상 조각을 이어 붙이고, 실측 테이프 고장의 진동 증가분을 넣음). third_model 폴더만 있으면 돌아감.
   엔코더 4개(가정), 각속도 없음. 실측 파일은 학습·검증·시험으로 나눠 겹치지 않음.
 학습: 정상 + 아는 고장 3종(바퀴 불균형·체결 풀림·마찰 증가) × 바퀴 4개 + 가상 이상(config.SYNTH_ANOMALY)
 시험 (엔코더 끊김 없음)
@@ -24,7 +25,7 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 PROJ = HERE.parent
-GEN = PROJ.parent / "second_model" / "가상테스트"        # 실측 보정 가상 로봇 생성기 (numpy·pandas만 씀)
+GEN = HERE                                             # 실측 보정 가상 로봇 생성기 (실측보정_로봇.py · sim_robots.py, numpy·pandas만 씀)
 sys.path.insert(0, str(PROJ))
 sys.path.append(str(GEN))
 import config as C  # noqa: E402

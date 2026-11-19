@@ -2,6 +2,21 @@
 
 > second_model을 바탕으로 1D-CNN 두 개를 더했습니다. 아래 'third_model에서 바뀐 점'을 먼저 읽으세요.
 
+## 처음 받는 사람: 이 폴더 하나만 있으면 됩니다
+1. **Python 3.9 이상** 설치 (python.org)
+2. 이 폴더(`third_model`)를 VS Code로 열기 → `실행 및 디버그` → **`1. 환경 설치`** (또는 `python 실행/1_환경설치.py`)
+   → `.venv` 가상환경을 만들고 `requirements.txt` 패키지를 설치 (PyTorch는 필요 없음)
+3. 팀 실측 폴더 4개를 `data/` 아래에 폴더째로 넣기 ([data/README.md](data/README.md))
+4. 가상 성능 시험: `실행 및 디버그` → **`가상 성능 시험`** (약 15분, 빠른 확인은 약 3분) 또는
+
+   ```
+   python 가상테스트/성능시험.py --g3 "data/정상 데이터_공3옥상" --g3 "data/정상 데이터_공3옥상(11.16)" --yg "data/정상 데이터_욧골(11.15)" --fault "data/고장 데이터_욧골" --test-scale 2.0 --jobs 8
+   ```
+
+   결과: `가상테스트_결과/성능시험/결과.json` + 화면 표. 가상 로봇은 실측 기록을 재료로 실행할 때 새로 만듦
+5. 실측 6분 이상 기록이 있으면: `python run.py check` → `python run.py train` → `python run.py diagnose`
+
+
 ## 11/19 최종: AI 2개 (주파수 모양 오토인코더 + 랜덤포레스트)
 
 ```

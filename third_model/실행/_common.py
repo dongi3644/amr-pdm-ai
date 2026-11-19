@@ -9,7 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]               # second_model 폴더 (이 파일의 한 단계 위)
+ROOT = Path(__file__).resolve().parents[1]               # third_model 폴더 (이 파일의 한 단계 위)
 VENV = ROOT / ".venv"                                    # 1_환경설치.py가 만드는 가상환경
 VENV_PY = VENV / ("Scripts/python.exe" if os.name == "nt" else "bin/python")   # 윈도우 / 맥·리눅스의 Python 위치
 
