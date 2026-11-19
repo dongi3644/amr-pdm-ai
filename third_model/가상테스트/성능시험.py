@@ -284,7 +284,7 @@ def main():
             HW = hw
             grid.append(dict(q=q, cf=cf, cu=cu, hw=hw, **evaluate(vc, val, k, q, cf, cu)))
         ok = [g for g in grid if g["false_alarm"] <= a.max_fa] or grid
-        pick[k] = max(ok, key=lambda g: (g["accuracy"], -g["false_alarm"], -g["cu"], -g["cf"], g["hw"]))   # 같으면 더 민감한 쪽
+        pick[k] = max(ok, key=lambda g: (g["accuracy"], -g["false_alarm"], g["cu"], g["cf"]))   # 같으면 더 보수적인 쪽 (높은 문턱 · 더 많은 연속, 11/20: 오경보를 줄이려고)
         log(f"  검증 최고 {k}: 1분 점수 {pick[k]['q']} · 간헐 {pick[k]['hw']} · {pick[k]['cf']}번 · 경미 {pick[k]['cu']}점 → 정답률 {pick[k]['accuracy']}% · 오경보 {pick[k]['false_alarm']}%")
 
     # '원인 미확정' 기준(UNKNOWN_PROB)도 검증 로봇으로: 아는 고장 원인 맞음이 97% 이상인 가장 높은 기준 (시험 로봇은 보지 않음)
@@ -298,7 +298,7 @@ def main():
         for th in (0.6, 0.55, 0.5, 0.45, 0.4, 0.35, 0.3):
             C.UNKNOWN_PROB = th
             vcause = evaluate(vc, val, main, g["q"], g["cf"], g["cu"], classes)["cause"]
-            if vcause is not None and vcause >= 97.0:
+            if vcause is not None and vcause >= 99.0:          # 아는 고장 원인이 99% 이상 유지되는 가장 높은 기준 (11/20: 97 → 99, 아는 고장이 '미확정'으로 빠지지 않게)
                 break
         log(f"  검증으로 고른 '원인 미확정' 기준: {C.UNKNOWN_PROB} (검증 아는 고장 원인 맞음 {vcause}%)")
     if main in pick:                                       # 검증으로 고른 주 모델 · 판정 설정을 모델 파일에도 저장 → run.py diagnose --model 로 그대로 씀
