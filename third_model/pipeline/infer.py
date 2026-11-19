@@ -76,6 +76,7 @@ class Predictor:
         self.status, self.pending = 0, (0, 0)            # pending = (목표 상태, 연속 주기 수)
         # ewma: 화면용 평활 점수, cause_buf: 최근 60개 창의 원인 확률
         self.ewma, self.cause_buf = None, deque(maxlen=C.CAUSE_WINDOW)
+        self.cause_hi = deque(maxlen=C.CAUSE_WINDOW)      # 그중 1초 점수가 주의 문턱 이상인 창만 (config.CAUSE_HIGH_ONLY)
         self.period_z, self.reason = [], []              # 이번 주기 창들의 z (SHAP용), 판단 근거 문구
         self.events = []                                 # (주기, 상태) 변경 이력
         self.last_cause_label = None
@@ -99,6 +100,7 @@ class Predictor:
                 self.events.append((period, self.status))
                 if self.status == 0:                     # 정상 복귀(정비 후): 이전 고장의 원인을 비움
                     self.cause_buf.clear()
+                    self.cause_hi.clear()
                     self.reason = []
         else:
             self.pending = (lv, 0)                       # 지금 상태와 같으면 세던 횟수를 버림
@@ -116,7 +118,8 @@ class Predictor:
     def _top_cause(self):
         """최근 창들의 원인 확률 평균 → (가장 높은 라벨, 확률 배열)
         config.CAUSE_BY_KIND면 종류마다 바퀴 4개 확률을 더해 종류를 먼저 고르고, 그 종류 안에서 가장 높은 바퀴 (11/19)"""
-        p = np.mean(self.cause_buf, axis=0)
+        buf = self.cause_hi if getattr(C, "CAUSE_HIGH_ONLY", False) and len(self.cause_hi) >= 10 else self.cause_buf
+        p = np.mean(buf, axis=0)
         cls = self.b["cause"].classes
         if getattr(C, "CAUSE_BY_KIND", False):
             sums = {}
@@ -189,7 +192,10 @@ class Predictor:
         self.period_z.append(z[0])
         # 원인 확률은 점수가 주의 근처(2.4점)까지 올랐거나 이미 주의 이상일 때부터 쌓는다 (정상일 땐 원인을 묻지 않음)
         if self.use_cause and (self.ewma >= 0.8 * C.THRESH["caution"] or self.status >= 1):
-            self.cause_buf.append(self.b["cause"].proba(z)[0])
+            pc = self.b["cause"].proba(z)[0]
+            self.cause_buf.append(pc)
+            if h >= getattr(C, "CAUTION_ALARM", C.THRESH["caution"]):
+                self.cause_hi.append(pc)
         out.update(score=self.ewma, window_score=h, z=z[0])
         order = np.argsort(-np.abs(z[0][:len(self.feats)]))[:3]   # 평소에서 가장 많이 벗어난 특징 3개 (파형 열은 뺌)
         out["top_feats"] = [(feat_ko(self.feats[i]), float(z[0][i])) for i in order]

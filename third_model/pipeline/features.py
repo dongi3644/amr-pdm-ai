@@ -146,6 +146,12 @@ def extract(rec):
         for ch in ACC:
             for i, v in enumerate(spec_shape(rec[ch], rec["vib_fs"])):
                 row[f"{ch}_s{i:02d}"] = float(v)
+            if C.SPEC_PEAK:                                # 뾰족함: 한 주파수만 솟으면 큼 (기어 순음), 넓게 퍼지면 작음 (마찰 잡음·바닥)
+                x = np.asarray(rec[ch], float) - np.mean(rec[ch])
+                a_ = np.abs(np.fft.rfft(x * np.hanning(len(x))))
+                f_ = np.fft.rfftfreq(len(x), 1 / rec["vib_fs"])
+                a_ = a_[f_ >= 5]
+                row[f"{ch}_peak"] = float(np.log10(a_.max() / (np.median(a_) + 1e-12) + 1e-12)) if len(a_) >= 3 else float("nan")
     row.update(enc_features(rec))                          # 바퀴 특징 11개 (엔코더가 없으면 nan)
     row.update(part_enc_features(rec))                     # 엔코더가 4개 미만일 때 쓰는 엔코더별 특징 + 모터 명령 (없으면 nan)
     row.update(true_kind=rec["true_kind"], true_side=rec["true_side"], true_sev=rec["true_sev"], labeled=rec["labeled"],
@@ -158,9 +164,11 @@ def extract(rec):
 
 # 모델에 들어가는 진동 특징 이름 36개와 그 순서. 모든 모델이 이 순서대로 숫자를 받으므로 순서를 바꾸면 저장된 모델과 맞지 않게 된다
 FEATS = [f"{ch}_{k}" for ch in CHANNELS for k in VIB_KEYS]
-SPEC_FEATS = [f"{ch}_s{i:02d}" for ch in ACC for i in range(C.SPEC_BANDS)] if C.SPEC_FEATURES else []
+SPEC_FEATS = ([f"{ch}_s{i:02d}" for ch in ACC for i in range(C.SPEC_BANDS)]
+              + ([f"{ch}_peak" for ch in ACC] if C.SPEC_PEAK else [])) if C.SPEC_FEATURES else []
 SPEC_KO = {f"{ch}_s{i:02d}": f"{C.CHANNEL_KO.get(ch, ch)} {SPEC_EDGES[i]:.0f}~{SPEC_EDGES[i + 1]:.0f} Hz 비중"
            for ch in ACC for i in range(C.SPEC_BANDS)}
+SPEC_KO.update({f"{ch}_peak": f"{C.CHANNEL_KO.get(ch, ch)} 뾰족한 주파수 정도" for ch in ACC})
 # 엔코더 특징 11개 (학습 데이터에 엔코더가 있을 때만 FEATS 뒤에 붙음. 실제로 쓴 목록은 모델 파일의 bundle["feats"])
 ENC_BASE = [f"{w}_{k}" for w in WHEELS for k in ("rel", "rip")] + ["left_diff", "right_diff"]
 # 바퀴 하나에만 생기는 이상을 보는 특징 (models.WheelMaxDetector가 이 중 가장 크게 벗어난 값을 봄)

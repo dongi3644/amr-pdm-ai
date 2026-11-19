@@ -142,14 +142,19 @@ def fast_status(periods, scores, q, confirm, caution):
     return out
 
 
-def cause_of(c, first, classes, window=None):
+def cause_of(c, first, classes, window=None, key=None, cu=None):
     """경보가 난 뒤 창들의 원인 확률 평균 → 종류마다 바퀴 확률을 더해 1위 종류.
     그 합이 config.UNKNOWN_PROB 미만이면 화면처럼 '원인 미확정' = 'unknown'으로 셈 (11/19)"""
     window = window or C.CAUSE_WINDOW
     m = c["period"] >= first
     if not m.any():
         return None
-    p = c["cause_p"][m][-window:].mean(0)
+    P_ = c["cause_p"][m]
+    if getattr(C, "CAUSE_HIGH_ONLY", False) and key is not None:   # 실제 진단처럼 1초 점수가 주의 문턱 이상인 창만 (10개 미만이면 전체)
+        hi = c[key][m] >= cu
+        if hi.sum() >= 10:
+            P_ = P_[hi]
+    p = P_[-window:].mean(0)
     sums = {}
     for cl, v in zip(classes, p):
         if cl != NORMAL_LABEL:
@@ -184,7 +189,7 @@ def evaluate(cache, specs, key, q, cf, cu, classes=None):
         if not hit:                                         # 놓친 고장 (분석용)
             res["missed"].append(dict(robot=s["name"], cat=s.get("cat"), kind=s.get("kind"), unseen=u, strength=round(s.get("strength", 1.0), 2)))
         if hit and classes is not None and "cause_p" in c:
-            k = cause_of(c, first, classes)
+            k = cause_of(c, first, classes, key=key, cu=cu)
             want = {"bearing"} if u == "bearing_new" else {"unknown"} if u else {s["kind"]} | ({s["second"]["kind"]} if s.get("second") else set())
             if u == "bearing_new":
                 want.add("unknown")                         # 처음 보는 주파수의 베어링: '마찰 증가' 또는 '원인 미확정'이면 맞음
