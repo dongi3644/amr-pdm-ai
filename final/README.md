@@ -116,40 +116,40 @@ VS Code에서는 `final` 폴더를 열고 `실행 및 디버그` 목록의 `최�
 
 ## 7. 관련 논문
 
-우리와 구성이 똑같은 논문은 찾지 못했고, 일부가 겹치는 논문들입니다. ★ = 본문 확인, 나머지는 검색 요약 기준이라 인용 전 원문 확인이 필요합니다.
+우리와 구성이 똑같은 논문은 찾지 못했고, 일부가 겹치는 논문들입니다. ★ = 본문 확인, ☆ = 초록만 확인(11/19). 표시 없는 10 ~ 12는 널리 알려진 원 논문입니다.
 
 **비슷한 로봇 · 비슷한 방법**
 1. ★ Pookkuttath S. 외, "AI-Enabled Predictive Maintenance Framework for Autonomous Mobile Cleaning Robots", *Sensors* 22(1):13, 2021. [링크](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8747287/)
    - 이동 청소 로봇에 IMU를 달고, 바퀴 연결부를 풀어 고장을 재현했습니다. 1D CNN 지도학습이라 고장 데이터가 꼭 필요합니다(우리는 오토인코더로 보완).
 2. ★ Jakubowski J. 외, "Anomaly Detection in Asset Degradation Process Using Variational Autoencoder and Explanations", *Sensors* 22(1):291, 2022. [링크](https://pmc.ncbi.nlm.nih.gov/articles/PMC8749861/)
    - 오토인코더로 이상을 감지하고 랜덤포레스트 + SHAP으로 설명합니다. 우리와 방법이 가장 비슷하지만, 랜덤포레스트로 원인을 분류하지는 않습니다.
-3. Low-Cost IoT-Based Predictive Maintenance Using Vibration, *PMC*, 2025. [링크](https://pmc.ncbi.nlm.nih.gov/articles/PMC12609400/)
-   - 우리와 같은 MPU6050으로 두 바퀴 로봇의 진동 이상을 찾았습니다.
+3. ★ Kolok P. 외, "Low-Cost IoT-Based Predictive Maintenance Using Vibration", *Sensors* 25:6610, 2025. [링크](https://pmc.ncbi.nlm.nih.gov/articles/PMC12609400/)
+   - 우리와 같은 MPU6050을 두 모터 교육용 로봇에 달고, 정상만 학습한 Isolation Forest로 이상을 찾았습니다(정답률 약 73%, 바퀴를 막은 고장 1종류, 실험실 데이터).
 
 **지도 + 비지도를 함께 쓰는 이유 (처음 보는 고장 · 적은 고장 데이터)**
 
-4. Novelty Detection and Fault Diagnosis Method for Bearing Faults Based on the Hybrid Deep Autoencoder Network, *Electronics* 12(13):2826, 2023. [링크](https://mdpi.com/2079-9292/12/13/2826)
-   - 오토인코더로 새 고장을 거르고, 분류기로 아는 고장을 분류합니다.
-5. Hybrid Deep Learning for Predictive Maintenance Using LSTM and MLP Models, *Machines* 14(2):191, 2026. [링크](https://www.mdpi.com/2075-1702/14/2/191)
-   - 오토인코더로 이상을 감지하고, 다른 모델로 예측하는 2단계 구조입니다.
-6. Zhang S. 외, "Semi-Supervised Learning of Bearing Anomaly Detection via Deep Variational Autoencoders", arXiv:1912.01096, 2019. [링크](https://arxiv.org/abs/1912.01096)
-   - 고장 라벨이 적을 때 정상 · 라벨 없는 데이터를 활용합니다.
-7. Towards Open-Set Fault Diagnosis for Reactor Coolant Pumps under Unknown Fault Conditions, *PHM Society Asia-Pacific*, 2025. [링크](https://papers.phmsociety.org/index.php/phmap/article/view/4619)
-   - 지도학습만 쓰면 처음 보는 고장을 아는 고장으로 착각한다는 문제를 다룹니다.
+4. ☆ Zhao Y. 외, "Novelty Detection and Fault Diagnosis Method for Bearing Faults Based on the Hybrid Deep Autoencoder Network", *Electronics* 12(13):2826, 2023. [링크](https://mdpi.com/2079-9292/12/13/2826)
+   - 오토인코더 하나에서 복원 오차로 새 고장을 거르고, 압축된 특징으로 아는 고장을 분류합니다(공개 베어링 데이터 3종).
+5. ☆ Mavrelis I. 외, "Hybrid Deep Learning for Predictive Maintenance in Industrial Machinery Using LSTM and MLP Models", *Machines* 14(2):191, 2026. [링크](https://www.mdpi.com/2075-1702/14/2/191)
+   - 정상만 학습한 LSTM 오토인코더(이상 감지) + 라벨로 학습한 MLP(고장 분류). 데이터는 디지털 트윈으로 만든 가상 데이터입니다.
+6. ★ Zhang S. 외, "Semi-Supervised Learning of Bearing Anomaly Detection via Deep Variational Autoencoders", arXiv:1912.01096, 2019. [링크](https://arxiv.org/abs/1912.01096)
+   - 고장 라벨이 적을 때 라벨 없는 데이터까지 VAE로 학습해, 라벨이 적을수록 CNN보다 크게 앞섭니다.
+7. ★ Kim J. 외, "Towards Open-Set Fault Diagnosis for Reactor Coolant Pumps under Unknown Fault Conditions", *PHM Society Asia-Pacific*, 2025. [링크](https://papers.phmsociety.org/index.php/phmap/article/view/4619)
+   - 지도학습만 쓰면 처음 보는 고장을 아는 고장으로 착각한다는 문제를, 고장 종류별 오토인코더의 복원 오차로 "모르는 고장"을 거절해 해결합니다.
 
 **엔코더 · 바퀴 비교**
 
-8. Fault Detection and Diagnosis of Three-Wheeled Omnidirectional Mobile Robot, *Mathematics* 12(11):1731, 2024. [링크](https://doi.org/10.3390/math12111731)
-   - 바퀴 엔코더끼리 비교해 이상을 찾습니다(우리 바퀴 점수와 비슷).
-9. Fault Tolerant Control for a 4-Wheel Skid Steering Mobile Robot, DX 2015. [링크](https://ceur-ws.org/Vol-1507/dx15paper23.pdf)
-   - 4륜 스키드 로봇은 회전할 때 바퀴가 미끄러진다는 주의점과, 고장 바퀴를 추정하는 방법을 다룹니다.
+8. ☆ Wang B.-T. 외, "Fault Detection and Diagnosis of Three-Wheeled Omnidirectional Mobile Robot Based on Power Consumption Modeling", *Mathematics* 12(11):1731, 2024. [링크](https://doi.org/10.3390/math12111731)
+   - 엔코더로 잰 바퀴 속도로 "정상이면 쓸 전력"을 계산하고, 실제 전력과 비교해 바퀴 미끄러짐 등 고장을 찾습니다(우리 바퀴 점수·전류 감시와 비슷한 생각).
+9. ★ Fourlas G. K. 외, "Fault Tolerant Control for a 4-Wheel Skid Steering Mobile Robot", DX 2015. [링크](https://ceur-ws.org/Vol-1507/dx15paper23.pdf)
+   - 4륜 스키드 로봇(Pioneer 3-AT)의 엔코더·IMU 값을 운동 모델과 비교해 고장(바람 빠진 바퀴)을 찾고, 바퀴 반지름을 다시 추정해 명령을 고쳐 똑바로 가게 합니다. 스키드 로봇은 회전할 때 옆으로 미끄러진다는 점도 짚습니다.
 
 **쓴 기법의 원 논문**
 
 10. Breiman L., "Random Forests", *Machine Learning* 45:5–32, 2001. [링크](https://doi.org/10.1023/A:1010933404324)
 11. Lundberg S. M., Lee S.-I., "A Unified Approach to Interpreting Model Predictions" (SHAP), *NeurIPS* 2017. [링크](https://arxiv.org/abs/1705.07874)
 12. Li Z. 외, "ECOD: Unsupervised Outlier Detection Using Empirical Cumulative Distribution Functions", *IEEE TKDE*, 2022. [링크](https://arxiv.org/abs/2201.00382) — 오토인코더와 비교한 모델
-13. Autoencoder-based Condition Monitoring and Anomaly Detection for Rotating Machines, arXiv:2101.11539. [링크](https://arxiv.org/abs/2101.11539)
+13. ★ Ahmad S. 외, "Autoencoder-based Condition Monitoring and Anomaly Detection Method for Rotating Machines", arXiv:2101.11539, 2021. [링크](https://arxiv.org/abs/2101.11539)
     - 정상 진동만 학습하고 복원 오차로 판단합니다(우리 오토인코더와 같은 원리).
 
 논문 원문 파일(PDF)은 저작권 때문에 올리지 않고 링크만 적었습니다. 시험 방법과 결과의 자세한 기록은 [second_model/README.md](../second_model/README.md) 7-5 ~ 7-7에 있습니다.
