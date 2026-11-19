@@ -47,3 +47,12 @@ second_model/외부데이터_시험/data*/
 second_model/arduino/team_logger/
 # 실시간 알림이 저장한 아두이노 기록 (실측 데이터)
 second_model/실시간_기록/
+
+# final: 최종 제출 코드 (11/19). 데이터·학습 결과·팀 스케치는 올리지 않음
+final/data/*
+!final/data/README.md
+final/artifacts/
+final/reports/
+final/가상테스트_결과/
+final/arduino/team_logger/
+final/실시간_기록/
