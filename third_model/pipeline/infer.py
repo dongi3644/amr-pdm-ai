@@ -104,7 +104,7 @@ class Predictor:
             self.pending = (lv, 0)                       # 지금 상태와 같으면 세던 횟수를 버림
         if self.use_cause and self.status >= 1 and self.cause_buf and self.period_z:
             label, p = self._top_cause()
-            if label != NORMAL_LABEL and p.max() >= C.UNKNOWN_PROB:   # '왜 그 원인인가' (랜덤포레스트: SHAP, 1D-CNN: 입력×기울기)
+            if label != NORMAL_LABEL and self._cause_conf(label, p) >= C.UNKNOWN_PROB:   # '왜 그 원인인가' (랜덤포레스트: SHAP, 1D-CNN: 입력×기울기)
                 cz = self.period_z[-1] if getattr(self.b["cause"], "use_last", False) else np.mean(self.period_z, axis=0)
                 self.reason = [(feat_ko(f), v) for f, v in self.b["cause"].explain(cz, label)]
             else:                                        # 원인 미확정: 평소에서 가장 많이 벗어난 특징 3개를 근거로
@@ -114,10 +114,29 @@ class Predictor:
         self.period_z = []
 
     def _top_cause(self):
-        """최근 창들의 원인 확률 평균 → (가장 높은 라벨, 확률 배열)"""
+        """최근 창들의 원인 확률 평균 → (가장 높은 라벨, 확률 배열)
+        config.CAUSE_BY_KIND면 종류마다 바퀴 4개 확률을 더해 종류를 먼저 고르고, 그 종류 안에서 가장 높은 바퀴 (11/19)"""
         p = np.mean(self.cause_buf, axis=0)
         cls = self.b["cause"].classes
+        if getattr(C, "CAUSE_BY_KIND", False):
+            sums = {}
+            for c, v in zip(cls, p):
+                if c != NORMAL_LABEL:
+                    sums[c.split("|")[0]] = sums.get(c.split("|")[0], 0.0) + float(v)
+            if sums:
+                k = max(sums, key=sums.get)
+                i = max((j for j, c in enumerate(cls) if c != NORMAL_LABEL and c.split("|")[0] == k), key=lambda j: p[j])
+                if p[cls.index(NORMAL_LABEL)] < sums[k] if NORMAL_LABEL in cls else True:
+                    return cls[i], p
         return cls[int(np.argmax(p))], p
+
+    def _cause_conf(self, label, p):
+        """원인 확신도: CAUSE_BY_KIND면 그 종류의 바퀴 확률 합, 아니면 그 라벨 확률"""
+        cls = self.b["cause"].classes
+        if getattr(C, "CAUSE_BY_KIND", False) and label != NORMAL_LABEL:
+            k = label.split("|")[0]
+            return float(sum(v for c, v in zip(cls, p) if c.split("|")[0] == k))
+        return float(p.max())
 
     def current_cause(self):
         """지금 상태로 본 추정 원인 문구 (주의 이상이고 원인 확률이 쌓였을 때만, 아니면 '')
@@ -127,7 +146,7 @@ class Predictor:
         top, p = self._top_cause()
         if top == NORMAL_LABEL:
             return "원인 미확정"
-        return label_ko(top) if p.max() >= C.UNKNOWN_PROB else "원인 미확정 (학습에 없는 이상일 수 있음)"
+        return label_ko(top) if self._cause_conf(top, p) >= C.UNKNOWN_PROB else "원인 미확정 (학습에 없는 이상일 수 있음)"
 
     def update(self, rec):
         """1초 창(dataio의 rec) 하나 처리: 특징을 뽑아 update_row로 넘김"""

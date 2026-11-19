@@ -141,8 +141,10 @@ def fast_status(periods, scores, q, confirm, caution):
     return out
 
 
-def cause_of(c, first, classes, window=180):
-    """경보가 난 뒤 창들의 원인 확률 평균 → 종류마다 바퀴 확률을 더해 1위 종류"""
+def cause_of(c, first, classes, window=None):
+    """경보가 난 뒤 창들의 원인 확률 평균 → 종류마다 바퀴 확률을 더해 1위 종류.
+    그 합이 config.UNKNOWN_PROB 미만이면 화면처럼 '원인 미확정' = 'unknown'으로 셈 (11/19)"""
+    window = window or C.CAUSE_WINDOW
     m = c["period"] >= first
     if not m.any():
         return None
@@ -151,7 +153,10 @@ def cause_of(c, first, classes, window=180):
     for cl, v in zip(classes, p):
         if cl != NORMAL_LABEL:
             sums[cl.split("|")[0]] = sums.get(cl.split("|")[0], 0.0) + float(v)
-    return max(sums, key=sums.get) if sums else None
+    if not sums:
+        return None
+    k = max(sums, key=sums.get)
+    return k if sums[k] >= C.UNKNOWN_PROB else "unknown"
 
 
 def evaluate(cache, specs, key, q, cf, cu, classes=None):
@@ -206,9 +211,15 @@ def main():
     p.add_argument("--max-fa", type=float, default=3.0)
     p.add_argument("--epochs", type=int, default=15, help="1D-CNN 최대 학습 반복 (config.DEEP_EPOCHS 대신)")
     p.add_argument("--max-windows", type=int, default=20000, help="1D-CNN 학습 창 수 상한 (config.DEEP_MAX_WINDOWS 대신)")
+    p.add_argument("--synth-share", type=float, default=None, help="config.SYNTH_SHARE 대신 (정상 창 중 가상 이상을 넣는 비율)")
+    p.add_argument("--synth-low", type=float, default=None, help="config.SYNTH_ENERGY 아래 끝 대신 (약한 가상 이상)")
     p.add_argument("--out", default=str(PROJ / "가상테스트_결과" / "성능시험"))
     a = p.parse_args()
     C.DEEP_EPOCHS, C.DEEP_MAX_WINDOWS, C.DEEP_PATIENCE = a.epochs, a.max_windows, min(C.DEEP_PATIENCE, 4)
+    if a.synth_share is not None:
+        C.SYNTH_SHARE = a.synth_share
+    if a.synth_low is not None:
+        C.SYNTH_ENERGY = (a.synth_low, C.SYNTH_ENERGY[1])
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
@@ -257,15 +268,25 @@ def main():
         pick[k] = max(ok, key=lambda g: (g["accuracy"], -g["false_alarm"], -g["cu"], -g["cf"]))   # 같으면 더 민감한(낮은) 문턱
         log(f"  검증 최고 {k}: 1분 점수 {pick[k]['q']} · {pick[k]['cf']}번 · 경미 {pick[k]['cu']}점 → 정답률 {pick[k]['accuracy']}% · 오경보 {pick[k]['false_alarm']}%")
 
-    res = dict(main=b["main"], feats=len(b["feats"]), wave_ch=b.get("wave_ch"), notes=notes, pick=pick, levels={})
+    # '원인 미확정' 기준(UNKNOWN_PROB)도 검증 로봇으로: 아는 고장 원인 맞음이 97% 이상인 가장 높은 기준 (시험 로봇은 보지 않음)
+    if classes is not None and b["main"] in pick:
+        g = pick[b["main"]]
+        for th in (0.6, 0.55, 0.5, 0.45, 0.4, 0.35, 0.3):
+            C.UNKNOWN_PROB = th
+            vcause = evaluate(vc, val, b["main"], g["q"], g["cf"], g["cu"], classes)["cause"]
+            if vcause is not None and vcause >= 97.0:
+                break
+        log(f"  검증으로 고른 '원인 미확정' 기준: {C.UNKNOWN_PROB} (검증 아는 고장 원인 맞음 {vcause}%)")
+    res = dict(main=b["main"], feats=len(b["feats"]), wave_ch=b.get("wave_ch"), notes=notes, pick=pick, levels={},
+               unknown_prob=C.UNKNOWN_PROB)
     rng = np.random.default_rng(a.seed + 500)
     for li, (lname, share, strength) in enumerate([("K 아는 고장만", 0.0, 1.0), ("U 고장 절반이 처음 보는 고장", 0.5, 1.0),
-                                                     ("U2 약한 고장(×0.6) + 절반이 처음 보는 고장", 0.5, 0.6),
-                                                     ("U3 고장 세기 무작위(×0.4~1.0) + 절반이 처음 보는 고장 (현실 조건)", 0.5, "rand")]):
+                                                     ("U6 충분히 진행된 고장(세기 ×1.2~1.5) + 절반이 처음 보는 고장", 0.5, (1.2, 1.5)),
+                                                     ("U3 고장 세기 무작위(×0.4~1.0) + 절반이 처음 보는 고장 (현실 조건)", 0.5, (0.4, 1.0))]):
         specs = make_unseen(make_specs(a.seed + 1000 + li * 5, a.test_scale, "test", sp["test"]), rng, share)
         for s in specs:                                     # 고장 세기 (약한 고장 조건, rand = 로봇마다 0.4~1.0배)
             if s["fault"]:
-                strength_ = float(rng.uniform(0.4, 1.0)) if strength == "rand" else strength
+                strength_ = float(rng.uniform(*strength)) if isinstance(strength, tuple) else strength
                 s["strength"] *= strength_
                 if s.get("second"):
                     s["second"]["strength"] *= strength_
