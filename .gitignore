@@ -64,3 +64,7 @@ third_model/artifacts/
 third_model/reports/
 third_model/가상테스트_결과/
 third_model/arduino/team_logger/
+
+# third_model: 지금 구성과 무관한 예전 파일 (11/20 GitHub에서 뺌, 이 컴퓨터에는 그대로)
+third_model/외부데이터_시험/
+third_model/변경사항_이전.md
