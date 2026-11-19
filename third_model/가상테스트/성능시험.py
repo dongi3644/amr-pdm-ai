@@ -228,6 +228,8 @@ def main():
     p.add_argument("--cond", default=None, help="시험 조건 하나만 (빠른 실험): 고장 세기 범위 예) 0.7-1.0. 고장 절반은 처음 보는 고장")
     p.add_argument("--synth-share", type=float, default=None, help="config.SYNTH_SHARE 대신 (정상 창 중 가상 이상을 넣는 비율)")
     p.add_argument("--synth-low", type=float, default=None, help="config.SYNTH_ENERGY 아래 끝 대신 (약한 가상 이상)")
+    p.add_argument("--reuse", default=None, help="이미 끝난 시험 폴더 (빠른 추가 채점): 그 폴더의 학습 모델과 검증으로 고른 설정을 그대로 쓰고 학습 · 검증은 건너뜀. 같은 --seed로")
+    p.add_argument("--test-shift", type=int, default=0, help="시험 로봇 seed를 이만큼 바꿈 (같은 조건이라도 다른 시험 로봇)")
     p.add_argument("--out", default=str(PROJ / "가상테스트_결과" / "성능시험"))
     a = p.parse_args()
     C.DEEP_EPOCHS, C.DEEP_MAX_WINDOWS, C.DEEP_PATIENCE = a.epochs, a.max_windows, min(C.DEEP_PATIENCE, 4)
@@ -249,6 +251,8 @@ def main():
     fm = R.FaultModel(sp["train"][("욧골", 5)], [x for _, x in fp.files[("욧골", 5)]])
     log(f"실측 파일 나누기: " + " / ".join(f"{r} {len(v)}개" for r, v in pools.names.items()))
 
+    if a.reuse:
+        return rescore(a, out, log, sp, idle, fm)
     train = make_specs(a.seed, a.scale, "train", sp["train"])
     got = Parallel(n_jobs=a.jobs, backend="loky")(delayed(_gen)(s, sp["train"], idle, fm) for s in train)
     data = D.Dataset()
@@ -316,6 +320,18 @@ def main():
         pipe.save(path)
     res = dict(main=main, feats=len(b["feats"]), wave_ch=b.get("wave_ch"), notes=notes, pick=pick, levels={},
                unknown_prob=C.UNKNOWN_PROB)
+    score_tests(a, out, log, sp, idle, fm, path, keys, pick, classes, res)
+
+
+def score_tests(a, out, log, sp, idle, fm, path, keys, pick, classes, res):
+    """시험 로봇을 만들어 채점 → 결과.json (학습 · 검증으로 고른 pick을 그대로 씀)"""
+    global HW
+    from joblib import Parallel, delayed
+
+    def cache_of(specs, pools):
+        r_ = Parallel(n_jobs=a.jobs, backend="loky")(delayed(_score)(str(path), s, pools, idle, fm) for s in specs)
+        return {s["name"]: r for s, r in zip(specs, r_)}
+
     rng = np.random.default_rng(a.seed + 500)
     conds = [("K 아는 고장만", 0.0, 1.0), ("U 고장 절반이 처음 보는 고장", 0.5, 1.0),
                                                      ("U6 충분히 진행된 고장(세기 ×1.2~1.5) + 절반이 처음 보는 고장", 0.5, (1.2, 1.5)),
@@ -324,6 +340,7 @@ def main():
     if a.cond:                                             # 빠른 실험: 조건 하나만 (다른 조건과 다른 시험 로봇)
         lo, hi = (float(x) for x in a.cond.split("-"))
         conds, li0 = [(f"C 고장 세기 무작위(×{lo:g}~{hi:g}) + 절반이 처음 보는 고장", 0.5, (lo, hi))], 4
+    li0 += a.test_shift
     for li, (lname, share, strength) in enumerate(conds, start=li0):
         specs = make_unseen(make_specs(a.seed + 1000 + li * 5, a.test_scale, "test", sp["test"]), rng, share)
         for s in specs:                                     # 고장 세기 (약한 고장 조건, rand = 로봇마다 0.4~1.0배)
@@ -354,6 +371,21 @@ def main():
             print(f"   {names.get(k, k)}: 정답률 {x['accuracy']}% · 아는 고장 감지 {x['known']}% · 처음 보는 고장 감지 {x['unseen']}% · "
                   f"오경보 {x['false_alarm']}% · 원인 {x['cause']}% ({x['n']}) {x['by_unseen']}")
     log(f"저장: {out}")
+
+
+def rescore(a, out, log, sp, idle, fm):
+    """--reuse: 끝난 시험의 모델 · 검증 설정으로 시험 로봇만 새로 채점 (약 5분)"""
+    src = Path(a.reuse)
+    prev = json.loads((src / "결과.json").read_text(encoding="utf-8"))
+    path = src / "model_bundle.joblib"
+    b = AMRPipeline.load(path).bundle
+    classes = b["cause"].classes if b["cause"] is not None else None
+    pick = prev["pick"]
+    keys = [k for k in KEYS if k in b["detectors"] and k in pick]
+    C.UNKNOWN_PROB = prev["unknown_prob"]
+    log(f"모델 · 설정 다시 씀: {src} (학습 · 검증 건너뜀) · 주 모델 {prev['main']} · 원인 미확정 {C.UNKNOWN_PROB}")
+    res = dict(main=prev["main"], feats=prev.get("feats"), reuse=str(src), pick=pick, levels={}, unknown_prob=C.UNKNOWN_PROB)
+    score_tests(a, out, log, sp, idle, fm, path, keys, pick, classes, res)
 
 
 if __name__ == "__main__":
