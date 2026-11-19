@@ -181,6 +181,37 @@ def _to_counter(v, t, name, fname, data):
     return v
 
 
+def _yaw_from_encoders(aux, t, fname, data):
+    """좌우 엔코더 → Z축 각속도 gz [°/s] 배열 (각속도 열이 없을 때만 씀). 계산할 수 없으면 None
+    왼쪽 = enc_fl·enc_rl 중 살아 있는 것의 평균, 오른쪽 = enc_fr·enc_rr 평균. 속도는 앞뒤 YAW_SMOOTH_S초 사이 펄스 변화로 잼."""
+    L = [k for k in ("enc_fl", "enc_rl") if aux.get(k) is not None]
+    R = [k for k in ("enc_fr", "enc_rr") if aux.get(k) is not None]
+    if not L or not R:
+        return None
+    h = C.YAW_SMOOTH_S / 2
+
+    def speed(k):                                        # 누적 펄스 → 펄스/초 (샘플마다, 앞뒤 h초 사이 변화)
+        v = aux[k]
+        ok = ~np.isnan(v)
+        if ok.sum() < 2:
+            return None
+        return (np.interp(t + h, t[ok], v[ok]) - np.interp(t - h, t[ok], v[ok])) / (2 * h)
+
+    sl = [s for s in map(speed, L) if s is not None]
+    sr = [s for s in map(speed, R) if s is not None]
+    if not sl or not sr:
+        return None
+    vl, vr = np.mean(sl, axis=0), np.mean(sr, axis=0)
+    sign = C.ENCODER_RIGHT_SIGN
+    if sign == "auto":                                   # 부호가 맞으면 직진 때 좌우 속도가 같은 쪽 → |왼+오|가 |왼-오|보다 큼
+        sign = 1 if np.sum(np.abs(vl + vr)) >= np.sum(np.abs(vl - vr)) else -1
+        if sign == -1:
+            data.warn(f"{fname}: 오른쪽 엔코더가 왼쪽과 반대 부호로 보여(좌우 모터가 거울처럼 달림) 뒤집어서 각속도를 계산했습니다. "
+                      "틀리면 config.ENCODER_RIGHT_SIGN을 1로 정하세요.")
+    m_per_pulse = np.pi * C.WHEEL_DIAMETER_M / C.ENCODER_PPR       # 펄스 1개에 바퀴가 굴러가는 거리 [m]
+    return np.degrees((sign * vr - vl) * m_per_pulse / C.TRACK_WIDTH_M)
+
+
 def _spikes(x):
     """센서 읽기 오류로 보이는 '샘플 하나만 튀는 값'의 위치 (True = 뺄 샘플). 값을 고치지 않고 빼기만 한다.
     조건: 앞·뒤 샘플과 모두 같은 방향으로 크게(평소 샘플 간 변화의 SPIKE_K배 넘게) 다르고, 앞·뒤 샘플끼리는 서로 비슷함.
@@ -441,6 +472,15 @@ def _windows(df, fname, data, fs_arg):
     enc = None
     if all(aux[k] is not None for k in C.ENCODER_CHANNELS):
         enc = np.column_stack([aux[k] for k in C.ENCODER_CHANNELS])
+    # 각속도 열이 없으면 좌우 엔코더로 gz 계산 (config.GYRO_FROM_ENCODERS, 죽은 엔코더는 위에서 빠졌으므로 살아 있는 것만 씀)
+    chans = list(C.VIB_CHANNELS)
+    data._last_gyro = "없음 (가속도만)"
+    if C.GYRO_FROM_ENCODERS and "gz" not in chans:
+        yaw = _yaw_from_encoders(aux, t, fname, data)
+        if yaw is not None:
+            vib["gz"] = yaw
+            chans.append("gz")
+            data._last_gyro = "gz만 엔코더로 계산"
     if all(v is None for v in power.values()):
         data.warn(f"{fname}: current·voltage 열이 없어 전류·배터리 감시는 하지 않습니다 (진동만으로 진단).")
     # 구간이 없으면 전체를 한 구간으로 본다 (값을 만들어 넣는 게 아니라 구간 구분을 하지 않는 것)
@@ -459,7 +499,7 @@ def _windows(df, fname, data, fs_arg):
     bounds = np.flatnonzero(np.diff(idx)) + 1                     # 그 번호가 바뀌는 줄 = 다음 창이 시작하는 줄
     need, dropped, recs = C.MIN_WINDOW_FILL * fs * C.WINDOW_S, 0, []   # need: 창 하나에 있어야 할 최소 샘플 수 (1000 Hz면 800개)
     for a, b in zip(np.r_[0, bounds], np.r_[bounds, n]):          # a:b = 이번 1초 창에 속한 줄 범위
-        waves = {ch: vib[ch][a:b][~np.isnan(vib[ch][a:b])] for ch in C.VIB_CHANNELS}   # 축별 이 1초의 파형 (빈칸은 빼고)
+        waves = {ch: vib[ch][a:b][~np.isnan(vib[ch][a:b])] for ch in chans}   # 축별 이 1초의 파형 (빈칸은 빼고, 엔코더 gz 포함)
         if min(len(x) for x in waves.values()) < need:               # ⑤ 기록이 끊겨 샘플이 80% 미만이면 버림
             dropped += 1
             continue
@@ -467,7 +507,7 @@ def _windows(df, fname, data, fs_arg):
                    segment=seg[a] if seg is not None else C.DEFAULT_SEGMENT,
                    bump=bool(bump[a:b].any()) if bump is not None else False, vib_fs=fs, t=float(t[a]),
                    labeled=False, true_kind="normal", true_side="", true_sev=0.0)
-        for ch in C.VIB_CHANNELS:                                    # 축마다 진동 파형
+        for ch in chans:                                             # 축마다 진동 파형 (gz = 엔코더로 계산한 각속도)
             rec[ch] = waves[ch].astype(np.float32)
         for k, col in power.items():                                 # 전류·전압: 이 1초에 기록된 값들의 평균 (없으면 nan)
             v = col[a:b][~np.isnan(col[a:b])] if col is not None else ()

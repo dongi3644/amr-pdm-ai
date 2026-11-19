@@ -161,7 +161,7 @@ def cause_of(c, first, classes, window=None):
 
 def evaluate(cache, specs, key, q, cf, cu, classes=None):
     res = dict(known_hit=0, known_n=0, unseen_hit=0, unseen_n=0, fa=0, normal_n=0, cause_ok=0, cause_n=0,
-               by_unseen={u: [0, 0] for u in UNSEEN})
+               by_unseen={u: [0, 0] for u in UNSEEN}, wrong=[], missed=[])
     for s in specs:
         c = cache[s["name"]]
         st = fast_status(c["period"], c[key], q, cf, cu)
@@ -180,6 +180,8 @@ def evaluate(cache, specs, key, q, cf, cu, classes=None):
         else:
             res["known_n"] += 1
             res["known_hit"] += hit
+        if not hit:                                         # 놓친 고장 (분석용)
+            res["missed"].append(dict(robot=s["name"], cat=s.get("cat"), kind=s.get("kind"), unseen=u, strength=round(s.get("strength", 1.0), 2)))
         if hit and classes is not None and "cause_p" in c:
             k = cause_of(c, first, classes)
             want = {"bearing"} if u == "bearing_new" else {"unknown"} if u else {s["kind"]} | ({s["second"]["kind"]} if s.get("second") else set())
@@ -187,6 +189,8 @@ def evaluate(cache, specs, key, q, cf, cu, classes=None):
                 want.add("unknown")                         # 처음 보는 주파수의 베어링: '마찰 증가' 또는 '원인 미확정'이면 맞음
             res["cause_n"] += 1
             res["cause_ok"] += k in want
+            if k not in want:                               # 원인을 틀린 로봇 (분석용)
+                res["wrong"].append(dict(robot=s["name"], cat=s.get("cat"), kind=s.get("kind"), wheel=s.get("wheel"), unseen=u, pred=k))
     pc = lambda a, b: round(100 * float(a) / b, 1) if b else None
     nF = res["known_n"] + res["unseen_n"]
     hits = res["known_hit"] + res["unseen_hit"]
@@ -194,7 +198,8 @@ def evaluate(cache, specs, key, q, cf, cu, classes=None):
                 known=pc(res["known_hit"], res["known_n"]), unseen=pc(res["unseen_hit"], res["unseen_n"]),
                 false_alarm=pc(res["fa"], res["normal_n"]), cause=pc(res["cause_ok"], res["cause_n"]),
                 n=f"고장 {nF}(처음 보는 {res['unseen_n']}) · 정상 {res['normal_n']}",
-                by_unseen={UNSEEN_KO[u]: f"{a}/{b}" for u, (a, b) in res["by_unseen"].items() if b})
+                by_unseen={UNSEEN_KO[u]: f"{a}/{b}" for u, (a, b) in res["by_unseen"].items() if b},
+                wrong=res["wrong"], missed=res["missed"])
 
 
 def main():
@@ -291,6 +296,8 @@ def main():
                 if s.get("second"):
                     s["second"]["strength"] *= strength_
         tc = cache_of(specs, sp["test"])
+        import joblib
+        joblib.dump(dict(specs=specs, cache=tc, classes=classes), out / f"시험점수_{lname.split()[0]}.joblib")   # 다시 학습하지 않고 채점만 바꿔 볼 수 있게
         res["levels"][lname] = {}
         for k in keys:
             g = pick[k]

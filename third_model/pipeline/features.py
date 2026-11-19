@@ -20,7 +20,9 @@ import numpy as np
 
 import config as C
 
-CHANNELS = tuple(C.VIB_CHANNELS)
+ACC = tuple(C.VIB_CHANNELS)                            # 가속도 축 (주파수 모양 특징은 이 축만)
+# 진동 특징을 계산할 축: 가속도 + 엔코더로 계산한 gz (config.GYRO_FROM_ENCODERS). gz가 없는 기록이면 그 특징은 nan → 학습 때 빠짐
+CHANNELS = ACC + (("gz",) if getattr(C, "GYRO_FROM_ENCODERS", False) and "gz" not in ACC else ())
 VIB_KEYS = ["rms", "kurt", "crest", "low", "mid", "high"]
 # 주파수 모양 특징 (config.SPEC_FEATURES, 11/19): 칸 경계는 Hz로 고정 (샘플링이 달라도 같은 이름 = 같은 주파수)
 SPEC_EDGES = np.geomspace(2.0, 235.0, C.SPEC_BANDS + 1)
@@ -134,11 +136,14 @@ def extract(rec):
     """1초 창(dataio.load가 만든 dict) → 특징 dict. 라벨은 평가용으로만 옮겨 담고 모델 입력에는 쓰지 않는다.
     진동 36개는 항상, 엔코더 11개는 값을 계산해 두되 실제로 모델에 넣을지는 학습 때 choose_feats가 정한다."""
     row = dict(period=rec["period"], segment=rec["segment"], bump=rec["bump"])
-    for ch in CHANNELS:                                    # 축마다 6개 → ax_rms, ax_kurt, ..., gz_high (36개)
+    for ch in CHANNELS:                                    # 축마다 6개 → ax_rms, ax_kurt, ..., gz_high
+        if ch not in rec:                                  # 엔코더로 gz를 계산할 수 없는 기록 → nan (학습 때 choose_feats가 뺌)
+            row.update({f"{ch}_{k}": float("nan") for k in VIB_KEYS})
+            continue
         for k, v in vib_features(rec[ch], rec["vib_fs"]).items():
             row[f"{ch}_{k}"] = v
     if C.SPEC_FEATURES:                                    # 주파수 모양 (축마다 SPEC_BANDS칸)
-        for ch in CHANNELS:
+        for ch in ACC:
             for i, v in enumerate(spec_shape(rec[ch], rec["vib_fs"])):
                 row[f"{ch}_s{i:02d}"] = float(v)
     row.update(enc_features(rec))                          # 바퀴 특징 11개 (엔코더가 없으면 nan)
@@ -153,9 +158,9 @@ def extract(rec):
 
 # 모델에 들어가는 진동 특징 이름 36개와 그 순서. 모든 모델이 이 순서대로 숫자를 받으므로 순서를 바꾸면 저장된 모델과 맞지 않게 된다
 FEATS = [f"{ch}_{k}" for ch in CHANNELS for k in VIB_KEYS]
-SPEC_FEATS = [f"{ch}_s{i:02d}" for ch in CHANNELS for i in range(C.SPEC_BANDS)] if C.SPEC_FEATURES else []
+SPEC_FEATS = [f"{ch}_s{i:02d}" for ch in ACC for i in range(C.SPEC_BANDS)] if C.SPEC_FEATURES else []
 SPEC_KO = {f"{ch}_s{i:02d}": f"{C.CHANNEL_KO.get(ch, ch)} {SPEC_EDGES[i]:.0f}~{SPEC_EDGES[i + 1]:.0f} Hz 비중"
-           for ch in CHANNELS for i in range(C.SPEC_BANDS)}
+           for ch in ACC for i in range(C.SPEC_BANDS)}
 # 엔코더 특징 11개 (학습 데이터에 엔코더가 있을 때만 FEATS 뒤에 붙음. 실제로 쓴 목록은 모델 파일의 bundle["feats"])
 ENC_BASE = [f"{w}_{k}" for w in WHEELS for k in ("rel", "rip")] + ["left_diff", "right_diff"]
 # 바퀴 하나에만 생기는 이상을 보는 특징 (models.WheelMaxDetector가 이 중 가장 크게 벗어난 값을 봄)
@@ -172,13 +177,15 @@ def choose_feats(rows):
     (일부 로봇에만 엔코더가 있으면 넣지 않음: 진단할 로봇에 엔코더가 없으면 판정할 수 없게 되므로)"""
     mode = C.ENCODER_FEATURES
     has = lambda f: bool(rows) and np.mean([np.isfinite(r.get(f, np.nan)) for r in rows]) >= 0.9
-    vib = f"진동 {len(FEATS)}개 ({', '.join(CHANNELS)})"
+    vib_f = [f for f in FEATS if rows and all(np.isfinite(r.get(f, np.nan)) for r in rows)]   # 모든 학습 창에 있는 축만 (gz가 없는 기록이 있으면 gz 특징을 뺌)
+    used = list(dict.fromkeys(f.split("_")[0] for f in vib_f))
+    vib = f"진동 {len(vib_f)}개 ({', '.join(used)})" + (" · gz = 엔코더로 계산한 각속도" if "gz" in used else "")
     cmd = ["cmd"] if C.CMD_FEATURE and has("cmd") else []
     if mode is False:
-        return list(FEATS) + cmd, f"특징: {vib}" + (" + 모터 명령" if cmd else "") + " (엔코더 특징은 config.ENCODER_FEATURES = False로 끔)"
+        return list(vib_f) + cmd, f"특징: {vib}" + (" + 모터 명령" if cmd else "") + " (엔코더 특징은 config.ENCODER_FEATURES = False로 끔)"
     if all(has(f) for f in ENC_BASE):
         extra = ENC_BASE + (["cmd_eff"] if has("cmd_eff") else [])
-        return list(FEATS) + extra, f"특징: {vib} + 엔코더 {len(extra)}개 (바퀴 상대 속도·속도 흔들림·앞뒤 바퀴 차이" + \
+        return list(vib_f) + extra, f"특징: {vib} + 엔코더 {len(extra)}개 (바퀴 상대 속도·속도 흔들림·앞뒤 바퀴 차이" + \
             (", 모터 명령 대비 속도)" if "cmd_eff" in extra else ")")
     if C.PARTIAL_ENCODER_FEATURES:                         # 엔코더가 4개 미만: 있는 엔코더마다 명령 대비 속도·속도 흔들림
         part = [f for f in PART_ENC_FEATS if has(f)]
@@ -186,7 +193,7 @@ def choose_feats(rows):
             wheels = sorted({f.split("_")[0] for f in part}, key=WHEELS.index)
             desc = (f" + 엔코더 {len(part)}개 ({', '.join(C.WHEEL_KO[w] for w in wheels)} 바퀴: 명령 대비 속도·속도 흔들림)" if part else "") + \
                 (" + 모터 명령" if cmd else "")
-            return list(FEATS) + part + cmd, f"특징: {vib}{desc}. 엔코더가 4개 미만이라 바퀴끼리 비교하는 특징은 쓰지 않음"
+            return list(vib_f) + part + cmd, f"특징: {vib}{desc}. 엔코더가 4개 미만이라 바퀴끼리 비교하는 특징은 쓰지 않음"
     if mode is True:
         raise ValueError("config.ENCODER_FEATURES = True인데 학습 데이터의 엔코더 값이 부족합니다 (창의 90% 미만).")
-    return list(FEATS) + cmd, f"특징: {vib}" + (" + 모터 명령" if cmd else "") + " (엔코더 값이 부족해 엔코더 특징은 넣지 않음)"
+    return list(vib_f) + cmd, f"특징: {vib}" + (" + 모터 명령" if cmd else "") + " (엔코더 값이 부족해 엔코더 특징은 넣지 않음)"
