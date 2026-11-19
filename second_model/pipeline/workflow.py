@@ -28,9 +28,10 @@ import config as C
 from pipeline.dataio import DataError, choose_baseline
 from pipeline.features import ENC_FEATS, choose_feats, extract
 from pipeline.infer import risk_pct, stage, suspect_part, where_text
+from pipeline.augment import synth_copy
 from pipeline.models import NORMAL_LABEL, health, label_ko
 from pipeline.power import PowerMonitor
-from pipeline.system import AMRPipeline
+from pipeline.system import AMRPipeline, split_units
 
 
 def rows_of(recs, robot):
@@ -62,6 +63,16 @@ def train(data, units=None, baseline=None):
         notes.append("라벨이 없어 모든 로봇을 정상으로 보고 학습했습니다. 고장 기록이 섞여 있으면 고장을 정상으로 배우게 됩니다.")
     if not normal:                                         # 정상 로봇이 따로 없으면 고장 로봇의 고장 전 구간을 씀
         normal = [dict(r, robot=r["robot"]) for r in fault if r["true_sev"] == 0]
+    elif C.SYNTH_ANOMALY:                                  # 처음 보는 고장 대비: 모델 학습용 정상 로봇의 복사본에 가상 이상 (augment.py)
+        # 눈금 보정용 정상 로봇은 system.fit과 같은 방법으로 떼어 두고 복사하지 않음 (보정 로봇은 학습에 안 쓴 로봇이어야 하므로)
+        units = sorted({r["robot"] for r in normal})
+        fit_units, _ = split_units(units, mode="interleave" if baseline == "reference" else None)
+        n_syn = 0
+        for name in fit_units:
+            rows = rows_of(synth_copy(data.robots[name], name), f"{name}~가상이상")
+            n_syn += sum(r["synthetic"] for r in rows)
+            fault += rows
+        notes.append(f"가상 이상 {n_syn:,}창 (정상 로봇 {len(fit_units)}대의 복사본)을 '처음 보는 이상'으로 함께 학습 (config.SYNTH_ANOMALY)")
     # 실제로 학습에 들어갈 정상 창 수 (문턱 창과, per_unit이면 기준용 처음 5분은 빠짐)
     n_use = sum(1 for r in normal if not r["bump"] and (baseline == "reference" or r["period"] >= C.BASELINE_PERIODS))
     if n_use < C.MIN_TRAIN_WINDOWS:
@@ -86,7 +97,7 @@ def train(data, units=None, baseline=None):
     b["caution_alarm"] = C.CAUTION_ALARM                   # 경미 경보 점수 (11/19)
     notes.append(f"판정 주기 {C.PERIOD_S:g}초 · 정상 기준: "
                  f"{f'로봇마다 처음 {C.minutes(C.BASELINE_PERIODS):g}분' if baseline == 'per_unit' else '정상 로봇들의 공통 기준'}"
-                 f" · 학습 로봇 {len(b['trained_units'])}대 · 정상 창 {n_use:,}개 · 고장 창 {sum(r['true_sev'] > 0 for r in fault):,}개")
+                 f" · 학습 로봇 {len(b['trained_units'])}대 · 정상 창 {n_use:,}개 · 고장 창 {sum(r['true_sev'] > 0 and not r['synthetic'] for r in fault):,}개")
     if b["scale"] == "normal_only":
         notes.append("고장 데이터가 없어 건강 점수는 정상 범위만 기준으로 삼습니다 (3점 = 처음 보는 정상 기록의 "
                      f"{C.NORMAL_ONLY_BLOCK}초 중앙값 최댓값 × {C.NORMAL_ONLY_MARGIN:g}). 위험도 100%(9점) 눈금은 없습니다.")

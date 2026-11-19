@@ -56,3 +56,11 @@ final/reports/
 final/가상테스트_결과/
 final/arduino/team_logger/
 final/실시간_기록/
+
+# third_model (1D-CNN, 11/19 팀 코드): 데이터·학습 결과는 올리지 않음
+third_model/data/*
+!third_model/data/README.md
+third_model/artifacts/
+third_model/reports/
+third_model/가상테스트_결과/
+third_model/arduino/team_logger/

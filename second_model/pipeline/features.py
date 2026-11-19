@@ -21,7 +21,8 @@ import numpy as np
 import config as C
 
 CHANNELS = tuple(C.VIB_CHANNELS)
-VIB_KEYS = ["rms", "kurt", "crest", "low", "mid", "high"]
+VIB_KEYS_ALL = ["rms", "kurt", "crest", "low", "mid", "high", "peak"]   # 계산은 늘 7개 (peak는 config.PEAK_FEATURE일 때만 모델에 넣음)
+VIB_KEYS = VIB_KEYS_ALL if C.PEAK_FEATURE else VIB_KEYS_ALL[:6]
 
 
 def vib_features(x, fs):
@@ -37,6 +38,9 @@ def vib_features(x, fs):
         low=float(spec[(f >= 1) & (f < 20)].sum()),    # 1~20 Hz 진폭 합 (느린 흔들림. 주로 불평형·풀림)
         mid=float(spec[(f >= 20) & (f < 150)].sum()),  # 20~150 Hz 진폭 합
         high=float(spec[f >= 150].sum()),              # 150 Hz 이상 진폭 합 (빠른 떨림. 주로 베어링 손상)
+        # 뾰족한 주파수: 5 Hz 이상에서 가장 큰 칸 ÷ 가운데 값. 바닥이 거칠어지면 넓게 함께 커져 거의 그대로고,
+        # 베어링·기어처럼 한 주파수만 커지는 고장은 커짐 (config.PEAK_FEATURE, 11/19)
+        peak=float(np.max(spec[f >= 5]) / (np.median(spec[f >= 5]) + 1e-12)) if (f >= 5).sum() >= 3 else float("nan"),
     )
 
 
@@ -92,12 +96,13 @@ def extract(rec):
     row = dict(period=rec["period"], segment=rec["segment"], bump=rec["bump"])
     for ch in CHANNELS:                                    # 축마다 6개 → ax_rms, ax_kurt, ..., gz_high (36개)
         if ch not in rec:                                  # 이 기록에 없는 축(각속도 없이 엔코더로 gz만 계산한 경우의 gx·gy) → nan
-            row.update({f"{ch}_{k}": float("nan") for k in VIB_KEYS})
+            row.update({f"{ch}_{k}": float("nan") for k in VIB_KEYS_ALL})
             continue
         for k, v in vib_features(rec[ch], rec["vib_fs"]).items():
             row[f"{ch}_{k}"] = v
     row.update(enc_features(rec))                          # 바퀴 특징 11개 (엔코더가 없으면 nan)
-    row.update(true_kind=rec["true_kind"], true_side=rec["true_side"], true_sev=rec["true_sev"], labeled=rec["labeled"])
+    row.update(true_kind=rec["true_kind"], true_side=rec["true_side"], true_sev=rec["true_sev"], labeled=rec["labeled"],
+               synthetic=bool(rec.get("synthetic", False)))   # 가상 이상 창 표시 (augment.py, 학습 때만 생김)
     return row
 
 

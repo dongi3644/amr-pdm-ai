@@ -131,9 +131,10 @@ class AMRPipeline:
 
         # 2) 이상 감지 모델들을 정상 z로 학습하고, 건강 점수 눈금을 맞춘다 (3점 = 정상 99.5%, 9점 = 고장 기준 창의 중앙값)
         sev = np.array([r["true_sev"] for r in frows], float)        # 고장 로봇 창마다 라벨의 고장 정도
-        Zfail, scale = Zf[(sev >= C.FAIL_CAL_BAND[0]) & (sev <= C.FAIL_CAL_BAND[1])], "band"   # 고장 정도 0.75~0.85 창
+        syn = np.array([bool(r.get("synthetic")) for r in frows], bool)   # 가상 이상 창 (augment.py): 9점 눈금에는 쓰지 않음
+        Zfail, scale = Zf[(sev >= C.FAIL_CAL_BAND[0]) & (sev <= C.FAIL_CAL_BAND[1]) & ~syn], "band"   # 고장 정도 0.75~0.85 창
         if not len(Zfail):                                 # 고장 정도가 없거나 그 구간에 창이 없으면 고장 창 전체로 맞춤
-            Zfail = Zf[sev >= C.CAUSE_MIN_SEVERITY]
+            Zfail = Zf[(sev >= C.CAUSE_MIN_SEVERITY) & ~syn]
             scale = "all_fault" if len(Zfail) else "normal_only"
         dets = make_detectors()
         for d in dets.values():
@@ -171,6 +172,8 @@ class AMRPipeline:
             keep = (sev == 0) | (sev >= C.CAUSE_MIN_SEVERITY)   # 고장 전(정상) 창 + 고장이 충분히 진행된 창
             # 창마다 정답 라벨: 정상이면 'normal|', 고장이면 '종류|바퀴' (예: 'bearing|fr')
             labels = np.array([NORMAL_LABEL if r["true_sev"] == 0 else f"{r['true_kind']}|{r['true_side']}" for r in frows])
+            if not C.SYNTH_CAUSE:                          # 가상 이상을 원인 항목에 넣지 않을 때
+                keep = keep & ~syn
             Zc = np.vstack([Zf[keep], Zcal])               # 입력: 고장 로봇 창 + 보정용 정상 로봇 창
             yc = np.concatenate([labels[keep], [NORMAL_LABEL] * len(Zcal)])
             if len(set(yc)) >= 2:                          # 라벨이 두 종류 이상이어야 분류를 배울 수 있음

@@ -15,6 +15,10 @@ sim_robots.py는 진동을 사람이 정한 식으로 만든다. 실제 로봇�
           · 고장 바퀴 엔코더: 1회전마다 ±12% 속도 흔들림 (실측 앞 오른쪽 엔코더 흔들림 2~4배와 맞음)
       체결 풀림·마찰 증가 (실측 없음 → 가정) : sim_robots의 모양(충격·200 Hz 잡음)을 쓰되,
           고장 정도 1에서 늘어나는 진동 에너지를 실측 불균형과 같게 맞춤
+          · 샘플링(480 Hz)의 절반(240 Hz)을 넘는 주파수는 실제 센서처럼 접혀 들어감 (320 Hz → 160 Hz. 11/19 전에는 0이 되어 진동이 없었음)
+      시험 전용 '처음 보는 고장' (학습에 없음, 11/19 가정): 같은 에너지로
+          · gear(기어 마모): 모터 기어 맞물림 주파수(바퀴 회전 × GEAR_TEETH)의 순음 + 바퀴 회전 옆띠
+          · flat(바퀴 찍힘): 바퀴 1회전에 한 번 '쿵' (35 Hz로 울림), 그 바퀴 엔코더도 그때 잠깐 느려짐
     바퀴 위치 : 실측은 앞 오른쪽. 다른 바퀴는 sim_robots.WHEEL_GAIN 비율로 (가정)
     고장 진행·간헐·급성·복합·약한 고장: sim_robots.complex_spec·severity를 그대로 씀
     헷갈리는 정상: 바닥 바뀜(실측 공3옥상 → 실측 욧골 조각으로 바뀜), 짐 실음, 저전압, 속도 바뀜
@@ -34,6 +38,13 @@ FW_PER_SPD = 2.25 / 5                        # 모터 명령(spd) 1당 바퀴 �
 PPR = 330
 GYRO_PER_G = 30.0
 FLOOR_ENC_JIT = {"공3옥상": 0.04, "욧골": 0.05}
+GEAR_TEETH = 48                              # 시험 전용 gear 고장: 맞물림 주파수 = 바퀴 회전 × 48 (속도 5 → 108 Hz, 속도 7 → 151 Hz, 가정)
+
+
+def fold(f_hz):
+    """샘플링의 절반을 넘는 주파수가 센서 기록에 나타나는 주파수 (접힘)"""
+    f = float(f_hz) % FS
+    return FS - f if f > FS / 2 else f
 
 
 # ------------------------------------------------------------ 실측 조각 묶음
@@ -223,13 +234,34 @@ def make_table(spec, pools, idle, fm):
                 sig[a] += axg[a] * amp * sc * parts[a]
             cur += 0.02 * s * cur
         elif kind == "bearing":
-            hf = {a: _band(rng.standard_normal(n), bhz - 15, bhz + 15) for a in sig}
+            fb = fold(bhz)
+            hf = {a: _band(rng.standard_normal(n), fb - 15, fb + 15) for a in sig}
             wt = {"ax": 1.0, "ay": 0.75, "az": 0.75}
             tot = sum((wt[a] * hf[a]).var() for a in sig)
             sc = np.sqrt(fm.total_var / max(tot, 1e-12))
             for a in sig:
                 sig[a] += axg[a] * amp * sc * wt[a] * hf[a]
             cur += 0.12 * s * cur
+        elif kind == "gear":                                # 시험 전용: 기어 맞물림 순음 (속도에 따라 움직임) + 바퀴 회전 옆띠
+            mesh = GEAR_TEETH * phase[w]
+            tone = np.sin(mesh) * (1 + 0.4 * np.sin(phase[w])) + 0.3 * np.sin(2 * mesh + 1.0)   # 2배 성분(속도 7: 302 Hz)은 샘플마다 계산하므로 실제처럼 접혀 들어감
+            parts = {"ax": 0.8 * tone, "ay": 1.0 * tone, "az": 0.6 * np.cos(mesh)}
+            tot = sum(p[mv].var() for p in parts.values()) if mv.any() else 1.0
+            sc = np.sqrt(fm.total_var / max(tot, 1e-12))
+            for a in sig:
+                sig[a] += axg[a] * amp * sc * parts[a]
+            cur += 0.08 * s * cur
+        elif kind == "flat":                                # 시험 전용: 바퀴 1회전에 한 번 '쿵'
+            ring = np.exp(-np.arange(60) / 10) * np.sin(2 * np.pi * 35 * np.arange(60) / FS)
+            turn = np.floor(phase[w] / (2 * np.pi))
+            hits = np.r_[False, np.diff(turn) > 0] & mv
+            imp = np.convolve(hits.astype(float), ring)[:n]
+            parts = {"ax": imp, "ay": 0.4 * imp, "az": 1.0 * imp}
+            tot = sum(p[mv].var() for p in parts.values()) if mv.any() else 1.0
+            sc = np.sqrt(fm.total_var / max(tot, 1e-12))
+            for a in sig:
+                sig[a] += axg[a] * amp * sc * parts[a]
+            cur += 0.03 * s * cur
     for a in sig:                                          # 센서 한계 ±4 g
         sig[a] = np.clip(sig[a], -4.0, 4.0 - 1 / LSB)
     gx = GYRO_PER_G * _band(sig["ay"], 0.5, 30) + 0.06 * rng.standard_normal(n)
@@ -252,6 +284,8 @@ def make_table(spec, pools, idle, fm):
                 jit = jit + 0.25 * s
             elif kind == "unbalance":
                 mult = mult * (1 + 0.12 * s * np.sin(phase[w]))
+            elif kind == "flat":                            # 찍힌 곳을 지날 때 잠깐 느려짐
+                mult = mult * (1 - 0.15 * s * np.clip(np.cos(phase[w]), 0, None) ** 8)
         if spec.get("load_at") is not None:
             mult = mult * (1 - (t_min >= spec["load_at"]) * 0.06 * spec["load_level"])
         noise = np.interp(tt, coarse, erng.standard_normal(len(coarse)))
