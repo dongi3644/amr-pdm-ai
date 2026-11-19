@@ -1,48 +1,29 @@
-# AMR 고장예지 AI
+# AMR 구동부 고장 예지 AI (third_model)
 
-배송로봇(AMR) 구동부에서 **고장이 났는지, 무엇이 고장 나는지, 얼마나 위험한지(고장 위험도 %)**를 미리 알려 주는 파이프라인입니다.
-2026 DSC 공유대학 × KT AI 활용 지역문제 해결 캠프 참가작입니다.
+배송 로봇(AMR) 바퀴 구동부에 싼 센서(MPU6050 진동 · INA219 전류 · 바퀴 엔코더)를 달고, **고장이 났는지 · 어느 바퀴의 무슨 고장인지**를 1분마다 알려 주는 AI입니다.
+2026 DSC 공유대학 × KT AI 활용 지역문제 해결 캠프 참가작.
 
-4WD 시험 로봇에 단 **MPU6050 1개(진동)와 INA219 1개(전류·배터리 전압)**의 실측 데이터만 씁니다. 아두이노가 USB로 보낸 값을 PC에서 CSV로 저장해 넣습니다. 속도·온도는 쓰지 않습니다. 최종 성능 시험(11/19)은 실측 + 실측으로 보정한 가상 데이터(빠진 엔코더 3개 포함)로 했습니다 → [final/](final/README.md).
+**코드와 설명은 모두 [`third_model/`](third_model/README.md)에 있습니다.**
 
-```
-아두이노 (MPU6050 + INA219) → USB 시리얼 → CSV
-  ├ 진동(가속도 3축) + 엔코더 4개 → 특징 35개 → 로봇마다 처음 5분 대비 z-score
-  │              ├→ 오토인코더 · 랜덤포레스트 · 바퀴 점수 중 큰 값(건강 점수) → 고장 위험도 %·단계(정상·경미·심각)
-  │              └→ 랜덤포레스트 + SHAP(원인·판단 근거)
-  └ 전류·전압 → 로봇마다 처음 5분과 비교 (학습 없음) → 전류 높음, 배터리 전압·사용량
-```
-
-**최종 코드와 결과·파라미터·구동 방식: [`final/`](final/README.md)** (11/19, 프로젝트에 필요한 코드만 모음. 실측 + 실측 보정 가상 데이터로 시험)
-
-**기준 코드는 [`second_model/`](second_model/README.md)입니다.** 안내는 [`second_model/README.md`](second_model/README.md) 하나만 보면 됩니다. (`amr_pdm_real/`은 그동안의 작업 기록)
-
-## 처음 받은 팀원용: VS Code에서 실행하기 (Windows)
-
-미리 설치할 것: [Python 3.9 이상](https://www.python.org/downloads/) (설치할 때 "Add python.exe to PATH" 체크), [VS Code](https://code.visualstudio.com/), [Git](https://git-scm.com/download/win)
-
-1. **코드 받기.** 초대 메일에서 수락한 뒤 아래 명령 실행 (처음 한 번은 GitHub 로그인 창이 뜸). Git이 어렵다면 이 페이지의 `Code` → `Download ZIP`
-   ```
-   git clone https://github.com/dongi3644/amr-pdm-ai.git
-   ```
-2. **VS Code로 열기.** `파일 → 폴더 열기` → 받은 폴더(`amr-pdm-ai`) 또는 그 안의 `second_model`. 어느 쪽을 열어도 실행 목록이 나옵니다. 오른쪽 아래 확장 설치 안내가 뜨면 `설치` (Python, Python Debugger)
-3. **실행.** 왼쪽 `실행 및 디버그`(Ctrl+Shift+D) 목록에서 고르고 ▶(F5). 아래 터미널에 지금 하는 작업이 처음 한 번, 그 뒤 5분마다 나옵니다 (예: `[14:03:10] ▶ 학습 중`)
-   | 순서 | 항목 | 언제 |
-   |---|---|---|
-   | 1 | 환경 설치 (처음 한 번) | 몇 분 |
-   | 2 | 데이터 검사 (check) | 실측 CSV를 `second_model/data/`에 넣은 뒤 |
-   | 3 | 학습 + 교차검증 (train) | 결과 `second_model/reports/summary.md` = 발표 성능 |
-   | 4 | 진단 (diagnose) | 로봇별 결과 → `second_model/reports/diagnose/` |
-   | — | 가상 시험: 학습 약 10분 + 시험 약 10분 | 실측 데이터 없이 코드가 도는지·과정 보기 (성능 아님) |
-4. **바뀐 코드 받기.** `git pull` (VS Code 왼쪽 아래 동기화 버튼도 같음)
-
-데이터(CSV)와 학습된 모델은 GitHub에 올라가지 않으므로 팀원끼리 따로 주고받아야 합니다.
-
-## 폴더
-
-| 경로 | 내용 |
+| 문서 | 내용 |
 |---|---|
-| `second_model/` | **기준 코드** (최종 정리본). 동작·실행 순서·설정·수집할 데이터: [`second_model/README.md`](second_model/README.md) |
-| `amr_pdm_real/` | 그동안의 작업 기록 (실험 과정·결과 요약: [`진행_요약.md`](amr_pdm_real/진행_요약.md)) |
-| `second_model/arduino/` | 아두이노 기록 스케치, 모터·엔코더 점검 스케치와 연결 방법 |
-| `AMR_고장예지AI.code-workspace` | VS Code 작업 영역 (위 2번에서 여는 파일) |
+| [third_model/README.md](third_model/README.md) | 모델 구성(AI 2개), 실행 방법, 입력 데이터, **가상 데이터를 만드는 방법**, 가상 시험 결과, 설정, 한계, 근거 논문 |
+| [third_model/코드_파일_설명.md](third_model/코드_파일_설명.md) | 코드 파일마다 하는 일 |
+| [third_model/실측_고장_기록_방법.md](third_model/실측_고장_기록_방법.md) | 실측 고장 기록 순서와 실제 성능 확인 방법 |
+
+```
+센서 기록 → 1초씩 자르기 (로봇마다 처음 5분 = 평소)
+ → 특징 110개 (진동 · 바퀴 · 주파수 모양)
+ ├→ 주파수 모양 오토인코더 (비지도 딥러닝) → 처음 보는 고장
+ ├→ 랜덤포레스트 (지도) → 아는 고장 + 원인 · 근거
+ └→ 바퀴 점수 (규칙)
+      → 1분마다 정상 · 주의 · 경고, 원인 (종류 · 바퀴 또는 '처음 보는 이상')
+ 전류 · 전압 → 규칙 감시 (전류 높음 · 배터리 낮음 · 사용량)
+```
+
+## 빠른 시작
+1. 코드 받기: `git clone https://github.com/dongi3644/amr-pdm-ai.git` (또는 `Code` → `Download ZIP`)
+2. VS Code로 **`third_model` 폴더**를 열고 `실행 및 디버그` → `1. 환경 설치` (Python 3.9 이상)
+3. 팀 실측 폴더 4개를 `third_model/data/` 아래에 넣고 `가상 성능 시험` 실행 (약 15분)
+
+실측 데이터 · 학습 결과 · 팀 아두이노 스케치는 GitHub에 올리지 않습니다.

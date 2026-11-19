@@ -1,70 +1,37 @@
-# 파이썬 환경·캐시
-.venv/
-venv/
-__pycache__/
-*.pyc
-
-# 다시 만들 수 있거나 개인 데이터인 것
-amr_pdm/data/
-amr_pdm/user_data/
-amr_pdm/reports/user/
-amr_pdm/artifacts/user_model.joblib
-amr_pdm_real/data/*
-!amr_pdm_real/data/README.md
-amr_pdm_real/raw/
-amr_pdm_real/artifacts/
-amr_pdm_real/reports/diagnose/
-*.log
-
-# IDE
-.vs/
-.idea/
-.claude/
-
-# 이 컴퓨터에만 두는 이전 자료 (GitHub에서 뺌, 2026-11-04)
+# GitHub에는 third_model만 올림 (11/20). 이전 버전 · 작업 기록(second_model · final · amr_pdm_real 등)은 이 컴퓨터의 이전_버전/에만
+이전_버전/
+second_model/
+final/
 amr_pdm/
+amr_pdm_real/
 amr_fault_sim/
 lstm_rul.py
 web_simulator.html
 AMR_고장예지AI_Colab.ipynb
+AMR_고장예지AI.code-workspace
+/.vscode/
+로컬문서/
 
-# 이 컴퓨터에만 두는 이전 단계 자료 (GitHub에서 뺌, 2026-11-10 밤)
-amr_pdm_real/가상테스트/test_robots.py
-amr_pdm_real/가상테스트/compare_period.py
-amr_pdm_real/결과_보고서_2026-11-10.md
-amr_pdm_real/실측_결과/
-amr_pdm_real/실측점검/
+# 파이썬 환경 · 캐시
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.log
 
-# second_model: 데이터·학습 결과는 올리지 않음
-second_model/data/*
-!second_model/data/README.md
-second_model/artifacts/
-second_model/reports/
-second_model/가상테스트_결과/
-second_model/외부데이터_시험/data*/
+# IDE · 개인 설정
+.vs/
+.idea/
+.claude/
 
-# 팀 아두이노 기록 스케치: 이 컴퓨터에만 보관 (2026-11-15 요청)
-second_model/arduino/team_logger/
-# 실시간 알림이 저장한 아두이노 기록 (실측 데이터)
-second_model/실시간_기록/
-
-# final: 최종 제출 코드 (11/19). 데이터·학습 결과·팀 스케치는 올리지 않음
-final/data/*
-!final/data/README.md
-final/artifacts/
-final/reports/
-final/가상테스트_결과/
-final/arduino/team_logger/
-final/실시간_기록/
-
-# third_model (1D-CNN, 11/19 팀 코드): 데이터·학습 결과는 올리지 않음
+# third_model: 실측 데이터 · 실행 결과 · 팀 아두이노 스케치는 올리지 않음
 third_model/data/*
 !third_model/data/README.md
 third_model/artifacts/
 third_model/reports/
 third_model/가상테스트_결과/
 third_model/arduino/team_logger/
-
-# third_model: 지금 구성과 무관한 예전 파일 (11/20 GitHub에서 뺌, 이 컴퓨터에는 그대로)
+third_model/실시간_기록/
+# third_model: 지금 구성과 무관한 예전 파일 (이 컴퓨터에는 그대로)
 third_model/외부데이터_시험/
 third_model/변경사항_이전.md
