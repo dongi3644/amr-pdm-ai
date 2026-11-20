@@ -28,8 +28,11 @@ h2{font-size:13px;margin:0 0 8px;color:var(--muted);font-weight:700}
 #robot rect.tire{transition:fill .25s}
 #robot .w-amber rect.tire{fill:#fbc02d;stroke:#a77800;stroke-width:4;stroke-dasharray:8 5}
 #robot .w-red rect.tire{fill:#d32f2f;stroke:#8e0000;stroke-width:5;animation:blink 1s infinite}
+#robot .w-org rect.tire{fill:#ef6c00;stroke:#a33f00;stroke-width:5;animation:blink 1.4s infinite}
+#robot .w-org .wl{fill:#c25400;font-weight:800}
 #robot .w-red .wl{fill:#c62828;font-weight:800}#robot .w-amber .wl{fill:#8a6100;font-weight:800}
-#robot .bang,#robot .ask{display:none}#robot .w-red .bang,#robot .w-amber .ask{display:block}
+#robot .bang,#robot .ask{display:none}#robot .w-red .bang,#robot .w-org .bang,#robot .w-amber .ask{display:block}
+#robot .w-org .bang circle{fill:#ef6c00}
 @keyframes blink{50%{opacity:.45}}
 .legend{display:flex;gap:16px;font-size:13px;color:var(--muted);justify-content:center;flex-wrap:wrap;margin-top:6px}
 .legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-1px}
@@ -49,6 +52,7 @@ h2{font-size:13px;margin:0 0 8px;color:var(--muted);font-weight:700}
 .tile span{display:block;font-size:13px;color:var(--muted);font-weight:700}
 .tile b{display:block;font-size:20px;margin-top:4px;line-height:1.25}
 .tile.hot{background:#fdecea;border-color:#ef9a9a}.tile.hot b{color:#c62828}
+.tile.org{background:#fff3e0;border-color:#ffb74d}.tile.org b{color:#c25400}
 .tile.amb{background:#fff8e1;border-color:#ffe082}.tile.amb b{color:#8a6100}
 .probs{display:grid;gap:7px;margin-top:14px}
 .prob{display:grid;grid-template-columns:120px 1fr 48px;gap:8px;align-items:center;font-size:14px}
@@ -85,7 +89,7 @@ summary{cursor:pointer;font-weight:700;color:var(--muted)}
   <div class="g2">
     <div class="card">
       <svg id="robot" viewBox="0 0 520 400" xmlns="http://www.w3.org/2000/svg"></svg>
-      <div class="legend"><span><i style="background:#d32f2f"></i>! 고장 부위</span><span><i style="background:#fbc02d"></i>? 의심 중</span><span><i style="background:#455a64"></i>정상</span></div>
+      <div class="legend"><span><i style="background:#fbc02d"></i>? 확인 중</span><span><i style="background:#ef6c00"></i>! 고장 의심 부위</span><span><i style="background:#d32f2f"></i>! 경고</span><span><i style="background:#455a64"></i>정상</span></div>
     </div>
     <div class="card">
       <h2>AI 건강 점수</h2>
@@ -125,7 +129,7 @@ summary{cursor:pointer;font-weight:700;color:var(--muted)}
 <script>
 const DATA=/*__DATA__*/null;
 const M = DATA.meta, F = DATA.frames, N = F.length, END = F[N-1].t;
-const COL = ["#2e7d32","#f9a825","#c62828"], TXT = ["#fff","#1c2630","#fff"], STK = ["정상","주의","경고"];
+const COL = ["#2e7d32","#f9a825","#c62828"], TXT = ["#fff","#1c2630","#fff"], STK = ["정상","의심 중","경고"];
 const WK = M.wheel_show, KS = M.kind_show, CAU = M.caution, WARN = M.warning, GMAX = 12;
 const SHORT_TODO = {unbalance:"바퀴 고정 · 이물질 확인", looseness:"나사 · 브래킷 조이기", bearing:"축 · 베어링 걸림 확인", unknown:"해당 부위 직접 점검"};
 const $ = id => document.getElementById(id);
@@ -161,7 +165,7 @@ function buildRobot(){
 }
 function buildGauge(){
   $("gauge").innerHTML = [[0,CAU,"#c8e6c9"],[CAU,WARN,"#ffe082"],[WARN,GMAX,"#ef9a9a"]].map(([a,b,c])=>`<div style="width:${(b-a)/GMAX*100}%;background:${c}"></div>`).join("");
-  $("gscale").innerHTML = [[CAU/2,"정상"],[CAU,`${CAU}`],[(CAU+WARN)/2,"주의"],[WARN,`${WARN}`],[(WARN+GMAX)/2,"경고"]].map(([v,t])=>`<span style="left:${v/GMAX*100}%;${/\d/.test(t)?"":"font-weight:700;color:#37474f"}">${t}</span>`).join("");
+  $("gscale").innerHTML = [[CAU/2,"정상"],[CAU,`${CAU}`],[(CAU+WARN)/2,"의심 중"],[WARN,`${WARN}`],[(WARN+GMAX)/2,"경고"]].map(([v,t])=>`<span style="left:${v/GMAX*100}%;${/\d/.test(t)?"":"font-weight:700;color:#37474f"}">${t}</span>`).join("");
 }
 
 let T = 0, playing = true, speed = 10;
@@ -172,7 +176,7 @@ function draw(){
   const watching = st===0 && f.ew >= CAU*0.8;
   const topW = Object.keys(w).reduce((a,b)=>w[a]>w[b]?a:b);
   const kind = f.ck==="unknown" ? "처음 보는 이상" : (KS[f.ck]||"");
-  $("band").style.background = COL[st]; $("band").style.color = TXT[st];
+  $("band").style.background = st===1 ? "#ef6c00" : COL[st]; $("band").style.color = st===1 ? "#fff" : TXT[st];
   $("verdict").textContent = st===0 ? (watching ? "정상 · 이상 징후 확인 중" : "정상") :
     `${STK[st]} · ${f.cw ? `${WK[f.cw]} 바퀴 ${kind}` : kind || "원인 확인 중"}`;
   $("todo").textContent = st>=1 ? "할 일: " + (SHORT_TODO[f.ck] || "점검") : "";
@@ -180,12 +184,12 @@ function draw(){
   $("clockSub").textContent = T < M.start ? `고장까지 ${Math.ceil(M.start-T)}초` : `고장 시작 +${mmss(T-M.start)}`;
   ["fl","fr","rl","rr"].forEach(k=>{
     const g = $("w_"+k); g.classList.remove("w-red","w-amber");
-    if(st>=1 && f.cw===k) g.classList.add("w-red");
+    if(st>=1 && f.cw===k) g.classList.add(st===2 ? "w-red" : "w-org");
     else if((st>=1 && !f.cw && w[k]>=0.15) || (watching && k===topW && w[k]>=0.35)) g.classList.add("w-amber");
   });
   const rr = 22 + Math.min(42, (f.rms/base-1)*32);
   $("vibRing").setAttribute("d", `M ${260-rr} 282 a ${rr} ${rr} 0 1 0 ${2*rr} 0 a ${rr} ${rr} 0 1 0 ${-2*rr} 0`);
-  const lv = f.ew>=WARN?2:f.ew>=CAU?1:0, LC = ["#2e7d32","#b26a00","#c62828"];
+  const lv = f.ew>=WARN?2:f.ew>=CAU?1:0, LC = ["#2e7d32","#c25400","#c62828"];
   $("score").textContent = f.ew.toFixed(1); $("score").style.color = LC[lv];
   $("scoreLv").textContent = STK[lv]; $("scoreLv").style.color = LC[lv];
   $("needle").style.left = Math.min(100, f.ew/GMAX*100)+"%";
@@ -195,21 +199,22 @@ function draw(){
   $("checks").innerHTML = st===2 ? `<b style="color:#c62828">경고 확정</b>` :
     `1분 판정 ${dots} <span>${cnt>0 ? `${M.confirm}번 연속이면 ${STK[st+1]}` : `다음 판정 ${60-(Math.floor(T)%60)}초 뒤`}</span>`;
   if(st>=1){
-    tile("tWhere", f.cw ? `${WK[f.cw]} 바퀴` : "특정 못 함", "hot");
-    tile("tWhat", kind || "확인 중", "hot");
-    tile("tTodo", SHORT_TODO[f.ck] || "점검", "hot");
+    const tc = st===2 ? "hot" : "org";
+    tile("tWhere", f.cw ? `${WK[f.cw]} 바퀴` : "특정 못 함", tc);
+    tile("tWhat", kind || "확인 중", tc);
+    tile("tTodo", SHORT_TODO[f.ck] || "점검", tc);
   } else if(watching){
     tile("tWhere", `${WK[topW]} 바퀴?`, "amb"); tile("tWhat", "확인 중", "amb"); tile("tTodo", "지켜보기", "amb");
   } else { tile("tWhere","이상 없음"); tile("tWhat","-"); tile("tTodo","계속 운행"); }
   const kp = kpS[i];
   $("probs").innerHTML = (st>=1 || watching) ? ["unbalance","looseness","bearing","unknown"].map(k=>[KS[k]||k, kp[k]||0, k===f.ck&&st>=1])
-    .sort((a,b)=>b[1]-a[1]).slice(0,3).map(([n,v,hot])=>`<div class="prob"><span>${n}</span><div class="pb"><i style="width:${(v*100).toFixed(0)}%;background:${hot?"#c62828":"#90a4ae"}"></i></div><b>${(v*100).toFixed(0)}%</b></div>`).join("")
+    .sort((a,b)=>b[1]-a[1]).slice(0,3).map(([n,v,hot])=>`<div class="prob"><span>${n}</span><div class="pb"><i style="width:${(v*100).toFixed(0)}%;background:${hot?(st===2?"#c62828":"#ef6c00"):"#90a4ae"}"></i></div><b>${(v*100).toFixed(0)}%</b></div>`).join("")
     : "";
 
   const CW = 1400, X = t => 46 + t/END*(CW-60), Y = v => 180 - Math.min(v,GMAX)/GMAX*165;
   let g = "";
   [[0,CAU,"#e8f5e9"],[CAU,WARN,"#fff8e1"],[WARN,GMAX,"#fdecea"]].forEach(([a,b,c])=>{ g += `<rect x="46" y="${Y(b)}" width="${CW-60}" height="${Y(a)-Y(b)}" fill="${c}"/>`; });
-  [[CAU,"주의"],[WARN,"경고"]].forEach(([v,t])=>{ g += `<line x1="46" x2="${CW-14}" y1="${Y(v)}" y2="${Y(v)}" stroke="${v===CAU?"#e0a800":"#c62828"}" stroke-dasharray="5 4"/><text x="40" y="${Y(v)+4}" text-anchor="end" font-size="12" fill="${v===CAU?"#b26a00":"#c62828"}" font-weight="700">${t}</text>`; });
+  [[CAU,"의심"],[WARN,"경고"]].forEach(([v,t])=>{ g += `<line x1="46" x2="${CW-14}" y1="${Y(v)}" y2="${Y(v)}" stroke="${v===CAU?"#e0a800":"#c62828"}" stroke-dasharray="5 4"/><text x="40" y="${Y(v)+4}" text-anchor="end" font-size="12" fill="${v===CAU?"#b26a00":"#c62828"}" font-weight="700">${t}</text>`; });
   for(let m=0;m<=Math.floor(END/60);m+=1) g += `<text x="${X(m*60)}" y="244" text-anchor="middle" font-size="12" fill="#5b6876">${m}분</text>`;
   g += `<polyline fill="none" stroke="#2a6fdb" stroke-width="2.5" points="${line(F.slice(0,i+1).map(x=>[X(x.t), Y(x.ew)]))}"/>`;
   done.forEach(m=>{ const l = m.s>=WARN?2:m.s>=CAU?1:0; g += `<line x1="${X(m.m*60-58)}" x2="${X(m.m*60-2)}" y1="${Y(m.s)}" y2="${Y(m.s)}" stroke="${COL[l]}" stroke-width="6" stroke-linecap="round"/>`; });
