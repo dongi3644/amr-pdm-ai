@@ -92,7 +92,7 @@ summary{cursor:pointer;font-weight:700;color:var(--muted)}
       <div class="legend"><span><i style="background:#fbc02d"></i>? 확인 중</span><span><i style="background:#ef6c00"></i>! 고장 의심 부위</span><span><i style="background:#d32f2f"></i>! 경고</span><span><i style="background:#455a64"></i>정상</span></div>
     </div>
     <div class="card">
-      <h2>AI 건강 점수</h2>
+      <h2>AI 건강 점수 (최근 1분 평균)</h2>
       <div class="scoreRow"><span id="score">0.0</span><span id="scoreLv">정상</span></div>
       <div id="gwrap"><div id="gauge"></div><div id="needle"></div></div>
       <div class="gscale" id="gscale"></div>
@@ -142,6 +142,9 @@ for(let i=0;i<N;i++){
   for(let j=a;j<=i;j++){ for(const x in w) w[x]+=F[j].wp[x]||0; for(const x in F[j].kp) k[x]=(k[x]||0)+F[j].kp[x]; }
   const n = i-a+1; for(const x in w) w[x]/=n; for(const x in k) k[x]/=n; wpS.push(w); kpS.push(k);
 }
+const SMS = 60, smS = []; { let acc = 0; for(let i=0;i<N;i++){ acc += F[i].ew; if(i>=SMS) acc -= F[i-SMS].ew; smS.push(acc/Math.min(i+1,SMS)); } }
+// 원인 확률은 최근 60초 평균 (경보 뒤에만 보여 줌)
+const kpL = []; for(let i=0;i<N;i++){ const a = Math.max(0,i-59), k = {}; for(let j=a;j<=i;j++) for(const x in F[j].kp) k[x]=(k[x]||0)+F[j].kp[x]; for(const x in k) k[x]/=(i-a+1); kpL.push(k); }
 const base = F.slice(0,5).reduce((s,x)=>s+x.rms,0)/Math.min(5,N);
 const firstAlarm = F.findIndex(f=>f.st>=1);
 const events = [[0,"정상 주행 시작"],[M.start,`[정답] ${WK[M.wheel]} 바퀴 ${M.kind_ko} 시작 (약하게)`]];
@@ -173,7 +176,7 @@ function tile(id, text, cls){ const t = $(id); t.className = "tile" + (cls?" "+c
 
 function draw(){
   const i = Math.max(0, Math.min(N-1, Math.floor(T))), f = F[i], st = f.st, w = wpS[i];
-  const watching = st===0 && f.ew >= CAU*0.8;
+  const sm = smS[i], watching = st===0 && sm >= CAU*0.8;
   const topW = Object.keys(w).reduce((a,b)=>w[a]>w[b]?a:b);
   const kind = f.ck==="unknown" ? "처음 보는 이상" : (KS[f.ck]||"");
   $("band").style.background = st===1 ? "#ef6c00" : COL[st]; $("band").style.color = st===1 ? "#fff" : TXT[st];
@@ -189,10 +192,10 @@ function draw(){
   });
   const rr = 22 + Math.min(42, (f.rms/base-1)*32);
   $("vibRing").setAttribute("d", `M ${260-rr} 282 a ${rr} ${rr} 0 1 0 ${2*rr} 0 a ${rr} ${rr} 0 1 0 ${-2*rr} 0`);
-  const lv = f.ew>=WARN?2:f.ew>=CAU?1:0, LC = ["#2e7d32","#c25400","#c62828"];
-  $("score").textContent = f.ew.toFixed(1); $("score").style.color = LC[lv];
-  $("scoreLv").textContent = STK[lv]; $("scoreLv").style.color = LC[lv];
-  $("needle").style.left = Math.min(100, f.ew/GMAX*100)+"%";
+  const lv = st>=1 ? st : (sm>=CAU ? 1 : 0), LC = ["#2e7d32","#c25400","#c62828"];   // 경보 뒤에는 AI 판정과 같은 이름
+  $("score").textContent = sm.toFixed(1); $("score").style.color = LC[lv];
+  $("scoreLv").textContent = st>=1 ? `AI 판정 ${STK[st]}` : (sm>=CAU ? "올라가는 중" : "정상"); $("scoreLv").style.color = LC[lv];
+  $("needle").style.left = Math.min(100, sm/GMAX*100)+"%";
   const done = M.minutes.filter(m=>m.m*60 <= T+1e-6);
   let cnt = 0; for(let j=done.length-1;j>=0;j--){ const l = done[j].s>=WARN?2:done[j].s>=CAU?1:0; if(l>st) cnt++; else break; }
   const dots = Array.from({length:M.confirm},(_,j)=>`<span class="dot${j<cnt?" on":""}"></span>`).join("");
@@ -206,8 +209,8 @@ function draw(){
   } else if(watching){
     tile("tWhere", `${WK[topW]} 바퀴?`, "amb"); tile("tWhat", "확인 중", "amb"); tile("tTodo", "지켜보기", "amb");
   } else { tile("tWhere","이상 없음"); tile("tWhat","-"); tile("tTodo","계속 운행"); }
-  const kp = kpS[i];
-  $("probs").innerHTML = (st>=1 || watching) ? ["unbalance","looseness","bearing","unknown"].map(k=>[KS[k]||k, kp[k]||0, k===f.ck&&st>=1])
+  const kp = kpL[i];
+  $("probs").innerHTML = st>=1 ? ["unbalance","looseness","bearing","unknown"].map(k=>[KS[k]||k, kp[k]||0, k===f.ck&&st>=1])
     .sort((a,b)=>b[1]-a[1]).slice(0,3).map(([n,v,hot])=>`<div class="prob"><span>${n}</span><div class="pb"><i style="width:${(v*100).toFixed(0)}%;background:${hot?(st===2?"#c62828":"#ef6c00"):"#90a4ae"}"></i></div><b>${(v*100).toFixed(0)}%</b></div>`).join("")
     : "";
 
@@ -216,7 +219,7 @@ function draw(){
   [[0,CAU,"#e8f5e9"],[CAU,WARN,"#fff8e1"],[WARN,GMAX,"#fdecea"]].forEach(([a,b,c])=>{ g += `<rect x="46" y="${Y(b)}" width="${CW-60}" height="${Y(a)-Y(b)}" fill="${c}"/>`; });
   [[CAU,"의심"],[WARN,"경고"]].forEach(([v,t])=>{ g += `<line x1="46" x2="${CW-14}" y1="${Y(v)}" y2="${Y(v)}" stroke="${v===CAU?"#e0a800":"#c62828"}" stroke-dasharray="5 4"/><text x="40" y="${Y(v)+4}" text-anchor="end" font-size="12" fill="${v===CAU?"#b26a00":"#c62828"}" font-weight="700">${t}</text>`; });
   for(let m=0;m<=Math.floor(END/60);m+=1) g += `<text x="${X(m*60)}" y="244" text-anchor="middle" font-size="12" fill="#5b6876">${m}분</text>`;
-  g += `<polyline fill="none" stroke="#2a6fdb" stroke-width="2.5" points="${line(F.slice(0,i+1).map(x=>[X(x.t), Y(x.ew)]))}"/>`;
+  g += `<polyline fill="none" stroke="#2a6fdb" stroke-width="3" points="${line(F.slice(0,i+1).map((x,j)=>[X(x.t), Y(smS[j])]))}"/>`;
   done.forEach(m=>{ const l = m.s>=WARN?2:m.s>=CAU?1:0; g += `<line x1="${X(m.m*60-58)}" x2="${X(m.m*60-2)}" y1="${Y(m.s)}" y2="${Y(m.s)}" stroke="${COL[l]}" stroke-width="6" stroke-linecap="round"/>`; });
   const Ys = v => 226 - v*30, sp = F.map(x=>[X(x.t), Ys(x.sev)]);
   g += `<text x="40" y="218" text-anchor="end" font-size="11" fill="#bf360c">정답</text><polygon fill="#eceff1" points="${X(0)},226 ${line(sp)} ${X(END)},226"/><polygon fill="#ffab91" points="${X(0)},226 ${line(sp.slice(0,i+1))} ${X(f.t)},226"/>`;

@@ -6,7 +6,7 @@
 1초씩 실제로 넣고, 1초마다의 결과(건강 점수 · 상태 · 원인 · 의심 바퀴 · 근거 · 센서 값)를 기록해
 화면 파일 가상테스트_결과/시연/로봇1대_시뮬레이션.html 을 만든다 (브라우저로 열면 재생).
   · 처음 5분은 AI가 이 로봇의 '평소'를 배우는 시간 → 화면은 그 뒤(0초)부터 재생
-  · 0~5초: 정상 주행 → 5초부터 약한 고장이 생겨 조금 커진 뒤 약하게 이어짐 (기본 0.15 → 3분 동안 0.3)
+  · 0~5초: 정상 주행 → 5초부터 약한 고장이 생겨 조금 커진 뒤 약하게 이어짐 (기본: 앞 왼쪽 바퀴 불균형 0.12 → 3분 동안 0.24)
   · 기본값에서 AI는 3분에 '의심 중'(1단계 경보)을 내고 끝까지 '경고'까지는 가지 않음 (--final을 키우면 경고까지 감)
   · 화면의 숫자는 지어낸 값이 아니라 AI 모델이 실제로 낸 값. 단 로봇은 가상 로봇(실측 진동 조각 + 가정한 고장)
 화면 파일에는 실측 진동 조각이 들어 있으므로 GitHub에 올리지 않는다 (가상테스트_결과/는 .gitignore)
@@ -39,10 +39,10 @@ TODO = {"unbalance": "바퀴 고정 상태 · 변형 확인, 바퀴에 붙은 �
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--kind", default="unbalance", choices=["unbalance", "looseness", "bearing"])
-    p.add_argument("--wheel", default="fr", choices=["fl", "fr", "rl", "rr"])
+    p.add_argument("--wheel", default="fl", choices=["fl", "fr", "rl", "rr"])
     p.add_argument("--start", type=float, default=5.0, help="평소 기준(5분)이 끝난 뒤 몇 초에 고장이 시작되나")
-    p.add_argument("--first", type=float, default=0.15, help="고장이 처음 나타날 때의 정도 (약함)")
-    p.add_argument("--final", type=float, default=0.3, help="고장이 커져서 도달하는 정도")
+    p.add_argument("--first", type=float, default=0.12, help="고장이 처음 나타날 때의 정도 (약함)")
+    p.add_argument("--final", type=float, default=0.24, help="고장이 커져서 도달하는 정도")
     p.add_argument("--ramp", type=float, default=3.0, help="first → final까지 걸리는 시간 [분]")
     p.add_argument("--minutes", type=float, default=10.0, help="평소 기준 뒤에 보여 줄 시간 [분]")
     p.add_argument("--seed", type=int, default=2031)
