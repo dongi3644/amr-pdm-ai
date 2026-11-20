@@ -3,369 +3,245 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AMR 로봇 1대 시뮬레이션 · 구동부 고장 예지 AI</title>
+<title>AMR 고장 예지 · 로봇 1대 시뮬레이션</title>
 <style>
-:root{--ink:#1c2630;--muted:#5b6876;--line:#d8dee4;--paper:#fff;--bg:#f3f5f7;
-  --ok:#2e7d32;--warn:#f9a825;--bad:#c62828;--blue:#2a6fdb}
+:root{--ink:#1c2630;--muted:#5b6876;--line:#d8dee4;--paper:#fff;--bg:#f3f5f7;--ok:#2e7d32;--warn:#f9a825;--bad:#c62828;--blue:#2a6fdb}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font-family:"Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;font-size:14px}
-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 20px;background:#1c2630;color:#fff}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;font-size:15px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 20px;background:#1c2630;color:#fff}
 header h1{font-size:18px;margin:0;font-weight:800}
-.tag{font-size:12px;background:#ffcc80;color:#3e2700;border-radius:4px;padding:3px 8px;font-weight:700}
-.ctrl{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-button{font:inherit;padding:6px 12px;border-radius:7px;border:1px solid rgba(255,255,255,.4);background:rgba(255,255,255,.12);color:#fff;cursor:pointer}
-button.on{background:#fff;color:#1c2630;font-weight:700}
-button.big{font-weight:800;min-width:96px}
-.ctrl .lab{font-size:12px;opacity:.8;margin-left:6px}
-main{padding:14px 20px 24px;display:grid;gap:14px}
-.card{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
-h2{font-size:13px;margin:0 0 10px;color:var(--muted);font-weight:700}
-/* 상태 띠 */
-#band{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;align-items:center;padding:16px 20px;border-radius:10px;color:#fff}
-#band>div:first-child{flex:1 1 360px;min-width:0}
-#verdict{font-size:clamp(22px,3vw,34px);font-weight:800;line-height:1.15}
-#sub{font-size:16px;margin-top:6px;opacity:.95}
-#clockBox{text-align:right}
-#clock{font-size:34px;font-weight:800;font-variant-numeric:tabular-nums}
-#clockSub{font-size:13px;opacity:.9}
-/* 타임라인 */
-#tl{position:relative;height:44px;cursor:pointer;user-select:none}
-#tlBar{position:absolute;left:0;right:0;top:16px;height:12px;border-radius:6px;background:#e7ebef;overflow:hidden}
-#tlBar .seg{position:absolute;top:0;bottom:0}
-#tlHead{position:absolute;top:8px;width:3px;height:28px;background:var(--ink);border-radius:2px;transform:translateX(-1px)}
-.tlMark{position:absolute;top:0;font-size:11px;color:var(--muted);transform:translateX(-50%);white-space:nowrap}
-.tlTick{position:absolute;top:30px;font-size:11px;color:var(--muted);transform:translateX(-50%)}
-.legend{display:flex;gap:14px;font-size:12px;color:var(--muted);flex-wrap:wrap;margin-top:4px}
-.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
-/* 본문 격자 */
-.g2{display:grid;grid-template-columns:1.05fr 1fr;gap:14px}
-.g3{display:grid;grid-template-columns:1.4fr 1fr;gap:14px}
-@media(max-width:1100px){.g2,.g3{grid-template-columns:1fr}}
-@media(max-width:640px){.prob{grid-template-columns:110px 1fr 44px}.sens{grid-template-columns:1fr 1fr}main{padding:10px}}
-/* 로봇 그림 */
-#robot{width:100%;max-width:520px;height:auto;display:block;margin:0 auto}
-#robot .wheel rect.tire{transition:fill .3s,stroke .3s}
+.tag{font-size:12px;background:#ffcc80;color:#3e2700;border-radius:4px;padding:3px 8px;font-weight:700;margin-left:8px}
+.ctrl{display:flex;gap:6px;align-items:center}
+button{font:inherit;font-size:14px;padding:6px 12px;border-radius:7px;border:1px solid rgba(255,255,255,.4);background:rgba(255,255,255,.12);color:#fff;cursor:pointer}
+button.on{background:#fff;color:#1c2630;font-weight:800}
+main{padding:14px 20px 24px;display:grid;gap:14px;max-width:1500px;margin:0 auto}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:14px 18px}
+h2{font-size:13px;margin:0 0 8px;color:var(--muted);font-weight:700}
+#band{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px;padding:18px 24px;border-radius:12px;color:#fff}
+#verdict{font-size:clamp(26px,3.4vw,42px);font-weight:800;line-height:1.15}
+#todo{font-size:17px;margin-top:6px;font-weight:700;opacity:.95}
+#clock{font-size:40px;font-weight:800;font-variant-numeric:tabular-nums;text-align:right;line-height:1}
+#clockSub{font-size:14px;text-align:right;margin-top:4px;opacity:.9}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:1000px){.g2{grid-template-columns:1fr}}
+#robot{width:100%;max-width:560px;height:auto;display:block;margin:0 auto}
+#robot rect.tire{transition:fill .25s}
 #robot .w-amber rect.tire{fill:#fbc02d;stroke:#a77800;stroke-width:4;stroke-dasharray:8 5}
 #robot .w-red rect.tire{fill:#d32f2f;stroke:#8e0000;stroke-width:5;animation:blink 1s infinite}
-#robot .w-red .wl{fill:#c62828;font-weight:800}
-#robot .w-amber .wl{fill:#8a6100;font-weight:800}
-#robot .bang,#robot .ask{display:none}
-#robot .w-red .bang,#robot .w-amber .ask{display:block}
+#robot .w-red .wl{fill:#c62828;font-weight:800}#robot .w-amber .wl{fill:#8a6100;font-weight:800}
+#robot .bang,#robot .ask{display:none}#robot .w-red .bang,#robot .w-amber .ask{display:block}
 @keyframes blink{50%{opacity:.45}}
-#callout{font-size:17px;font-weight:800;text-align:center;margin-top:6px;min-height:24px}
-.note{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.55}
-/* 점수 */
-.scoreRow{display:flex;align-items:baseline;gap:10px}
-#score{font-size:46px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1}
-#scoreLv{font-size:16px;font-weight:800}
-#gauge{position:relative;height:18px;border-radius:9px;overflow:hidden;display:flex;margin-top:10px}
-#gauge div{height:100%}
-#needle{position:absolute;top:-4px;width:4px;height:26px;background:var(--ink);border-radius:2px;transform:translateX(-2px)}
-.gscale{position:relative;height:16px;font-size:11px;color:var(--muted)}
-.gscale span{position:absolute;transform:translateX(-50%)}
-#confirm{margin-top:10px;font-size:13px;padding:8px 10px;border-radius:8px;background:#f6f8fa;border:1px solid var(--line)}
-.probs{display:grid;gap:7px}
-.prob{display:grid;grid-template-columns:150px 1fr 52px;gap:8px;align-items:center;font-size:13px}
-.prob .pb{height:10px;background:#e7ebef;border-radius:5px;overflow:hidden}.prob .pb i{display:block;height:100%;border-radius:5px}
+.legend{display:flex;gap:16px;font-size:13px;color:var(--muted);justify-content:center;flex-wrap:wrap;margin-top:6px}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.scoreRow{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+#score{font-size:64px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1}
+#scoreLv{font-size:20px;font-weight:800}
+#gwrap{position:relative;margin-top:12px}
+#gauge{height:22px;border-radius:11px;overflow:hidden;display:flex}
+#needle{position:absolute;top:-6px;width:6px;height:34px;background:var(--ink);border-radius:3px;transform:translateX(-3px)}
+.gscale{position:relative;height:18px;font-size:12px;color:var(--muted);margin-top:4px}
+.gscale span{position:absolute;transform:translateX(-50%);white-space:nowrap}
+#checks{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:14px;color:var(--muted)}
+.dot{width:16px;height:16px;border-radius:50%;border:2px solid #b0bec5;background:#fff;display:inline-block}
+.dot.on{background:#f9a825;border-color:#b26a00}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:16px}
+.tile{border-radius:10px;padding:10px 12px;background:#f6f8fa;border:1px solid var(--line)}
+.tile span{display:block;font-size:13px;color:var(--muted);font-weight:700}
+.tile b{display:block;font-size:20px;margin-top:4px;line-height:1.25}
+.tile.hot{background:#fdecea;border-color:#ef9a9a}.tile.hot b{color:#c62828}
+.tile.amb{background:#fff8e1;border-color:#ffe082}.tile.amb b{color:#8a6100}
+.probs{display:grid;gap:7px;margin-top:14px}
+.prob{display:grid;grid-template-columns:120px 1fr 48px;gap:8px;align-items:center;font-size:14px}
+.prob .pb{height:12px;background:#e7ebef;border-radius:6px;overflow:hidden}.prob .pb i{display:block;height:100%;border-radius:6px}
 .prob b{text-align:right;font-variant-numeric:tabular-nums}
-dl{margin:0;display:grid;grid-template-columns:96px 1fr;gap:7px 12px}dt{color:var(--muted);font-weight:700}dd{margin:0}
-.reason{padding:6px 0;border-bottom:1px solid var(--line);font-size:13px}.reason:last-child{border-bottom:0}
-.reason .rb{height:6px;background:#e7ebef;border-radius:3px;margin-top:5px}.reason .rb i{display:block;height:100%;border-radius:3px;background:#c62828}
-/* 그래프 */
-svg.chart{width:100%;display:block}
-.sens{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:10px}
-.sv{background:#f6f8fa;border-radius:8px;padding:8px 10px}
-.sv span{display:block;font-size:12px;color:var(--muted);font-weight:700}
-.sv b{font-size:20px;font-variant-numeric:tabular-nums}
-#truth{background:#f6f8fa;border:1px dashed #b0bec5;border-radius:8px;padding:10px 12px;font-size:13px;line-height:1.55}
-#log{list-style:none;margin:0;padding:0;max-height:220px;overflow:auto;font-size:13px}
-#log li{display:flex;gap:10px;padding:6px 2px;border-bottom:1px solid var(--line)}
-#log .t{color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;min-width:44px}
-#log .k{font-weight:800;white-space:nowrap}
+svg.chart{width:100%;display:block;cursor:pointer}
+details{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:10px 18px}
+summary{cursor:pointer;font-weight:700;color:var(--muted)}
+.more{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:12px}
+@media(max-width:1000px){.more{grid-template-columns:1fr}}
+.kv{display:grid;grid-template-columns:90px 1fr;gap:6px 10px;font-size:14px;margin:8px 0 0}.kv dt{color:var(--muted);font-weight:700}.kv dd{margin:0}
+.reason{font-size:14px;padding:5px 0;border-bottom:1px solid var(--line)}
+#log{list-style:none;margin:0;padding:0;max-height:200px;overflow:auto;font-size:13px}
+#log li{display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--line)}
+#log .t{color:var(--muted);font-variant-numeric:tabular-nums;min-width:40px}
 </style>
 </head>
 <body>
 <header>
-  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-    <h1>AMR 로봇 1대 시뮬레이션 · 구동부 고장 예지 AI</h1>
-    <span class="tag">가상 로봇 · 판정은 학습된 AI가 실제로 낸 결과</span>
-  </div>
+  <div><h1 style="display:inline">AMR 고장 예지 · 로봇 1대 시뮬레이션</h1><span class="tag">가상 로봇 · 판정은 AI 실제 결과</span></div>
   <div class="ctrl">
-    <button class="big" id="btnPlay">⏸ 멈춤</button>
-    <span class="lab">속도</span>
+    <button id="btnPlay" style="min-width:84px;font-weight:800">⏸ 멈춤</button>
     <button data-sp="1">×1</button><button data-sp="5">×5</button><button data-sp="10" class="on">×10</button><button data-sp="30">×30</button>
-    <button id="btnReset">처음으로</button>
+    <button id="btnReset" title="처음으로">↺</button>
   </div>
 </header>
 
 <main>
-  <div id="band"><div><div id="verdict">-</div><div id="sub">-</div></div>
-    <div id="clockBox"><div id="clock">0:00</div><div id="clockSub">평소 기준 5분을 배운 뒤부터</div></div></div>
-
-  <div class="card">
-    <h2>시간 흐름 · 누르면 그 시각으로 이동</h2>
-    <div id="tl"><div id="tlBar"></div><div id="tlHead"></div></div>
-    <div class="legend"><span><i style="background:#2e7d32"></i>AI 판정 정상</span><span><i style="background:#f9a825"></i>주의</span><span><i style="background:#c62828"></i>경고</span><span>▼ 고장 시작 (시뮬레이션) · ★ AI 첫 경보</span></div>
+  <div id="band">
+    <div><div id="verdict">-</div><div id="todo"></div></div>
+    <div><div id="clock">0:00</div><div id="clockSub"></div></div>
   </div>
 
   <div class="g2">
     <div class="card">
-      <h2>어디가 이상한가 (위에서 본 로봇)</h2>
       <svg id="robot" viewBox="0 0 520 400" xmlns="http://www.w3.org/2000/svg"></svg>
-      <div id="callout">-</div>
-      <div class="legend" style="justify-content:center"><span><i style="background:#d32f2f"></i>! AI가 짚은 고장 부위</span><span><i style="background:#fbc02d"></i>? AI가 의심하는 중 (확인 전)</span><span><i style="background:#455a64"></i>정상</span></div>
-      <div class="note">바퀴 옆 숫자 = 바퀴 회전 속도(rpm, 엔코더). 한 바퀴만 다르게 돌거나 1바퀴마다 같은 자리에서 느려지면 AI가 그 바퀴를 짚습니다.</div>
+      <div class="legend"><span><i style="background:#d32f2f"></i>! 고장 부위</span><span><i style="background:#fbc02d"></i>? 의심 중</span><span><i style="background:#455a64"></i>정상</span></div>
     </div>
-
     <div class="card">
-      <h2>AI 판단</h2>
-      <div class="scoreRow"><span id="score">0.0</span><span>점</span><span id="scoreLv">정상 범위</span></div>
-      <div style="position:relative">
-        <div id="gauge"></div><div id="needle"></div>
-      </div>
+      <h2>AI 건강 점수</h2>
+      <div class="scoreRow"><span id="score">0.0</span><span id="scoreLv">정상</span></div>
+      <div id="gwrap"><div id="gauge"></div><div id="needle"></div></div>
       <div class="gscale" id="gscale"></div>
-      <div id="confirm">-</div>
-      <h2 style="margin-top:14px">의심 원인 (AI 확률, 최근 20초)</h2>
-      <div class="probs" id="probs"></div>
-      <h2 style="margin-top:14px">지금</h2>
-      <dl>
-        <dt>AI 판정</dt><dd id="dStatus">-</dd>
-        <dt>원인</dt><dd id="dCause">-</dd>
-        <dt>할 일</dt><dd id="dTodo">-</dd>
-      </dl>
-      <h2 style="margin-top:14px" id="reasonTitle">판단 근거</h2>
-      <div id="reasons">-</div>
-    </div>
-  </div>
-
-  <div class="g3">
-    <div class="card">
-      <h2>건강 점수 변화 (1초 점수 · 1분 판정)</h2>
-      <svg class="chart" id="chart" viewBox="0 0 760 230"></svg>
-      <h2 style="margin-top:8px">실제로 넣은 고장 정도 (시뮬레이션 정답 · AI는 모름)</h2>
-      <svg class="chart" id="sevChart" viewBox="0 0 760 70"></svg>
-    </div>
-    <div class="card">
-      <h2>센서 (실시간, 최근 3초)</h2>
-      <svg class="chart" id="wave" viewBox="0 0 400 120"></svg>
-      <div class="legend"><span><i style="background:#2a6fdb"></i>위아래 진동 (Z축)</span><span><i style="background:#90a4ae"></i>앞뒤 진동 (X축)</span></div>
-      <div class="sens">
-        <div class="sv"><span>진동 크기</span><b id="vRms">-</b></div>
-        <div class="sv"><span>전류</span><b id="vCur">-</b></div>
-        <div class="sv"><span>배터리 전압</span><b id="vVolt">-</b></div>
+      <div id="checks"></div>
+      <div class="tiles">
+        <div class="tile" id="tWhere"><span>어디</span><b>-</b></div>
+        <div class="tile" id="tWhat"><span>무엇</span><b>-</b></div>
+        <div class="tile" id="tTodo"><span>할 일</span><b>-</b></div>
       </div>
-      <h2 style="margin-top:14px">시뮬레이션 정보 (정답)</h2>
-      <div id="truth">-</div>
+      <div class="probs" id="probs"></div>
     </div>
   </div>
 
   <div class="card">
-    <h2>알림 기록 (최근이 위)</h2>
-    <ul id="log"></ul>
+    <h2>점수 변화 · 그래프를 누르면 그 시각으로 이동</h2>
+    <svg class="chart" id="chart" viewBox="0 0 1400 250"></svg>
   </div>
+
+  <details>
+    <summary>자세히 보기 (센서 · 판단 근거 · 알림 기록 · 정답)</summary>
+    <div class="more">
+      <div>
+        <h2>센서 (최근 3초)</h2>
+        <svg class="chart" id="wave" viewBox="0 0 400 110" style="cursor:default"></svg>
+        <dl class="kv"><dt>진동 크기</dt><dd id="vRms">-</dd><dt>전류</dt><dd id="vCur">-</dd><dt>전압</dt><dd id="vVolt">-</dd></dl>
+      </div>
+      <div><h2 id="reasonTitle">판단 근거</h2><div id="reasons">-</div>
+        <h2 style="margin-top:12px">정답 (시뮬레이션이 넣은 고장 · AI는 모름)</h2><div id="truth" style="font-size:14px">-</div></div>
+      <div><h2>알림 기록</h2><ul id="log"></ul></div>
+    </div>
+  </details>
 </main>
 
 <script>
 const DATA=/*__DATA__*/null;
 const M = DATA.meta, F = DATA.frames, N = F.length, END = F[N-1].t;
 const COL = ["#2e7d32","#f9a825","#c62828"], TXT = ["#fff","#1c2630","#fff"], STK = ["정상","주의","경고"];
-const WK = M.wheel_show, KS = M.kind_show;
-const CAU = M.caution, WARN = M.warning, GMAX = 12;
+const WK = M.wheel_show, KS = M.kind_show, CAU = M.caution, WARN = M.warning, GMAX = 12;
+const SHORT_TODO = {unbalance:"바퀴 고정 · 이물질 확인", looseness:"나사 · 브래킷 조이기", bearing:"축 · 베어링 걸림 확인", unknown:"해당 부위 직접 점검"};
 const $ = id => document.getElementById(id);
 const mmss = t => { t = Math.max(0, Math.floor(t)); return Math.floor(t/60)+":"+String(t%60).padStart(2,"0"); };
+const line = pts => pts.map(p=>p[0].toFixed(1)+","+p[1].toFixed(1)).join(" ");
 
-// ---------------------------------------------------------------- 미리 계산: 바퀴 · 원인 확률 (최근 20초 평균), 경보 시각
-const SM = 20;
-const wpS = [], kpS = [], npS = [];
+const SM = 20, wpS = [], kpS = [];
 for(let i=0;i<N;i++){
-  const a = Math.max(0, i-SM+1), w = {fl:0,fr:0,rl:0,rr:0}, k = {}; let np = 0;
-  for(let j=a;j<=i;j++){ for(const x in w) w[x]+= (F[j].wp[x]||0); for(const x in F[j].kp) k[x]=(k[x]||0)+F[j].kp[x]; np+=F[j].np; }
-  const n = i-a+1; for(const x in w) w[x]/=n; for(const x in k) k[x]/=n;
-  wpS.push(w); kpS.push(k); npS.push(np/n);
+  const a = Math.max(0,i-SM+1), w = {fl:0,fr:0,rl:0,rr:0}, k = {};
+  for(let j=a;j<=i;j++){ for(const x in w) w[x]+=F[j].wp[x]||0; for(const x in F[j].kp) k[x]=(k[x]||0)+F[j].kp[x]; }
+  const n = i-a+1; for(const x in w) w[x]/=n; for(const x in k) k[x]/=n; wpS.push(w); kpS.push(k);
 }
+const base = F.slice(0,5).reduce((s,x)=>s+x.rms,0)/Math.min(5,N);
 const firstAlarm = F.findIndex(f=>f.st>=1);
-const events = [];   // [시각, 종류, 글]
-events.push([0,"info","시뮬레이션 시작: 정상 주행 (AI는 앞의 5분 동안 이 로봇의 '평소'를 배움)"]);
-events.push([M.start,"truth",`시뮬레이션: ${WK[M.wheel]} 바퀴에 약한 ${M.kind_ko} 고장이 생김 (정도 ${M.first} → ${M.ramp}분 동안 ${M.final}까지 커짐)`]);
-M.minutes.forEach((m,i)=>{ const lv = m.s>=WARN?2:m.s>=CAU?1:0;
-  if(lv>0) events.push([m.m*60,"min",`1분 판정 ${i+1}번째: 1분 점수 ${m.s.toFixed(1)}점 → ${STK[lv]} 수준`]); });
-for(let i=1;i<N;i++) if(F[i].st!==F[i-1].st){
-  const f = F[i]; const c = f.ck==="unknown" ? "처음 보는 이상" : f.cw ? `${WK[f.cw]} 바퀴 ${KS[f.ck]||f.ck}` : "";
-  events.push([f.t,"st"+f.st,`AI 판정 ${STK[F[i-1].st]} → ${STK[f.st]}` + (c?` · ${c}`:"")]); }
-events.sort((a,b)=>a[0]-b[0]);
+const events = [[0,"정상 주행 시작"],[M.start,`[정답] ${WK[M.wheel]} 바퀴 ${M.kind_ko} 시작 (약하게)`]];
+for(let i=1;i<N;i++) if(F[i].st!==F[i-1].st){ const f=F[i]; events.push([f.t,`AI ${STK[f.st]}` + (f.cw?` · ${WK[f.cw]} 바퀴 ${KS[f.ck]||f.ck}`:f.ck==="unknown"?" · 처음 보는 이상":"")]); }
 
-// ---------------------------------------------------------------- 로봇 그림 (위에서 본 4륜)
 function buildRobot(){
-  const W = (id,x,y,lx,ly,anchor) => `
-    <g class="wheel" id="w_${id}">
-      <rect class="tire" x="${x}" y="${y}" width="46" height="96" rx="12" fill="#455a64" stroke="#263238" stroke-width="2"/>
-      ${[18,34,50,66,82].map(d=>`<line x1="${x+6}" x2="${x+40}" y1="${y+d}" y2="${y+d}" stroke="rgba(255,255,255,.25)" stroke-width="2"/>`).join("")}
-      <text class="wl" x="${lx}" y="${ly}" text-anchor="${anchor}" font-size="15" fill="#37474f" font-weight="700">${WK[id]}</text>
-      <text class="spd" id="s_${id}" x="${lx}" y="${ly+19}" text-anchor="${anchor}" font-size="13" fill="#5b6876">- rpm</text>
-      <g class="bang"><circle cx="${x+46}" cy="${y}" r="15" fill="#d32f2f"/><text x="${x+46}" y="${y+6}" text-anchor="middle" fill="#fff" font-weight="800" font-size="18">!</text></g>
-      <g class="ask"><circle cx="${x+46}" cy="${y}" r="15" fill="#fbc02d" stroke="#a77800"/><text x="${x+46}" y="${y+6}" text-anchor="middle" fill="#1c2630" font-weight="800" font-size="18">?</text></g>
-    </g>`;
+  const W = (id,x,y,lx,ly) => `
+    <g id="w_${id}"><rect class="tire" x="${x}" y="${y}" width="50" height="100" rx="12" fill="#455a64" stroke="#263238" stroke-width="2"/>
+      ${[20,36,52,68,84].map(d=>`<line x1="${x+7}" x2="${x+43}" y1="${y+d}" y2="${y+d}" stroke="rgba(255,255,255,.25)" stroke-width="2"/>`).join("")}
+      <text class="wl" x="${lx}" y="${ly}" text-anchor="middle" font-size="17" fill="#37474f" font-weight="700">${WK[id]}</text>
+      <g class="bang"><circle cx="${x+50}" cy="${y}" r="17" fill="#d32f2f"/><text x="${x+50}" y="${y+7}" text-anchor="middle" fill="#fff" font-weight="800" font-size="21">!</text></g>
+      <g class="ask"><circle cx="${x+50}" cy="${y}" r="17" fill="#fbc02d" stroke="#a77800"/><text x="${x+50}" y="${y+7}" text-anchor="middle" fill="#1c2630" font-weight="800" font-size="21">?</text></g></g>`;
   $("robot").innerHTML = `
-    <text x="260" y="22" text-anchor="middle" font-size="14" fill="#78909c" font-weight="700">▲ 앞 (주행 방향)</text>
-    <rect x="120" y="44" width="280" height="320" rx="26" fill="#eceff1" stroke="#90a4ae" stroke-width="3"/>
-    <rect x="200" y="70" width="120" height="44" rx="8" fill="#37474f"/><text x="260" y="98" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">배터리</text>
-    <rect x="190" y="160" width="140" height="64" rx="10" fill="#1565c0"/><text x="260" y="190" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">제어기</text>
-    <text x="260" y="208" text-anchor="middle" fill="#cfe0ff" font-size="11">AI 판정</text>
-    <circle cx="260" cy="270" r="20" fill="#00897b"/><text x="260" y="275" text-anchor="middle" fill="#fff" font-size="11" font-weight="700">진동</text>
-    <text x="260" y="352" text-anchor="middle" fill="#00695c" font-size="11">진동 센서 (고리 = 진동 크기)</text>
-    <path id="vibRing" d="" fill="none" stroke="#00897b" stroke-width="2" opacity=".6"/>
-    ${W("fl",64,70,40,186,"middle")}
-    ${W("fr",410,70,480,186,"middle")}
-    ${W("rl",64,254,40,370,"middle")}
-    ${W("rr",410,254,480,370,"middle")}`;
+    <text x="260" y="24" text-anchor="middle" font-size="15" fill="#78909c" font-weight="700">▲ 앞</text>
+    <rect x="120" y="44" width="280" height="320" rx="28" fill="#eceff1" stroke="#90a4ae" stroke-width="3"/>
+    <rect x="200" y="78" width="120" height="44" rx="8" fill="#37474f"/><text x="260" y="106" text-anchor="middle" fill="#fff" font-size="14" font-weight="700">배터리</text>
+    <rect x="190" y="160" width="140" height="62" rx="10" fill="#1565c0"/><text x="260" y="197" text-anchor="middle" fill="#fff" font-size="15" font-weight="700">AI 제어기</text>
+    <path id="vibRing" d="" fill="#00897b" fill-opacity=".12" stroke="#00897b" stroke-width="2"/>
+    <circle cx="260" cy="282" r="20" fill="#00897b"/><text x="260" y="287" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">진동</text>
+    ${W("fl",60,66,70,190)}${W("fr",410,66,450,190)}${W("rl",60,250,70,374)}${W("rr",410,250,450,374)}`;
 }
-
-// ---------------------------------------------------------------- 타임라인
-function buildTimeline(){
-  const bar = $("tlBar"); let segs = "", cur = F[0].st, s0 = 0;
-  for(let i=1;i<=N;i++){ if(i===N || F[i].st!==cur){ segs += `<div class="seg" style="left:${F[s0].t/END*100}%;width:${(F[Math.min(i,N-1)].t-F[s0].t)/END*100+0.2}%;background:${COL[cur]}"></div>`; if(i<N){cur=F[i].st; s0=i;} } }
-  bar.innerHTML = segs;
-  const tl = $("tl");
-  let marks = `<div class="tlMark" style="left:${M.start/END*100}%">▼ 고장 시작 ${mmss(M.start)}</div>`;
-  if(firstAlarm>=0) marks += `<div class="tlMark" style="left:${F[firstAlarm].t/END*100}%;color:#b26a00;font-weight:700">★ AI 첫 경보 ${mmss(F[firstAlarm].t)}</div>`;
-  for(let m=0;m<=Math.floor(END/60);m+=1) marks += `<div class="tlTick" style="left:${m*60/END*100}%">${m}분</div>`;
-  tl.insertAdjacentHTML("beforeend", marks);
-  tl.addEventListener("click", e=>{ const r = tl.getBoundingClientRect(); T = Math.max(0, Math.min(END, (e.clientX-r.left)/r.width*END)); draw(); });
-}
-
-// ---------------------------------------------------------------- 게이지
 function buildGauge(){
-  const z = [[0,CAU,"#c8e6c9"],[CAU,WARN,"#ffe082"],[WARN,GMAX,"#ef9a9a"]];
-  $("gauge").innerHTML = z.map(([a,b,c])=>`<div style="width:${(b-a)/GMAX*100}%;background:${c}"></div>`).join("");
-  $("gscale").innerHTML = [[0,"0"],[CAU,`${CAU} 주의`],[WARN,`${WARN} 경고`],[GMAX,`${GMAX}+`]].map(([v,t])=>`<span style="left:${Math.min(97,Math.max(2,v/GMAX*100))}%">${t}</span>`).join("");
+  $("gauge").innerHTML = [[0,CAU,"#c8e6c9"],[CAU,WARN,"#ffe082"],[WARN,GMAX,"#ef9a9a"]].map(([a,b,c])=>`<div style="width:${(b-a)/GMAX*100}%;background:${c}"></div>`).join("");
+  $("gscale").innerHTML = [[CAU/2,"정상"],[CAU,`${CAU}`],[(CAU+WARN)/2,"주의"],[WARN,`${WARN}`],[(WARN+GMAX)/2,"경고"]].map(([v,t])=>`<span style="left:${v/GMAX*100}%;${/\d/.test(t)?"":"font-weight:700;color:#37474f"}">${t}</span>`).join("");
 }
 
-// ---------------------------------------------------------------- 그리기
 let T = 0, playing = true, speed = 10;
-function idxOf(t){ return Math.max(0, Math.min(N-1, Math.floor(t))); }
-function line(pts){ return pts.map(p=>p[0].toFixed(1)+","+p[1].toFixed(1)).join(" "); }
+function tile(id, text, cls){ const t = $(id); t.className = "tile" + (cls?" "+cls:""); t.querySelector("b").textContent = text; }
 
 function draw(){
-  const i = idxOf(T), f = F[i], st = f.st;
-  // 상태 띠
+  const i = Math.max(0, Math.min(N-1, Math.floor(T))), f = F[i], st = f.st, w = wpS[i];
+  const watching = st===0 && f.ew >= CAU*0.8;
+  const topW = Object.keys(w).reduce((a,b)=>w[a]>w[b]?a:b);
+  const kind = f.ck==="unknown" ? "처음 보는 이상" : (KS[f.ck]||"");
   $("band").style.background = COL[st]; $("band").style.color = TXT[st];
-  const wheelCause = f.cw ? `${WK[f.cw]} 바퀴` : "";
-  const kindCause = f.ck ? (KS[f.ck]||f.ck) : "";
-  if(st===0){
-    const sus = f.ew >= CAU*0.8;
-    $("verdict").textContent = sus ? "정상 · AI가 이상 징후를 지켜보는 중" : "정상 주행 중";
-    $("sub").textContent = sus ? "1초 점수가 올라가고 있습니다. 1분 판정이 2번 연속 문턱을 넘으면 경보를 냅니다." : "평소와 같은 진동 · 바퀴 속도입니다.";
-  } else {
-    $("verdict").textContent = `${STK[st]}: ${f.ck==="unknown" ? "처음 보는 이상 (원인 미확정)" : f.cw ? `${wheelCause} ${kindCause}` : (kindCause || "원인 확인 중")}`;
-    $("sub").textContent = "할 일: " + (M.todo[f.ck] || "점검");
-  }
+  $("verdict").textContent = st===0 ? (watching ? "정상 · 이상 징후 확인 중" : "정상") :
+    `${STK[st]} · ${f.cw ? `${WK[f.cw]} 바퀴 ${kind}` : kind || "원인 확인 중"}`;
+  $("todo").textContent = st>=1 ? "할 일: " + (SHORT_TODO[f.ck] || "점검") : "";
   $("clock").textContent = mmss(T);
-  $("clockSub").textContent = T < M.start ? `고장 시작까지 ${Math.ceil(M.start-T)}초 (시뮬레이션)` : `고장 시작 후 ${mmss(T-M.start)}`;
-  $("tlHead").style.left = (T/END*100)+"%";
-
-  // 로봇 그림
-  const w = wpS[i];
+  $("clockSub").textContent = T < M.start ? `고장까지 ${Math.ceil(M.start-T)}초` : `고장 시작 +${mmss(T-M.start)}`;
   ["fl","fr","rl","rr"].forEach(k=>{
     const g = $("w_"+k); g.classList.remove("w-red","w-amber");
     if(st>=1 && f.cw===k) g.classList.add("w-red");
-    else if(st>=1 && f.ck==="unknown" && w[k]>=0.15) g.classList.add("w-amber");
-    else if(f.ew >= CAU*0.8 && w[k]>=0.35 && w[k]===Math.max(...Object.values(w))) g.classList.add("w-amber");
-    const v = f.spd[k]; $("s_"+k).textContent = v==null ? "-" : Math.round(v/330*60)+" rpm";
+    else if((st>=1 && !f.cw && w[k]>=0.15) || (watching && k===topW && w[k]>=0.35)) g.classList.add("w-amber");
   });
-  const co = $("callout");
-  if(st>=1 && f.cw){ co.textContent = `⚠ ${WK[f.cw]} 바퀴 · ${kindCause}`; co.style.color = st===2?"#c62828":"#b26a00"; }
-  else if(st>=1){ co.textContent = "⚠ 처음 보는 이상 · 바퀴 특정 못 함"; co.style.color = "#b26a00"; }
-  else if(document.querySelector("#robot .w-amber")){ const k = Object.keys(w).reduce((a,b)=>w[a]>w[b]?a:b); co.textContent = `? ${WK[k]} 바퀴를 의심하는 중 (아직 확인 전)`; co.style.color = "#8a6100"; }
-  else { co.textContent = "이상 부위 없음"; co.style.color = "#2e7d32"; }
-  // 진동 표시 (센서 둘레 고리 크기 = 진동 크기)
-  const base = F.slice(0, Math.max(1, Math.min(5, N))).reduce((s,x)=>s+x.rms,0)/Math.max(1,Math.min(5,N));
-  const rr = 22 + Math.min(40, (f.rms/base-1)*30);
-  $("vibRing").setAttribute("d", `M ${260-rr} 270 a ${rr} ${rr} 0 1 0 ${2*rr} 0 a ${rr} ${rr} 0 1 0 ${-2*rr} 0`);
-
-  // 점수
-  $("score").textContent = f.ew.toFixed(1);
-  const lv = f.ew>=WARN?2:f.ew>=CAU?1:0;
-  $("scoreLv").textContent = ["정상 범위","주의 범위","경고 범위"][lv]; $("scoreLv").style.color = ["#2e7d32","#b26a00","#c62828"][lv];
+  const rr = 22 + Math.min(42, (f.rms/base-1)*32);
+  $("vibRing").setAttribute("d", `M ${260-rr} 282 a ${rr} ${rr} 0 1 0 ${2*rr} 0 a ${rr} ${rr} 0 1 0 ${-2*rr} 0`);
+  const lv = f.ew>=WARN?2:f.ew>=CAU?1:0, LC = ["#2e7d32","#b26a00","#c62828"];
+  $("score").textContent = f.ew.toFixed(1); $("score").style.color = LC[lv];
+  $("scoreLv").textContent = STK[lv]; $("scoreLv").style.color = LC[lv];
   $("needle").style.left = Math.min(100, f.ew/GMAX*100)+"%";
-  // 1분 판정 확인 단계
   const done = M.minutes.filter(m=>m.m*60 <= T+1e-6);
   let cnt = 0; for(let j=done.length-1;j>=0;j--){ const l = done[j].s>=WARN?2:done[j].s>=CAU?1:0; if(l>st) cnt++; else break; }
-  const nextIn = 60 - (Math.floor(T) % 60);
-  const lastMin = done.length ? `마지막 1분 점수 ${done[done.length-1].s.toFixed(1)}점` : "아직 1분 판정 전";
-  $("confirm").innerHTML = cnt>0 && st<2
-    ? `<b style="color:#b26a00">확인 중 ${cnt}/${M.confirm}</b> · ${lastMin}. ${M.confirm}번 연속이면 상태를 올립니다 (다음 판정까지 ${nextIn}초)`
-    : `AI는 <b>1분마다</b> 판정하고 <b>${M.confirm}번 연속</b>일 때 상태를 바꿉니다 · ${lastMin} · 다음 판정까지 ${nextIn}초`;
+  const dots = Array.from({length:M.confirm},(_,j)=>`<span class="dot${j<cnt?" on":""}"></span>`).join("");
+  $("checks").innerHTML = st===2 ? `<b style="color:#c62828">경고 확정</b>` :
+    `1분 판정 ${dots} <span>${cnt>0 ? `${M.confirm}번 연속이면 ${STK[st+1]}` : `다음 판정 ${60-(Math.floor(T)%60)}초 뒤`}</span>`;
+  if(st>=1){
+    tile("tWhere", f.cw ? `${WK[f.cw]} 바퀴` : "특정 못 함", "hot");
+    tile("tWhat", kind || "확인 중", "hot");
+    tile("tTodo", SHORT_TODO[f.ck] || "점검", "hot");
+  } else if(watching){
+    tile("tWhere", `${WK[topW]} 바퀴?`, "amb"); tile("tWhat", "확인 중", "amb"); tile("tTodo", "지켜보기", "amb");
+  } else { tile("tWhere","이상 없음"); tile("tWhat","-"); tile("tTodo","계속 운행"); }
+  const kp = kpS[i];
+  $("probs").innerHTML = (st>=1 || watching) ? ["unbalance","looseness","bearing","unknown"].map(k=>[KS[k]||k, kp[k]||0, k===f.ck&&st>=1])
+    .sort((a,b)=>b[1]-a[1]).slice(0,3).map(([n,v,hot])=>`<div class="prob"><span>${n}</span><div class="pb"><i style="width:${(v*100).toFixed(0)}%;background:${hot?"#c62828":"#90a4ae"}"></i></div><b>${(v*100).toFixed(0)}%</b></div>`).join("")
+    : "";
 
-  // 원인 확률
-  const kp = kpS[i], order = ["unbalance","looseness","bearing","unknown"];
-  const rows = [["정상", npS[i], "#2e7d32"], ...order.map(k=>[KS[k]||k, kp[k]||0, k===f.ck&&st>=1?"#c62828":"#90a4ae"])];
-  $("probs").innerHTML = rows.map(([n,v,c])=>`<div class="prob"><span>${n}</span><div class="pb"><i style="width:${(v*100).toFixed(0)}%;background:${c}"></i></div><b>${(v*100).toFixed(0)}%</b></div>`).join("");
-  $("dStatus").innerHTML = `<b style="color:${["#2e7d32","#b26a00","#c62828"][st]}">${STK[st]}</b>`;
-  $("dCause").textContent = st>=1 ? (f.ck==="unknown" ? "처음 보는 이상 (원인 미확정, 학습에 없던 이상일 수 있음)" : f.cw ? `${WK[f.cw]} 바퀴 ${KS[f.ck]||f.ck}` : "확인 중") : "-";
-  $("dTodo").textContent = st>=1 ? (M.todo[f.ck] || "점검") : "계속 운행";
-  // 근거
-  if(st>=1 && f.reason.length){
-    $("reasonTitle").textContent = "판단 근거 (원인을 정하는 데 가장 크게 쓴 특징, SHAP)";
-    const mx = Math.max(...f.reason.map(r=>Math.abs(r[1])), 1e-6);
-    $("reasons").innerHTML = f.reason.map(([n,v])=>`<div class="reason"><b>${n}</b><div class="rb"><i style="width:${Math.abs(v)/mx*100}%"></i></div></div>`).join("");
-  } else {
-    $("reasonTitle").textContent = "평소와 가장 다른 값 3개 (평소 대비)";
-    $("reasons").innerHTML = (f.top||[]).map(([n,z])=>`<div class="reason"><b>${n}</b> · 평소보다 ${Math.abs(z).toFixed(1)}σ ${z>0?"큼":"작음"}<div class="rb"><i style="width:${Math.min(100,Math.abs(z)/6*100)}%;background:${Math.abs(z)>=3?"#ef8f00":"#90a4ae"}"></i></div></div>`).join("") || "-";
-  }
-
-  // 건강 점수 그래프
-  const X = t => 40 + t/END*705, Y = v => 205 - Math.min(v,GMAX)/GMAX*190;
+  const CW = 1400, X = t => 46 + t/END*(CW-60), Y = v => 180 - Math.min(v,GMAX)/GMAX*165;
   let g = "";
-  [[CAU,"주의 "+CAU],[WARN,"경고 "+WARN]].forEach(([v,t])=>{ g += `<line x1="40" x2="745" y1="${Y(v)}" y2="${Y(v)}" stroke="${v===CAU?"#e0a800":"#c62828"}" stroke-dasharray="5 4"/><text x="744" y="${Y(v)-4}" text-anchor="end" font-size="11" fill="${v===CAU?"#b26a00":"#c62828"}">${t}</text>`; });
-  for(let m=0;m<=Math.floor(END/60);m+=2) g += `<text x="${X(m*60)}" y="222" text-anchor="middle" font-size="11" fill="#5b6876">${m}분</text>`;
-  [0,3,6,9,12].forEach(v=>{ g += `<text x="32" y="${Y(v)+4}" text-anchor="end" font-size="11" fill="#5b6876">${v}</text>`; });
-  g += `<line x1="${X(M.start)}" x2="${X(M.start)}" y1="10" y2="205" stroke="#5b6876" stroke-dasharray="2 3"/><text x="${X(M.start)+4}" y="20" font-size="11" fill="#5b6876">고장 시작</text>`;
-  const pts = F.slice(0,i+1).map(x=>[X(x.t), Y(x.ew)]);
-  g += `<polyline fill="none" stroke="#2a6fdb" stroke-width="2" points="${line(pts)}"/>`;
-  done.forEach(m=>{ const l = m.s>=WARN?2:m.s>=CAU?1:0; g += `<line x1="${X(m.m*60-60)}" x2="${X(m.m*60)}" y1="${Y(m.s)}" y2="${Y(m.s)}" stroke="${COL[l]}" stroke-width="5" stroke-linecap="round"/>`; });
-  g += `<line x1="${X(T)}" x2="${X(T)}" y1="10" y2="205" stroke="#1c2630" stroke-width="1.5"/>`;
-  g += `<text x="745" y="226" text-anchor="end" font-size="11" fill="#2a6fdb">— 1초 점수(평활)   <tspan fill="#5b6876">▬ 1분 판정 점수 (색 = 그 판정의 수준)</tspan></text>`;
+  [[0,CAU,"#e8f5e9"],[CAU,WARN,"#fff8e1"],[WARN,GMAX,"#fdecea"]].forEach(([a,b,c])=>{ g += `<rect x="46" y="${Y(b)}" width="${CW-60}" height="${Y(a)-Y(b)}" fill="${c}"/>`; });
+  [[CAU,"주의"],[WARN,"경고"]].forEach(([v,t])=>{ g += `<line x1="46" x2="${CW-14}" y1="${Y(v)}" y2="${Y(v)}" stroke="${v===CAU?"#e0a800":"#c62828"}" stroke-dasharray="5 4"/><text x="40" y="${Y(v)+4}" text-anchor="end" font-size="12" fill="${v===CAU?"#b26a00":"#c62828"}" font-weight="700">${t}</text>`; });
+  for(let m=0;m<=Math.floor(END/60);m+=1) g += `<text x="${X(m*60)}" y="244" text-anchor="middle" font-size="12" fill="#5b6876">${m}분</text>`;
+  g += `<polyline fill="none" stroke="#2a6fdb" stroke-width="2.5" points="${line(F.slice(0,i+1).map(x=>[X(x.t), Y(x.ew)]))}"/>`;
+  done.forEach(m=>{ const l = m.s>=WARN?2:m.s>=CAU?1:0; g += `<line x1="${X(m.m*60-58)}" x2="${X(m.m*60-2)}" y1="${Y(m.s)}" y2="${Y(m.s)}" stroke="${COL[l]}" stroke-width="6" stroke-linecap="round"/>`; });
+  const Ys = v => 226 - v*30, sp = F.map(x=>[X(x.t), Ys(x.sev)]);
+  g += `<text x="40" y="218" text-anchor="end" font-size="11" fill="#bf360c">정답</text><polygon fill="#eceff1" points="${X(0)},226 ${line(sp)} ${X(END)},226"/><polygon fill="#ffab91" points="${X(0)},226 ${line(sp.slice(0,i+1))} ${X(f.t)},226"/>`;
+  g += `<line x1="${X(M.start)}" x2="${X(M.start)}" y1="16" y2="226" stroke="#bf360c" stroke-dasharray="2 3"/><text x="${X(M.start)+4}" y="12" font-size="12" fill="#bf360c" font-weight="700">▼ 고장 시작</text>`;
+  if(firstAlarm>=0) g += `<text x="${X(F[firstAlarm].t)}" y="12" text-anchor="middle" font-size="12" fill="#b26a00" font-weight="700">★ AI 경보</text>`;
+  g += `<line x1="${X(T)}" x2="${X(T)}" y1="16" y2="226" stroke="#1c2630" stroke-width="2"/>`;
   $("chart").innerHTML = g;
-  // 실제 고장 정도
-  const Ys = v => 60 - v*52;
-  let sg = `<line x1="40" x2="745" y1="60" y2="60" stroke="#d8dee4"/><text x="32" y="${Ys(1)+4}" text-anchor="end" font-size="11" fill="#5b6876">1</text><text x="32" y="64" text-anchor="end" font-size="11" fill="#5b6876">0</text>`;
-  const sp = F.map(x=>[X(x.t), Ys(x.sev)]);
-  sg += `<polygon fill="#eceff1" points="${X(0)},60 ${line(sp)} ${X(END)},60"/>`;
-  sg += `<polygon fill="#ffab91" points="${X(0)},60 ${line(sp.slice(0,i+1))} ${X(F[i].t)},60"/>`;
-  sg += `<line x1="${X(T)}" x2="${X(T)}" y1="4" y2="60" stroke="#1c2630" stroke-width="1.5"/><text x="${Math.min(X(T)+5,700)}" y="14" font-size="11" fill="#bf360c">지금 ${f.sev.toFixed(2)}</text>`;
-  $("sevChart").innerHTML = sg;
 
-  // 파형 (최근 3초)
-  const a0 = Math.max(0, i-2), seg = F.slice(a0, i+1), zs = [].concat(...seg.map(x=>x.wav[1])), xs = [].concat(...seg.map(x=>x.wav[0]));
-  const amp = Math.max(0.25, ...zs.map(Math.abs), ...xs.map(Math.abs));
-  const P = arr => arr.map((v,j)=>[j/(Math.max(1,arr.length-1))*400, 60 - v/amp*52]);
-  $("wave").innerHTML = `<line x1="0" x2="400" y1="60" y2="60" stroke="#e7ebef"/><polyline fill="none" stroke="#90a4ae" stroke-width="1.2" points="${line(P(xs))}"/><polyline fill="none" stroke="#2a6fdb" stroke-width="1.6" points="${line(P(zs))}"/>`;
+  const a0 = Math.max(0,i-2), seg = F.slice(a0,i+1), zs = [].concat(...seg.map(x=>x.wav[1])), xs = [].concat(...seg.map(x=>x.wav[0]));
+  const amp = Math.max(0.25, ...zs.map(Math.abs), ...xs.map(Math.abs)), P = arr => arr.map((v,j)=>[j/Math.max(1,arr.length-1)*400, 55 - v/amp*48]);
+  $("wave").innerHTML = `<line x1="0" x2="400" y1="55" y2="55" stroke="#e7ebef"/><polyline fill="none" stroke="#90a4ae" stroke-width="1.2" points="${line(P(xs))}"/><polyline fill="none" stroke="#2a6fdb" stroke-width="1.6" points="${line(P(zs))}"/>`;
   $("vRms").textContent = `평소의 ${(f.rms/base).toFixed(1)}배`;
   $("vCur").textContent = isFinite(f.cur) ? f.cur.toFixed(2)+" A" : "-";
   $("vVolt").textContent = isFinite(f.volt) ? f.volt.toFixed(2)+" V" : "-";
-  $("truth").innerHTML = T < M.start
-    ? `지금은 <b>정상</b>입니다. ${mmss(M.start)}에 <b>${WK[M.wheel]} 바퀴 ${M.kind_ko}</b> 고장이 약하게 시작되도록 설정했습니다.`
-    : `<b>${WK[M.wheel]} 바퀴 ${M.kind_ko}</b> · 고장 정도 <b>${f.sev.toFixed(2)}</b> (시작 ${M.first} → ${M.ramp}분 뒤 ${M.final}). AI는 이 정답을 모른 채 센서만 보고 판단합니다.`;
-
-  // 알림 기록
-  $("log").innerHTML = events.filter(e=>e[0]<=T).reverse().map(([t,k,txt])=>{
-    const c = k==="truth"?"#5b6876":k==="st2"?"#c62828":k==="st1"?"#b26a00":k==="st0"?"#2e7d32":k==="min"?"#b26a00":"#5b6876";
-    const lab = k==="truth"?"시뮬레이션":k.startsWith("st")?"AI":k==="min"?"AI 1분":"정보";
-    return `<li><span class="t">${mmss(t)}</span><span class="k" style="color:${c}">${lab}</span><span>${txt}</span></li>`; }).join("");
+  const rs = st>=1 && f.reason.length ? f.reason.map(r=>r[0]) : (f.top||[]).map(([n,z])=>`${n} (평소보다 ${Math.abs(z).toFixed(1)}σ)`);
+  $("reasonTitle").textContent = st>=1 ? "판단 근거 (SHAP)" : "평소와 가장 다른 값";
+  $("reasons").innerHTML = rs.map(r=>`<div class="reason">${r}</div>`).join("") || "-";
+  $("truth").textContent = T < M.start ? `${mmss(M.start)}에 ${WK[M.wheel]} 바퀴 ${M.kind_ko} 시작 예정` : `${WK[M.wheel]} 바퀴 ${M.kind_ko} · 고장 정도 ${f.sev.toFixed(2)}`;
+  $("log").innerHTML = events.filter(e=>e[0]<=T).reverse().map(([t,x])=>`<li><span class="t">${mmss(t)}</span><span>${x}</span></li>`).join("");
 }
 
-// ---------------------------------------------------------------- 재생
 let last = performance.now();
-function tick(now){
-  const dt = (now-last)/1000; last = now;
-  if(playing){ T += dt*speed; if(T >= END){ T = END; playing = false; $("btnPlay").textContent = "▶ 다시"; } draw(); }
-  requestAnimationFrame(tick);
-}
-$("btnPlay").addEventListener("click", ()=>{ if(T>=END) T = 0; playing = !playing; $("btnPlay").textContent = playing ? "⏸ 멈춤" : "▶ 재생"; draw(); });
-$("btnReset").addEventListener("click", ()=>{ T = 0; playing = true; $("btnPlay").textContent = "⏸ 멈춤"; draw(); });
-document.querySelectorAll("[data-sp]").forEach(b=>b.addEventListener("click", ()=>{ speed = +b.dataset.sp;
-  document.querySelectorAll("[data-sp]").forEach(x=>x.classList.toggle("on", x===b)); }));
-buildRobot(); buildTimeline(); buildGauge(); draw(); requestAnimationFrame(tick);
+function tick(now){ const dt = (now-last)/1000; last = now;
+  if(playing){ T += dt*speed; if(T>=END){ T = END; playing = false; $("btnPlay").textContent = "▶ 다시"; } draw(); }
+  requestAnimationFrame(tick); }
+$("btnPlay").onclick = ()=>{ if(T>=END) T = 0; playing = !playing; $("btnPlay").textContent = playing ? "⏸ 멈춤" : "▶ 재생"; draw(); };
+$("btnReset").onclick = ()=>{ T = 0; playing = true; $("btnPlay").textContent = "⏸ 멈춤"; draw(); };
+document.querySelectorAll("[data-sp]").forEach(b=>b.onclick = ()=>{ speed = +b.dataset.sp; document.querySelectorAll("[data-sp]").forEach(x=>x.classList.toggle("on", x===b)); });
+$("chart").addEventListener("click", e=>{ const r = $("chart").getBoundingClientRect(); const x = (e.clientX-r.left)/r.width*1400; T = Math.max(0, Math.min(END, (x-46)/1340*END)); draw(); });
+buildRobot(); buildGauge(); draw(); requestAnimationFrame(tick);
 </script>
 </body>
 </html>
