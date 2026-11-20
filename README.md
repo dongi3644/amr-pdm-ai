@@ -8,6 +8,7 @@
 | 문서 | 내용 |
 |---|---|
 | [third_model/README.md](third_model/README.md) | 모델 구성(AI 2개), 실행 방법, 입력 데이터, **가상 데이터를 만드는 방법**, 가상 시험 결과, 설정, 한계, 근거 논문 |
+| [third_model/최종_성능과_시험_조건.md](third_model/최종_성능과_시험_조건.md) | **최종 성능표와 그 성능이 나온 시험 조건만 따로 정리** |
 | [third_model/코드_파일_설명.md](third_model/코드_파일_설명.md) | 코드 파일마다 하는 일 |
 
 ```
@@ -32,7 +33,7 @@
 
 - 놓친 고장 4대는 모두 약한 고장: 바퀴 찍힘 2대(세기 0.46 · 0.50배), 마찰 증가 1대(0.52배), 바퀴 불균형 1대(0.68배)
 - 원인을 틀린 3대: 체결 풀림 1대 · 바퀴 찍힘 2대를 '바퀴 불균형'으로 봄 (고장이라는 것은 맞게 알림)
-- 자세한 표와 이전 결과는 [third_model/README.md 5절](third_model/README.md)
+- 성능표와 시험 조건만 따로: [third_model/최종_성능과_시험_조건.md](third_model/최종_성능과_시험_조건.md) · 이전 결과까지는 [third_model/README.md 5절](third_model/README.md)
 
 ## 빠른 시작
 1. 코드 받기: `git clone https://github.com/dongi3644/amr-pdm-ai.git` (또는 `Code` → `Download ZIP`)
