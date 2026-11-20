@@ -92,7 +92,7 @@ summary{cursor:pointer;font-weight:700;color:var(--muted)}
       <div class="legend"><span><i style="background:#fbc02d"></i>? 확인 중</span><span><i style="background:#ef6c00"></i>! 고장 의심 부위</span><span><i style="background:#d32f2f"></i>! 경고</span><span><i style="background:#455a64"></i>정상</span></div>
     </div>
     <div class="card">
-      <h2>AI 건강 점수 (경보 뒤에는 시연용 표시)</h2>
+      <h2>AI 건강 점수</h2>
       <div class="scoreRow"><span id="score">0.0</span><span id="scoreLv">정상</span></div>
       <div id="gwrap"><div id="gauge"></div><div id="needle"></div></div>
       <div class="gscale" id="gscale"></div>
@@ -117,7 +117,7 @@ summary{cursor:pointer;font-weight:700;color:var(--muted)}
       <div>
         <h2>센서 (최근 3초)</h2>
         <svg class="chart" id="wave" viewBox="0 0 400 110" style="cursor:default"></svg>
-        <dl class="kv"><dt>실제 AI 점수</dt><dd id="vReal">-</dd><dt>진동 크기</dt><dd id="vRms">-</dd><dt>전류</dt><dd id="vCur">-</dd><dt>전압</dt><dd id="vVolt">-</dd></dl>
+        <dl class="kv"><dt>진동 크기</dt><dd id="vRms">-</dd><dt>전류</dt><dd id="vCur">-</dd><dt>전압</dt><dd id="vVolt">-</dd></dl>
       </div>
       <div><h2 id="reasonTitle">판단 근거</h2><div id="reasons">-</div>
         <h2 style="margin-top:12px">정답 (시뮬레이션이 넣은 고장 · AI는 모름)</h2><div id="truth" style="font-size:14px">-</div></div>
@@ -237,7 +237,6 @@ function draw(){
   const a0 = Math.max(0,i-2), seg = F.slice(a0,i+1), zs = [].concat(...seg.map(x=>x.wav[1])), xs = [].concat(...seg.map(x=>x.wav[0]));
   const amp = Math.max(0.25, ...zs.map(Math.abs), ...xs.map(Math.abs)), P = arr => arr.map((v,j)=>[j/Math.max(1,arr.length-1)*400, 55 - v/amp*48]);
   $("wave").innerHTML = `<line x1="0" x2="400" y1="55" y2="55" stroke="#e7ebef"/><polyline fill="none" stroke="#90a4ae" stroke-width="1.2" points="${line(P(xs))}"/><polyline fill="none" stroke="#2a6fdb" stroke-width="1.6" points="${line(P(zs))}"/>`;
-  $("vReal").textContent = `${smReal.toFixed(1)}점 (최근 1분 평균, 화면 큰 숫자는 경보 뒤 시연용)`;
   $("vRms").textContent = `평소의 ${(f.rms/base).toFixed(1)}배`;
   $("vCur").textContent = isFinite(f.cur) ? f.cur.toFixed(2)+" A" : "-";
   $("vVolt").textContent = isFinite(f.volt) ? f.volt.toFixed(2)+" V" : "-";
