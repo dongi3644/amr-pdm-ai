@@ -26,6 +26,13 @@
       "cwd": "${workspaceFolder}", "console": "integratedTerminal", "env": { "PYTHONUTF8": "1" }
     },
     {
+      "name": "로봇 1대 시뮬레이션 화면 만들기 (약 1분 → 가상테스트_결과/시연/로봇1대_시뮬레이션.html을 브라우저로 열기)",
+      "type": "debugpy", "request": "launch",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "program": "${workspaceFolder}/가상테스트/시연_로봇1대.py",
+      "cwd": "${workspaceFolder}", "console": "integratedTerminal", "env": { "PYTHONUTF8": "1" }
+    },
+    {
       "name": "4. 진단 (diagnose: CSV → 1분 진단표 · 그래프)",
       "type": "debugpy", "request": "launch",
       "python": "${workspaceFolder}/.venv/Scripts/python.exe",
