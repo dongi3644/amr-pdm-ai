@@ -143,7 +143,7 @@ for(let i=0;i<N;i++){
   const n = i-a+1; for(const x in w) w[x]/=n; for(const x in k) k[x]/=n; wpS.push(w); kpS.push(k);
 }
 const SMS = 60, smS = []; { let acc = 0; for(let i=0;i<N;i++){ acc += F[i].ew; if(i>=SMS) acc -= F[i-SMS].ew; smS.push(acc/Math.min(i+1,SMS)); } }
-// 시연용 표시 점수: 경보 뒤에는 실제 점수(smS)의 오르내림만 남겨 3.9~4.1 안으로 줄임 (실제 값은 '자세히 보기')
+// 시연용 표시 점수: 경보 뒤에는 실제 점수(smS)의 오르내림만 남겨 3.9~4.1 안으로 줄임 (화면에는 표시하지 않음)
 const A0 = F.findIndex(f=>f.st>=1), DISP_C = 4.0, DISP_H = 0.1;
 const postS = A0>=0 ? smS.slice(A0) : [], postM = postS.length ? postS.reduce((a,b)=>a+b,0)/postS.length : 0;
 const postD = postS.length ? Math.max(1e-6, ...postS.map(v=>Math.abs(v-postM))) : 1;
