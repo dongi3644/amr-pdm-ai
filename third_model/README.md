@@ -207,7 +207,7 @@ python 가상테스트/성능시험.py --jobs 8
 | 논문 | 우리 모델에서 |
 |---|---|
 | Jakubowski 외, *Sensors* 2022 — VAE 이상 감지 + 랜덤포레스트 · SHAP 설명 | 오토인코더 + 랜덤포레스트 + SHAP |
-| Miao 외, *Sensors* 2024 — 스펙트럼 정렬 · 정규화 + VAE (정규화 없으면 AUC 0.90 → 0.68) | 주파수 모양(비율) 특징 |
+| Miao 외, *Sensors* 2024 — 스펙트럼 정렬 · 자기 적응 정규화 + VAE (표 1, 전역 정규화 · MSE 기준: 둘 다 없으면 AUC 0.521, 둘 다 쓰면 0.782) | 주파수 모양(비율) 특징의 배경. 단 우리는 정렬을 안 하고, 이 논문에서 창 단위 정규화(0.738)는 특징 단위(0.824)보다 낮았음 |
 | Ahmad 외, arXiv 2021 / Sabzehi · Rollins (NASA JPL), arXiv 2024 — 정상만 학습한 오토인코더 | 비지도 감지, 문턱 = 정상 상위 지점 |
 | Hendrycks 외, ICLR 2019 — Outlier Exposure | 가상 이상 학습 |
 | Breiman 2001 · Lundberg, Lee 2017 | 랜덤포레스트 · SHAP 원 논문 |
