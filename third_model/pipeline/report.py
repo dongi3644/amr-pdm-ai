@@ -68,14 +68,21 @@ def fig_robot(table, title, note, path, calibrated=True):
     plt.close(fig)
 
 
+def main_key(m):
+    """교차검증에서 실제 판정에 쓴 모델의 키 (workflow.cross_validate가 기록). 기록이 없는 예전 metrics.json이면 None"""
+    k = m.get("main")
+    return k if k in m["detectors"] else None
+
+
 def fig_auc(m, path):
     """이상 감지 방법 비교 (로봇 단위 교차검증 AUC)"""
-    items = sorted([v for v in m["detectors"].values() if v["auc"] is not None], key=lambda v: v["auc"])   # AUC 낮은 순 (막대가 아래부터 쌓임)
+    main = main_key(m)
+    items = sorted([dict(v, main=k == main) for k, v in m["detectors"].items() if v["auc"] is not None], key=lambda v: v["auc"])   # AUC 낮은 순 (막대가 아래부터 쌓임)
     if not items:                                          # 고장 창이 없어 AUC를 못 쟀으면 그림을 만들지 않음
         return False
     fig, ax = plt.subplots(figsize=(8, 3.2))
     bars = ax.barh([v["name"] for v in items], [v["auc"] for v in items], height=0.55,
-                   color=[BLUE if "오토인코더" in v["name"] else GRAY for v in items])
+                   color=[BLUE if v["main"] else GRAY for v in items])
     ax.bar_label(bars, fmt="%.3f", padding=4, color=INK)
     ax.set_xlim(0.5, 1.02)
     ax.set_xlabel("AUC (고장 창 vs 정상 창, 높을수록 좋음)")
@@ -188,8 +195,7 @@ def headline(m):
     hit = sum(u["caution"] is not None for u in F)       # 고장 로봇 중 '주의' 이상이 뜬 수
     quiet = sum(u["caution"] is None for u in N)         # 정상 로봇 중 경보가 없던 수
     c, un = m["cause"], m["units"]
-    key = next((k for k in ("deep", "cnn_ae", "ae_wheel", "ae") if k in m["detectors"]), "ae")   # 주 모델 (있는 것 중 앞쪽)
-    ae = m["detectors"].get(key, {})
+    det = m["detectors"].get(main_key(m), {})             # 실제 판정에 쓴 모델 (모르면 다른 모델 값으로 대신하지 않고 '-')
     cause_u = [u for u in F if u["cause_ok"] is not None]
     fail_n = sum(u["fail"] is not None for u in F)
     warned = int(un["warned_before_fail"].split("/")[0]) if un.get("warned_before_fail") else 0
@@ -199,8 +205,8 @@ def headline(m):
         ("정상 로봇 오경보율", _pct(len(N) - quiet, len(N)), "정상 로봇인데 '주의' 이상이 뜬 비율"),
         ("원인 분류 정확도", f"{_rate(c['window_accuracy'])} (1초 창)" + (f" · 로봇 {c['unit_accuracy']}" if c["unit_accuracy"] else ""),
          "원인을 낸 고장 로봇 중 맞힌 수 (배운 적 없는 원인은 뺌)" if cause_u else "원인을 낸 고장 로봇이 없음"),
-        (f"이상 감지 AUC ({ae.get('name', '주 모델')})", "-" if ae.get("auc") is None else f"{ae['auc']:.3f}", "1에 가까울수록 고장 창과 정상 창을 잘 가름 (0.5 = 찍기)"),
-        ("고장 창 감지율 / 정상 창 오경보율", f"{_rate(ae.get('recall'))} / {_rate(ae.get('false_positive'))}", "1초 창 기준, 건강 점수 3 이상을 '이상'으로 셈"),
+        (f"이상 감지 AUC ({det.get('name', '주 모델')})", "-" if det.get("auc") is None else f"{det['auc']:.3f}", "1에 가까울수록 고장 창과 정상 창을 잘 가름 (0.5 = 찍기)"),
+        ("고장 창 감지율 / 정상 창 오경보율", f"{_rate(det.get('recall'))} / {_rate(det.get('false_positive'))}", "1초 창 기준, 건강 점수 3 이상을 '이상'으로 셈"),
         ("정지 위험 전 경고", _pct(warned, fail_n) + (f", 평균 {un['mean_lead_min']}분 전" if un.get("mean_lead_min") is not None else ""),
          f"고장 정도 {C.FAILURE_SEVERITY:g}에 이르기 전에 '경고'가 뜬 로봇"),
     ]
@@ -251,7 +257,9 @@ def summary_md(m, notes, path):
               "| 방법 | AUC | 고장 창 감지율 (3점 이상) | 정상 창 오경보율 |", "|---|---|---|---|"]
     for v in m["detectors"].values():
         lines.append(f"| {v['name']} | {'-' if v['auc'] is None else v['auc']} | {_rate(v['recall'])} | {_rate(v['false_positive'])} |")
-    lines += ["", "판정에 쓰는 것은 오토인코더(엔코더가 있으면 + 바퀴)입니다. 나머지는 비교용입니다."]
+    used = m["detectors"].get(main_key(m), {}).get("name")
+    if used:
+        lines += ["", f"판정에 쓰는 것은 {used}입니다. 나머지는 비교용입니다."]
 
     # 원인 분류: 혼동표 (행 = 실제, 열 = 예측)
     lines += ["", "## 원인 분류", "",

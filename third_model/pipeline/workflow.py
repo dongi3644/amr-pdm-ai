@@ -226,6 +226,7 @@ def cross_validate(data, baseline=None, progress=print):
     # units: 로봇 단위 결과, win: 창 단위 정답(y: 고장인가)·원인 정답(labels)·원인 예측(pred), skipped: 평가 못 한 이유
     units, win, skipped = [], {k: [] for k in ("y", "labels", "pred", "seen")}, []
     det_scores = {}                                       # 모델 이름 → 평가 창들의 건강 점수 (AUC 계산용)
+    mains = []                                            # 겹마다 실제 판정에 쓴 모델 (요약 맨 위에 이 모델의 값을 보여 줌)
     for i, test in enumerate(folds, 1):
         try:
             pipe, _ = train(data, [n for n in names if n not in test], baseline)
@@ -234,6 +235,7 @@ def cross_validate(data, baseline=None, progress=print):
             continue
         progress(f"  교차검증 {i}/{len(folds)}: 평가 로봇 {', '.join(test)}")
         b = pipe.bundle
+        mains.append(b["main"])
         for name in test:
             recs = data.robots[name]
             try:
@@ -282,10 +284,11 @@ def cross_validate(data, baseline=None, progress=print):
                               cause_ok=(mon.last_cause_label == label) if (mon.last_cause_label and label != NORMAL_LABEL and not unseen) else None,
                               period_scores=[[int(l), round(s, 3)] for l, s in mon.period_scores],
                               sev_range=round(max(sev.values()) - min(v for v in sev.values()), 2) if sev else 0.0))
-    return summarize(units, win, det_scores, skipped, baseline, len(folds))
+    main = max(dict.fromkeys(mains), key=mains.count) if mains else None   # 겹마다 다르면 가장 많이 쓴 것
+    return summarize(units, win, det_scores, skipped, baseline, len(folds), main)
 
 
-def summarize(units, win, det_scores, skipped, baseline, n_folds):
+def summarize(units, win, det_scores, skipped, baseline, n_folds, main=None):
     """교차검증 결과 → 발표용 수치.
     detectors: 모델별 AUC(고장/정상 창 구분력), 3점 이상 비율(고장 창 감지율·정상 창 오경보율)
     units    : 고장 로봇 중 주의 이상이 뜬 수, 정상 로봇 중 오경보 난 수, 정지 위험(고장 정도 0.8) 전 경고 수와 여유 시간[분]
@@ -316,6 +319,7 @@ def summarize(units, win, det_scores, skipped, baseline, n_folds):
                       note="각 겹에서 평가 로봇의 데이터는 학습·기준·눈금 보정에 전혀 쓰지 않음"),
         windows=dict(n=int(len(y)), fault=int(y.sum())),
         detectors=det,
+        main=main,                                        # 판정(로봇별 경보)에 쓴 모델의 키
         units=dict(fault=len(fault_u), normal=len(normal_u), normal_assumed=sum(u["label_assumed"] for u in normal_u),
                    fault_detected=f"{sum(u['caution'] is not None for u in fault_u)}/{len(fault_u)}",
                    false_alarm=f"{sum(u['caution'] is not None for u in normal_u)}/{len(normal_u)}",
