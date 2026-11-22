@@ -215,10 +215,18 @@ class CombinedDetector:
         return np.maximum(health(self.ae, Z), health(self.wheel, Z))
 
 
-# 교차검증 결과 표에 쓰는 모델 이름 (엔코더가 있을 때만 생기는 두 모델 포함)
+# 교차검증 결과 표에 쓰는 모델 이름. system.fit이 만드는 감지 모델 키가 모두 있어야 함 (없으면 run.py train이 평가 끝에 KeyError로 멈춤, 11/22 보충)
 DETECTOR_NAMES = {"zscore": "기준선 (z-score)", "ecod": "ECOD", "pca": "PCA",
                   "ae": "오토인코더 (AI)", "wheel": WheelMaxDetector.name, "ae_wheel": CombinedDetector.name,
-                  "cnn_ae": "1D-CNN 오토인코더 (파형)", "deep": "특징 AI + 1D-CNN (주 모델)"}
+                  "cnn_ae": "1D-CNN 오토인코더 (파형)", "deep": "특징 AI + 1D-CNN (주 모델)",
+                  "spec_ae": "주파수 모양 오토인코더 (AI)", "spec_wheel": "주파수 모양 오토인코더 + 바퀴",
+                  "rf": "랜덤포레스트 (AI)", "feat_rf": "특징 오토인코더(+바퀴) + 랜덤포레스트",
+                  "spec_rf": "주파수 모양 오토인코더(+바퀴) + 랜덤포레스트",
+                  # 주 모델 후보 + "_rf" (system.fit의 main + "_rf")
+                  "ae_rf": "오토인코더 + 랜덤포레스트", "ae_wheel_rf": "오토인코더 + 바퀴 + 랜덤포레스트",
+                  "cnn_ae_rf": "1D-CNN 오토인코더 + 랜덤포레스트", "deep_rf": "특징 AI + 1D-CNN + 랜덤포레스트",
+                  "spec_ae_rf": "주파수 모양 오토인코더 + 랜덤포레스트",
+                  "spec_wheel_rf": "주파수 모양 오토인코더 + 바퀴 + 랜덤포레스트"}
 
 
 def make_detectors():
